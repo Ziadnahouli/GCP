@@ -34,9 +34,6 @@ export function useChannelMessages(channelId: string | null) {
       return;
     }
 
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
-
     const channelChanged = prevChannelIdRef.current !== channelId;
     if (channelChanged) {
       prevChannelIdRef.current = channelId;

@@ -21,9 +21,6 @@ export function useConversations() {
       return;
     }
 
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
-
     try {
       setIsLoading(true);
 

@@ -40,9 +40,6 @@ export function useSocial() {
       return;
     }
 
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
-
     try {
       setIsLoading(true);
 

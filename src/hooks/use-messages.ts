@@ -67,9 +67,6 @@ export function useMessages(conversationId: string | null) {
         return;
       }
 
-      if (isFetchingRef.current) return;
-      isFetchingRef.current = true;
-
       try {
         const convChanged = prevConversationIdRef.current !== conversationId;
         if (convChanged) {

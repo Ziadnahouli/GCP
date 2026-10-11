@@ -13,6 +13,7 @@ import { SettingsModal } from '@/components/layout/settings-modal';
 import { CallProvider, useCallContext } from '@/features/calls/call-context';
 import { IncomingCallModal } from '@/components/calls/incoming-call-modal';
 import { CallModal } from '@/components/calls/call-modal';
+import { PermissionsModal } from '@/components/layout/permissions-modal';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers } from '@/hooks/use-servers';
 import { Gamepad2, MessageSquare, Users, X } from 'lucide-react';
@@ -288,6 +289,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
       {/* User Settings Modal for Mobile & Global */}
       <SettingsModal open={showUserSettings} onOpenChange={setShowUserSettings} />
+
+      {/* Global Browser & Hardware Permissions Onboarding Modal */}
+      <PermissionsModal />
 
       {/* Global Incoming Call Ringing Modal */}
       <IncomingCallModal />

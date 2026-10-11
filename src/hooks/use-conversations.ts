@@ -123,16 +123,38 @@ export function useConversations() {
       .on('broadcast', { event: 'conv_update' }, () => {
         fetchConversations();
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          fetchConversations();
+        }
+      });
 
-    // Visibility-guarded periodic fallback poll (30s)
+    // High-frequency live-sync fallback poll (3s when visible)
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchConversations();
-    }, 30000);
+    }, 3000);
+
+    // Immediate sync on tab focus or visibility resume
+    const handleFocus = () => {
+      fetchConversations();
+    };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        fetchConversations();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleFocus);
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
 
     return () => {
       clearInterval(autoSyncTimer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleFocus);
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
       supabase.removeChannel(channel);
     };
   }, [fetchConversations, isConfigured, user, supabase]);

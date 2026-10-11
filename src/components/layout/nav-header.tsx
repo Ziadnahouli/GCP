@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Search, Bell, Wifi, ShieldAlert, Sparkles, Terminal, Radio, Menu } from 'lucide-react';
+import { Search, Bell, Wifi, ShieldAlert, Sparkles, Terminal, Radio, Menu, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { Badge } from '@/components/ui/badge';
 import { ZeroTierModal } from '@/components/network/zerotier-modal';
@@ -70,6 +70,20 @@ export function NavHeader({ title = 'Friends & Activity', subtitle, onOpenMobile
             <span>Local Sandbox</span>
           </Badge>
         )}
+
+        {/* Permissions Quick Button */}
+        <button
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('nexus-open-permissions-modal'));
+            }
+          }}
+          className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full text-[11px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors shadow-sm"
+          title="Hardware & Browser Permissions"
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="hidden sm:inline">Permissions</span>
+        </button>
 
         {/* ZeroTier Indicator */}
         <button

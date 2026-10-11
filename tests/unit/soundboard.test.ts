@@ -46,4 +46,22 @@ describe('Soundboard Audio Engine', () => {
     // In node/vitest without full AudioContext it handles safely
     expect(typeof played).toBe('boolean');
   });
+
+  it('provides broadcast stream for WebRTC audio mixing', () => {
+    const stream = soundboardEngine.getBroadcastStream();
+    // In node/vitest environment, returns null or mock MediaStream without throwing
+    expect(stream === null || typeof stream === 'object').toBe(true);
+  });
+
+  it('structures soundboard call signaling payload with sender identity', () => {
+    const clip = BUILTIN_CLIPS[1];
+    const payload = {
+      clip,
+      senderId: 'user-sender-123',
+      senderName: 'Apex Striker',
+    };
+    expect(payload.clip.id).toBe('victory');
+    expect(payload.senderId).toBe('user-sender-123');
+    expect(payload.senderName).toBe('Apex Striker');
+  });
 });

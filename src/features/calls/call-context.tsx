@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/toast';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
+import { soundboardEngine, SoundboardClip } from '@/lib/soundboard/audio-engine';
 
 export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_call' | 'ended';
 
@@ -48,9 +49,10 @@ interface CallContextType {
   toggleMic: () => void;
   toggleCamera: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
+  broadcastSoundboardClip: (clip: SoundboardClip) => void;
 }
 
-const CallContext = React.createContext<CallContextType | null>(null);
+export const CallContext = React.createContext<CallContextType | null>(null);
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -216,6 +218,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         .catch(() => {});
     }
   }, []);
+
+  // Broadcast soundboard clip to call room and peer so remote listener hears it
+  const broadcastSoundboardClip = React.useCallback(
+    (clip: SoundboardClip) => {
+      if (!user) return;
+      const payload = {
+        clip,
+        senderId: user.id,
+        senderName: profile?.display_name || profile?.username || 'Squadmate',
+      };
+
+      sendSignalToRoom('soundboard_play', payload);
+      if (peerUserId) {
+        sendSignalToUser(peerUserId, 'soundboard_play', payload);
+      }
+    },
+    [user, profile, peerUserId, sendSignalToRoom, sendSignalToUser]
+  );
 
   // Update participant media state from remote signals
   const handlePeerMediaToggle = React.useCallback(
@@ -786,6 +806,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .on('broadcast', { event: 'peer_media_toggle' }, ({ payload }) => {
         handlePeerMediaToggle(payload);
       })
+      .on('broadcast', { event: 'soundboard_play' }, async ({ payload }) => {
+        if (payload?.clip && payload.senderId !== user.id) {
+          console.log('[CallSoundboard] Remote soundboard clip received via mailbox:', payload.clip.name);
+          soundboardEngine.playClip(payload.clip);
+          toast({
+            title: `${payload.senderName || 'Squadmate'} played ${payload.clip.name}`,
+            description: `${payload.clip.icon || '🔊'} Soundboard`,
+            type: 'info',
+            duration: 2500,
+          });
+        }
+      })
       .on('broadcast', { event: 'call_rejected' }, () => {
         toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
         stopMediaTracks();
@@ -953,6 +985,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       })
       .on('broadcast', { event: 'peer_media_toggle' }, ({ payload }) => {
         handlePeerMediaToggle(payload);
+      })
+      .on('broadcast', { event: 'soundboard_play' }, async ({ payload }) => {
+        if (payload?.clip && payload.senderId !== user.id) {
+          console.log('[CallSoundboard] Remote soundboard clip received via room:', payload.clip.name);
+          soundboardEngine.playClip(payload.clip);
+          toast({
+            title: `${payload.senderName || 'Squadmate'} played ${payload.clip.name}`,
+            description: `${payload.clip.icon || '🔊'} Soundboard`,
+            type: 'info',
+            duration: 2500,
+          });
+        }
       })
       .on('broadcast', { event: 'call_rejected' }, () => {
         toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
@@ -1129,6 +1173,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       })
       .on('broadcast', { event: 'peer_media_toggle' }, ({ payload }) => {
         handlePeerMediaToggle(payload);
+      })
+      .on('broadcast', { event: 'soundboard_play' }, async ({ payload }) => {
+        if (payload?.clip && payload.senderId !== user.id) {
+          console.log('[CallSoundboard] Remote soundboard clip received via callee room:', payload.clip.name);
+          soundboardEngine.playClip(payload.clip);
+          toast({
+            title: `${payload.senderName || 'Squadmate'} played ${payload.clip.name}`,
+            description: `${payload.clip.icon || '🔊'} Soundboard`,
+            type: 'info',
+            duration: 2500,
+          });
+        }
       })
       .on('broadcast', { event: 'call_ended' }, () => {
         stopMediaTracks();
@@ -1450,6 +1506,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         toggleMic,
         toggleCamera,
         toggleScreenShare,
+        broadcastSoundboardClip,
       }}
     >
       {children}

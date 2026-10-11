@@ -394,7 +394,7 @@ export function CallModal({
       </div>
 
       {/* Soundboard Modal */}
-      <SoundboardModal open={showSoundboard} onOpenChange={setShowSoundboard} />
+      <SoundboardModal open={showSoundboard} onOpenChange={setShowSoundboard} isInCall={true} />
     </div>
   );
 }

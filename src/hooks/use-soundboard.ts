@@ -6,10 +6,12 @@ import {
   SoundboardClip,
   BUILTIN_CLIPS,
 } from '@/lib/soundboard/audio-engine';
+import { CallContext } from '@/features/calls/call-context';
 
 const STORAGE_KEY = 'nexus_custom_soundboard_clips';
 
 export function useSoundboard() {
+  const call = React.useContext(CallContext);
   const [customClips, setCustomClips] = React.useState<SoundboardClip[]>([]);
   const [playingClipId, setPlayingClipId] = React.useState<string | null>(null);
   const [volume, setVolumeState] = React.useState<number>(0.8);
@@ -46,19 +48,31 @@ export function useSoundboard() {
     return allClips.filter((c) => c.category === activeCategory);
   }, [allClips, activeCategory]);
 
-  const playClip = React.useCallback(async (clip: SoundboardClip) => {
-    if (soundboardEngine.isCoolingDown()) return false;
+  const playClip = React.useCallback(
+    async (clip: SoundboardClip) => {
+      if (soundboardEngine.isCoolingDown()) return false;
 
-    const played = await soundboardEngine.playClip(clip);
-    if (played) {
-      setPlayingClipId(clip.id);
-      window.setTimeout(() => {
-        setPlayingClipId((current) => (current === clip.id ? null : current));
-      }, clip.durationSeconds * 1000);
-      return true;
-    }
-    return false;
-  }, []);
+      const played = await soundboardEngine.playClip(clip);
+      if (played) {
+        setPlayingClipId(clip.id);
+        window.setTimeout(() => {
+          setPlayingClipId((current) => (current === clip.id ? null : current));
+        }, clip.durationSeconds * 1000);
+
+        // If a call is active, broadcast clip to peer so they hear it clearly
+        if (
+          call?.broadcastSoundboardClip &&
+          (call.callStatus === 'in_call' || call.callStatus === 'outgoing_ringing')
+        ) {
+          call.broadcastSoundboardClip(clip);
+        }
+
+        return true;
+      }
+      return false;
+    },
+    [call]
+  );
 
   const stopAll = React.useCallback(() => {
     soundboardEngine.stopAll();

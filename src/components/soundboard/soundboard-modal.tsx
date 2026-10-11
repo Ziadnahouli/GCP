@@ -130,7 +130,7 @@ export function SoundboardModal({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-background/80 backdrop-blur-md transition-opacity animate-in fade-in"
@@ -350,7 +350,7 @@ export function SoundboardModal({
 
       {/* Upload Custom Sound Submodal */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div
             className="fixed inset-0 bg-background/80 backdrop-blur-sm"
             onClick={() => setShowUploadModal(false)}

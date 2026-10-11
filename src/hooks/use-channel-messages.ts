@@ -160,19 +160,41 @@ export function useChannelMessages(channelId: string | null) {
       );
     }
 
-    channel.subscribe();
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED' && isUUID) {
+        fetchChannelMessages();
+      }
+    });
     channelRef.current = channel;
 
-    // Visibility-guarded periodic fallback poll (30s)
+    // High-frequency live-sync fallback poll (2.5s when visible)
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       if (isUUID) {
         fetchChannelMessages();
       }
-    }, 30000);
+    }, 2500);
+
+    // Immediate sync on tab focus or visibility resume
+    const handleFocus = () => {
+      if (isUUID) fetchChannelMessages();
+    };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden && isUUID) {
+        fetchChannelMessages();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleFocus);
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
 
     return () => {
       clearInterval(autoSyncTimer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleFocus);
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
       channelRef.current = null;
       supabase.removeChannel(channel);
     };
@@ -312,6 +334,19 @@ export function useChannelMessages(channelId: string | null) {
             });
         }
 
+        // Fast authoritative follow-up reconciliations
+        setTimeout(() => {
+          if (activeChannelIdRef.current === channelId) {
+            fetchChannelMessages();
+          }
+        }, 400);
+
+        setTimeout(() => {
+          if (activeChannelIdRef.current === channelId) {
+            fetchChannelMessages();
+          }
+        }, 1200);
+
         return { error: null };
       } catch (err: unknown) {
         console.error('Channel send exception:', err);
@@ -322,7 +357,7 @@ export function useChannelMessages(channelId: string | null) {
         return { error: errMsg };
       }
     },
-    [channelId, isConfigured, user, profile, isUUID, supabase]
+    [channelId, isConfigured, user, profile, isUUID, supabase, fetchChannelMessages]
   );
 
   const retryMessage = React.useCallback(

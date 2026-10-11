@@ -300,18 +300,40 @@ export function useMessages(conversationId: string | null) {
           return () => clearTimeout(timer);
         }
       })
-      .subscribe();
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        fetchMessages();
+      }
+    });
 
     chatChannelRef.current = channel;
 
-    // Visibility-guarded periodic fallback poll (30s)
+    // High-frequency live-sync fallback poll (2.5s when visible)
     const syncInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchMessages();
-    }, 30000);
+    }, 2500);
+
+    // Immediate sync on tab focus or visibility resume
+    const handleFocus = () => {
+      fetchMessages();
+    };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        fetchMessages();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleFocus);
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
 
     return () => {
       clearInterval(syncInterval);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleFocus);
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
       chatChannelRef.current = null;
       supabase.removeChannel(channel);
     };
@@ -426,6 +448,26 @@ export function useMessages(conversationId: string | null) {
         insertPayload.reply_to_id = cleanReplyId;
       }
 
+      // Ensure user is recorded in conversation_members to satisfy RLS
+      try {
+        const { data: memberData } = await supabase
+          .from('conversation_members')
+          .select('id')
+          .eq('conversation_id', conversationId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (!memberData) {
+          await supabase.from('conversation_members').insert({
+            conversation_id: conversationId,
+            user_id: user.id,
+            role: 'member',
+          });
+        }
+      } catch (cmErr) {
+        console.warn('Ensure conversation member error:', cmErr);
+      }
+
       // 1. Insert message to database
       const { data: msgRows, error: msgErr } = await supabase
         .from('messages')
@@ -535,6 +577,19 @@ export function useMessages(conversationId: string | null) {
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversationId)
         .then(() => {}, () => {});
+
+      // Fast authoritative follow-up reconciliations to guarantee server consistency
+      setTimeout(() => {
+        if (activeConversationIdRef.current === conversationId) {
+          fetchMessages();
+        }
+      }, 400);
+
+      setTimeout(() => {
+        if (activeConversationIdRef.current === conversationId) {
+          fetchMessages();
+        }
+      }, 1200);
 
       return { error: null, messageId: confirmedId };
     } catch (err: unknown) {

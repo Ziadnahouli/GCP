@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
 import { useCallContext } from '@/features/calls/call-context';
 import { getBrowserClient } from '@/lib/supabase/client';
+import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 
 interface ChatViewProps {
   conversationId: string;
@@ -80,6 +81,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const [isDraggingOver, setIsDraggingOver] = React.useState(false);
   const [selectedMediaModal, setSelectedMediaModal] = React.useState<MessageAttachment | null>(null);
   const [showSearchInput, setShowSearchInput] = React.useState(false);
+  const [showSoundboard, setShowSoundboard] = React.useState(false);
 
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -830,6 +832,16 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             <Paperclip className="w-4 h-4" />
           </button>
 
+          {/* Soundboard Meme Trigger */}
+          <button
+            type="button"
+            onClick={() => setShowSoundboard(true)}
+            className="p-2.5 rounded-xl bg-surface-default hover:bg-surface-hover text-muted-foreground hover:text-amber-400 border border-border/80 transition-colors shrink-0"
+            title="Soundboard Meme Effects"
+          >
+            <Sparkles className="w-4 h-4" />
+          </button>
+
           {/* Text Input */}
           <div className="relative flex-1">
             <input
@@ -913,6 +925,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         </div>
       )}
 
+      {/* Soundboard Modal */}
+      <SoundboardModal open={showSoundboard} onOpenChange={setShowSoundboard} />
     </div>
   );
 }

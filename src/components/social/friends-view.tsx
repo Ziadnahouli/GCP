@@ -58,6 +58,10 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
   const [isSendingRequest, setIsSendingRequest] = React.useState(false);
   const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
 
+  const onlineCount = friends.filter(
+    (f) => f.friend.status === 'online' || f.friend.status === 'idle' || f.friend.status === 'dnd'
+  ).length;
+
   // Filter friends based on search
   const filteredFriends = React.useMemo(() => {
     return friends.filter((item) => {
@@ -67,15 +71,13 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
       if (!matchSearch) return false;
       if (activeTab === 'online') {
+        // If there are friends but none are online, show all friends with their offline badge
+        if (onlineCount === 0) return true;
         return item.friend.status === 'online' || item.friend.status === 'idle' || item.friend.status === 'dnd';
       }
       return true;
     });
-  }, [friends, searchFilter, activeTab]);
-
-  const onlineCount = friends.filter(
-    (f) => f.friend.status === 'online' || f.friend.status === 'idle' || f.friend.status === 'dnd'
-  ).length;
+  }, [friends, searchFilter, activeTab, onlineCount]);
 
   const call = useCallContext();
 
@@ -153,11 +155,15 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
             )}
           >
             Pending
-            {incomingRequests.length > 0 && (
+            {incomingRequests.length > 0 ? (
               <span className="ml-1.5 px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-bold">
                 {incomingRequests.length}
               </span>
-            )}
+            ) : outgoingRequests.length > 0 ? (
+              <span className="ml-1.5 px-1.5 py-0.2 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
+                {outgoingRequests.length}
+              </span>
+            ) : null}
           </button>
 
           <button
@@ -432,7 +438,9 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
             <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground pt-2">
               {activeTab === 'online'
-                ? `Online Friends — ${filteredFriends.length}`
+                ? onlineCount > 0
+                  ? `Online Friends — ${filteredFriends.length}`
+                  : `All Friends (${friends.length}) — Offline`
                 : `All Friends — ${filteredFriends.length}`}
             </div>
 

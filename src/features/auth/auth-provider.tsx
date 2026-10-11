@@ -253,31 +253,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Update profile
   const updateProfile = React.useCallback(
     async (updates: Partial<UserProfile>) => {
-      if (!config.isConfigured) {
-        setProfile((prev) => {
-          const updated = { ...(prev || DEFAULT_PROFILE), ...updates, updated_at: new Date().toISOString() };
-          localStorage.setItem('nexus_local_profile', JSON.stringify(updated));
-          return updated;
-        });
+      // Optimistically update local state for zero-latency instant feedback
+      setProfile((prev) => {
+        const next = { ...(prev || DEFAULT_PROFILE), ...updates, updated_at: new Date().toISOString() };
+        try {
+          localStorage.setItem('nexus_local_profile', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      if (!config.isConfigured || !user) {
         return { error: null };
       }
 
-      if (!user) return { error: 'Not authenticated' };
+      try {
+        const { data: updatedProfile, error: updateErr } = await supabase
+          .from('profiles')
+          .update({
+            ...updates,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', user.id)
+          .select()
+          .maybeSingle();
 
-      const { error: updateErr } = await supabase
-        .from('profiles')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
+        if (updateErr) {
+          console.warn('Profile database update warning:', updateErr);
+          return { error: updateErr.message };
+        }
 
-      if (updateErr) {
-        return { error: updateErr.message };
+        if (updatedProfile) {
+          setProfile(updatedProfile as UserProfile);
+        }
+
+        // Broadcast to social-realtime so all peers see status/presence change instantly
+        try {
+          const socialChannel = supabase.channel('social-realtime');
+          socialChannel
+            .send({
+              type: 'broadcast',
+              event: 'social_update',
+              payload: { userId: user.id, updates },
+            })
+            .catch(() => {});
+        } catch {}
+
+        return { error: null };
+      } catch (err: unknown) {
+        return { error: err instanceof Error ? err.message : 'Failed to update profile' };
       }
-
-      setProfile((prev) => (prev ? { ...prev, ...updates } : null));
-      return { error: null };
     },
     [config.isConfigured, supabase, user]
   );

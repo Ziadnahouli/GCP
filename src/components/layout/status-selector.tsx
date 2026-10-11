@@ -43,22 +43,37 @@ interface StatusSelectorProps {
   currentStatus: UserStatus;
   onSelect: (status: UserStatus) => void;
   onClose: () => void;
+  className?: string;
 }
 
-export function StatusSelector({ currentStatus, onSelect, onClose }: StatusSelectorProps) {
+export function StatusSelector({ currentStatus, onSelect, onClose, className }: StatusSelectorProps) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
   React.useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.status-selector-container')) {
+      const target = e.target as Node;
+      if (containerRef.current && !containerRef.current.contains(target)) {
         onClose();
       }
     };
-    window.addEventListener('mousedown', handleOutsideClick);
-    return () => window.removeEventListener('mousedown', handleOutsideClick);
+    const timer = setTimeout(() => {
+      window.addEventListener('click', handleOutsideClick);
+    }, 50);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('click', handleOutsideClick);
+    };
   }, [onClose]);
 
   return (
-    <div className="status-selector-container absolute bottom-16 left-2 z-50 w-64 rounded-xl bg-card border border-border/80 shadow-2xl p-1.5 backdrop-blur-md animate-in slide-in-from-bottom-2 duration-150">
+    <div
+      ref={containerRef}
+      onClick={(e) => e.stopPropagation()}
+      className={cn(
+        'status-selector-container z-50 w-64 rounded-xl bg-card border border-border/80 shadow-2xl p-1.5 backdrop-blur-md animate-in duration-150',
+        className || 'absolute bottom-16 left-2 slide-in-from-bottom-2'
+      )}
+    >
       <div className="px-2 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase border-b border-border/60 mb-1">
         Change Presence
       </div>

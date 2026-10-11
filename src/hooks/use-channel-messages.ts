@@ -13,6 +13,10 @@ export function useChannelMessages(channelId: string | null) {
   const [messages, setMessages] = React.useState<ChannelMessage[]>([]);
   const channelRef = React.useRef<any>(null);
 
+  const isUUID = React.useMemo(() => {
+    return channelId ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(channelId) : false;
+  }, [channelId]);
+
   const fetchChannelMessages = React.useCallback(async () => {
     if (!channelId) {
       setMessages([]);
@@ -20,8 +24,8 @@ export function useChannelMessages(channelId: string | null) {
     }
 
     try {
-      // 1. Try fetching from Supabase
-      if (user && supabase) {
+      // 1. Try fetching from Supabase only if channelId is a valid UUID
+      if (user && supabase && isUUID) {
         const { data, error } = await supabase
           .from('channel_messages')
           .select(`
@@ -63,7 +67,7 @@ export function useChannelMessages(channelId: string | null) {
     } catch (e) {
       console.warn('Failed to fetch channel messages:', e);
     }
-  }, [channelId, user]);
+  }, [channelId, user, isUUID]);
 
   React.useEffect(() => {
     fetchChannelMessages();
@@ -75,16 +79,6 @@ export function useChannelMessages(channelId: string | null) {
       .channel(`chan-room-${channelId}`, {
         config: { broadcast: { self: false } },
       })
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'channel_messages',
-          filter: `channel_id=eq.${channelId}`,
-        },
-        () => fetchChannelMessages()
-      )
       .on('broadcast', { event: 'new_channel_msg' }, ({ payload }) => {
         if (payload?.message) {
           const incoming = payload.message as ChannelMessage;
@@ -97,15 +91,29 @@ export function useChannelMessages(channelId: string | null) {
             return next;
           });
         }
-        fetchChannelMessages();
-      })
-      .subscribe();
+      });
 
+    if (isUUID) {
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'channel_messages',
+          filter: `channel_id=eq.${channelId}`,
+        },
+        () => fetchChannelMessages()
+      );
+    }
+
+    channel.subscribe();
     channelRef.current = channel;
 
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      fetchChannelMessages();
+      if (isUUID) {
+        fetchChannelMessages();
+      }
     }, 2500);
 
     return () => {
@@ -113,7 +121,7 @@ export function useChannelMessages(channelId: string | null) {
       channelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [channelId, fetchChannelMessages]);
+  }, [channelId, fetchChannelMessages, isUUID]);
 
   const saveMessages = React.useCallback(
     (msgs: ChannelMessage[]) => {

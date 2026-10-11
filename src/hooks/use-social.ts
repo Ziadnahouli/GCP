@@ -12,7 +12,15 @@ export function useSocial() {
   const { toast } = useToast();
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
-  const [friends, setFriends] = React.useState<FriendItem[]>([]);
+  const [friends, setFriends] = React.useState<FriendItem[]>(() => {
+    if (typeof window !== 'undefined' && user?.id) {
+      try {
+        const cached = localStorage.getItem(`nexus_friends_${user.id}`);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return [];
+  });
   const [incomingRequests, setIncomingRequests] = React.useState<FriendRequestItem[]>([]);
   const [outgoingRequests, setOutgoingRequests] = React.useState<FriendRequestItem[]>([]);
   const [blockedUsers, setBlockedUsers] = React.useState<BlockedUserItem[]>([]);
@@ -34,27 +42,52 @@ export function useSocial() {
     try {
       setIsLoading(true);
 
-      // 1. Fetch friendships
+      // 1. Fetch friendships in BOTH directions (user_id = me OR friend_id = me)
       const { data: friendshipsData, error: friendsErr } = await supabase
         .from('friendships')
         .select(`
           id,
+          user_id,
+          friend_id,
           created_at,
           friend:friend_id (
             id, username, display_name, avatar_url, banner_url, banner_color,
             bio, custom_status, status, game_activity, created_at, updated_at
+          ),
+          sender_profile:user_id (
+            id, username, display_name, avatar_url, banner_url, banner_color,
+            bio, custom_status, status, game_activity, created_at, updated_at
           )
         `)
-        .eq('user_id', user.id);
+        .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
 
       if (!friendsErr && friendshipsData) {
-        setFriends(
-          friendshipsData.map((f) => ({
-            id: f.id,
-            created_at: f.created_at,
-            friend: f.friend as unknown as UserProfile,
-          }))
-        );
+        const uniqueFriendsMap = new Map<string, FriendItem>();
+        for (const row of friendshipsData) {
+          const profile =
+            row.user_id === user.id
+              ? (row.friend as unknown as UserProfile)
+              : (row.sender_profile as unknown as UserProfile);
+
+          if (profile && profile.id && profile.id !== user.id) {
+            uniqueFriendsMap.set(profile.id, {
+              id: row.id,
+              created_at: row.created_at,
+              friend: profile,
+            });
+          }
+        }
+        const friendList = Array.from(uniqueFriendsMap.values());
+        setFriends(friendList);
+        try {
+          localStorage.setItem(`nexus_friends_${user.id}`, JSON.stringify(friendList));
+        } catch {}
+      } else if (friendsErr) {
+        console.warn('Friendships query warning:', friendsErr);
+        try {
+          const cached = localStorage.getItem(`nexus_friends_${user.id}`);
+          if (cached) setFriends(JSON.parse(cached));
+        } catch {}
       }
 
       // 2. Fetch incoming requests
@@ -138,9 +171,11 @@ export function useSocial() {
 
     if (!isConfigured || !user) return;
 
-    // Supabase Realtime channel for social changes
+    // Supabase Realtime channel for social changes & peer presence updates
     const channel = supabase
-      .channel('social-realtime')
+      .channel('social-realtime', {
+        config: { broadcast: { self: false } },
+      })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'friend_requests' },
@@ -149,6 +184,11 @@ export function useSocial() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'friendships' },
+        () => fetchSocialData()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
         () => fetchSocialData()
       )
       .on(
@@ -163,11 +203,11 @@ export function useSocial() {
 
     socialChannelRef.current = channel;
 
-    // Auto-sync polling every 15s to ensure incoming requests & status changes stay fresh, pausing when tab is hidden
+    // High-frequency auto-sync polling every 2.5s so presence & friends stay live
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchSocialData();
-    }, 15000);
+    }, 2500);
 
     return () => {
       clearInterval(autoSyncTimer);
@@ -273,11 +313,28 @@ export function useSocial() {
       });
 
       if (error) {
-        // Fallback manual update if RPC is pending
-        await supabase
+        console.warn('accept_friend_request RPC error, running resilient fallback:', error);
+        const { data: req } = await supabase
           .from('friend_requests')
-          .update({ status: 'accepted' })
-          .eq('id', requestId);
+          .select('sender_id, receiver_id')
+          .eq('id', requestId)
+          .maybeSingle();
+
+        if (req) {
+          await supabase
+            .from('friend_requests')
+            .update({ status: 'accepted' })
+            .eq('id', requestId);
+
+          await supabase.from('friendships').upsert([
+            { user_id: req.sender_id, friend_id: req.receiver_id },
+            { user_id: req.receiver_id, friend_id: req.sender_id },
+          ], { onConflict: 'user_id,friend_id', ignoreDuplicates: true });
+
+          await supabase.rpc('create_or_get_direct_conversation', {
+            target_user_id: req.sender_id === user.id ? req.receiver_id : req.sender_id,
+          });
+        }
       }
 
       toast({ title: 'Friend Added', description: 'Friend request accepted!', type: 'success' });

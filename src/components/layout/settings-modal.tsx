@@ -17,7 +17,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
-import { AccentTheme, UserProfile, UserSettings } from '@/lib/types/profile';
+import { AccentTheme, UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -53,6 +53,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [customStatus, setCustomStatus] = React.useState('');
   const [bannerColor, setBannerColor] = React.useState('#7c3aed');
   const [avatarUrl, setAvatarUrl] = React.useState('');
+  const [presenceStatus, setPresenceStatus] = React.useState<UserStatus>('online');
 
   // Settings state
   const [selectedAccent, setSelectedAccent] = React.useState<AccentTheme>('violet');
@@ -71,6 +72,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       setCustomStatus(profile.custom_status || '');
       setBannerColor(profile.banner_color || '#7c3aed');
       setAvatarUrl(profile.avatar_url || '');
+      setPresenceStatus(profile.status || 'online');
     }
     if (settings) {
       setSelectedAccent(settings.accent_color || 'violet');
@@ -92,6 +94,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         custom_status: customStatus.trim(),
         banner_color: bannerColor,
         avatar_url: avatarUrl.trim() || null,
+        status: presenceStatus,
       });
 
       if (error) {
@@ -295,6 +298,35 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       placeholder="ghost_rider"
                       maxLength={30}
                     />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                    Presence Status
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { value: 'online' as UserStatus, label: 'Online', color: 'bg-emerald-500' },
+                      { value: 'idle' as UserStatus, label: 'Idle', color: 'bg-amber-500' },
+                      { value: 'dnd' as UserStatus, label: 'Do Not Disturb', color: 'bg-rose-500' },
+                      { value: 'offline' as UserStatus, label: 'Invisible', color: 'bg-slate-500' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setPresenceStatus(opt.value)}
+                        className={cn(
+                          'flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all text-left',
+                          presenceStatus === opt.value
+                            ? 'border-primary bg-primary/15 text-primary shadow-glow-sm'
+                            : 'border-border/60 bg-surface-default hover:bg-surface-hover text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        <span className={cn('w-2.5 h-2.5 rounded-full shrink-0', opt.color)} />
+                        <span className="truncate">{opt.label}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
 

@@ -19,7 +19,12 @@ import { ChatView } from '@/components/chat/chat-view';
 import { ChannelView } from '@/components/servers/channel-view';
 import { useServers } from '@/hooks/use-servers';
 import { useSocial } from '@/hooks/use-social';
+import { useConversations } from '@/hooks/use-conversations';
 import { useToast } from '@/components/ui/toast';
+
+import { StatusSelector } from '@/components/layout/status-selector';
+import { UserStatus } from '@/lib/types/profile';
+import { cn } from '@/lib/utils';
 
 function HomePageContent() {
   const router = useRouter();
@@ -28,14 +33,36 @@ function HomePageContent() {
   const serverId = searchParams.get('s');
   const channelId = searchParams.get('ch');
 
-  const { profile } = useAuth();
+  const { profile, updateProfile } = useAuth();
   const { servers } = useServers();
   const { friends } = useSocial();
+  const { getOrCreateDirectConversation } = useConversations();
   const { toast } = useToast();
   const [showSettings, setShowSettings] = React.useState(false);
+  const [showPresencePicker, setShowPresencePicker] = React.useState(false);
+
+  const handleStatusChange = async (newStatus: UserStatus) => {
+    const res = await updateProfile({ status: newStatus });
+    if (res?.error) {
+      toast({
+        title: 'Presence Update Failed',
+        description: res.error,
+        type: 'error',
+      });
+    } else {
+      toast({
+        title: 'Status Updated',
+        description: `Presence set to ${newStatus.toUpperCase()}`,
+        type: 'info',
+        duration: 2000,
+      });
+    }
+  };
 
   const onlineFriends = React.useMemo(() => {
-    return friends.filter((f) => f.friend.status === 'online' || f.friend.status === 'idle');
+    return friends.filter(
+      (f) => f.friend.status === 'online' || f.friend.status === 'idle' || f.friend.status === 'dnd'
+    );
   }, [friends]);
 
   const activeServer = React.useMemo(() => {
@@ -83,6 +110,39 @@ function HomePageContent() {
               }}
             >
               <div className="absolute top-2.5 right-3 flex items-center gap-2">
+                {/* Direct Presence Selector Button */}
+                <div className="relative">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5 bg-card/70 backdrop-blur-md border-border/60"
+                    onClick={() => setShowPresencePicker((prev) => !prev)}
+                  >
+                    <span
+                      className={cn(
+                        'w-2 h-2 rounded-full',
+                        profile?.status === 'online'
+                          ? 'bg-emerald-500'
+                          : profile?.status === 'idle'
+                          ? 'bg-amber-500'
+                          : profile?.status === 'dnd'
+                          ? 'bg-rose-500'
+                          : 'bg-slate-500'
+                      )}
+                    />
+                    <span className="capitalize">{profile?.status || 'Online'}</span>
+                  </Button>
+
+                  {showPresencePicker && (
+                    <StatusSelector
+                      currentStatus={profile?.status || 'online'}
+                      onSelect={handleStatusChange}
+                      onClose={() => setShowPresencePicker(false)}
+                      className="absolute top-9 right-0 z-50 slide-in-from-top-2"
+                    />
+                  )}
+                </div>
+
                 <Button
                   size="sm"
                   variant="outline"
@@ -97,14 +157,20 @@ function HomePageContent() {
 
             <div className="px-3 sm:px-5 pb-3 sm:pb-4 pt-0 relative flex items-end justify-between -mt-8 gap-3">
               <div className="flex items-end gap-3.5">
-                <Avatar
-                  src={profile?.avatar_url || null}
-                  name={profile?.display_name || 'Gamer'}
-                  status={profile?.status || 'online'}
-                  showStatus
-                  size="lg"
-                  className="ring-4 ring-card shadow-lg"
-                />
+                <div
+                  className="cursor-pointer"
+                  onClick={() => setShowPresencePicker((prev) => !prev)}
+                  title="Click to change presence"
+                >
+                  <Avatar
+                    src={profile?.avatar_url || null}
+                    name={profile?.display_name || 'Gamer'}
+                    status={profile?.status || 'online'}
+                    showStatus
+                    size="lg"
+                    className="ring-4 ring-card shadow-lg hover:opacity-90 transition-opacity"
+                  />
+                </div>
                 <div className="mb-0.5 min-w-0">
                   <div className="flex items-center gap-2">
                     <h2 className="text-base font-extrabold text-foreground tracking-tight truncate">
@@ -156,19 +222,26 @@ function HomePageContent() {
         </div>
 
         <div className="space-y-2.5">
-          {onlineFriends.length === 0 ? (
+          {friends.length === 0 ? (
             <div className="p-4 rounded-xl border border-dashed border-border/80 bg-surface-default/40 text-center space-y-2">
               <Gamepad2 className="w-7 h-7 text-muted-foreground/60 mx-auto" />
-              <div className="text-xs font-semibold text-foreground">No squadmates online</div>
+              <div className="text-xs font-semibold text-foreground">No squadmates yet</div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
                 Add friends using their @username in the Social Hub to party up and see their gaming activity.
               </p>
             </div>
           ) : (
-            onlineFriends.map(({ friend }) => (
+            (onlineFriends.length > 0 ? onlineFriends : friends).map(({ friend }) => (
               <div
                 key={friend.id}
-                onClick={() => router.push(`/?friend=${friend.id}`)}
+                onClick={async () => {
+                  const { conversationId: convId, error } = await getOrCreateDirectConversation(friend.id);
+                  if (convId) {
+                    router.push(`/?c=${convId}`);
+                  } else if (error) {
+                    toast({ title: 'Chat Error', description: error, type: 'error' });
+                  }
+                }}
                 className="p-3 rounded-xl border border-border/60 bg-surface-default hover:bg-surface-hover/80 transition-all cursor-pointer group"
               >
                 <div className="flex items-center gap-2.5">
@@ -184,7 +257,7 @@ function HomePageContent() {
                       {friend.display_name}
                     </div>
                     <div className="text-[10px] text-muted-foreground font-mono truncate">
-                      @{friend.username}
+                      @{friend.username} • <span className="capitalize">{friend.status}</span>
                     </div>
                   </div>
                 </div>

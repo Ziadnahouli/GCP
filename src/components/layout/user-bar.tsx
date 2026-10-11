@@ -49,13 +49,21 @@ export function UserBar() {
   };
 
   const handleStatusChange = async (newStatus: UserStatus) => {
-    await updateProfile({ status: newStatus });
-    toast({
-      title: 'Status Updated',
-      description: `Presence set to ${newStatus.toUpperCase()}`,
-      type: 'info',
-      duration: 2000,
-    });
+    const res = await updateProfile({ status: newStatus });
+    if (res?.error) {
+      toast({
+        title: 'Presence Update Failed',
+        description: res.error,
+        type: 'error',
+      });
+    } else {
+      toast({
+        title: 'Status Updated',
+        description: `Presence set to ${newStatus.toUpperCase()}`,
+        type: 'info',
+        duration: 2000,
+      });
+    }
   };
 
   return (

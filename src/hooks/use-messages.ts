@@ -19,6 +19,10 @@ export function useMessages(conversationId: string | null) {
 
   const chatChannelRef = React.useRef<any>(null);
 
+  const isUUID = React.useMemo(() => {
+    return conversationId ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId) : false;
+  }, [conversationId]);
+
   // Fetch messages with attachments and reactions
   const fetchMessages = React.useCallback(async (isInitial = false) => {
     if (!conversationId) {
@@ -29,6 +33,18 @@ export function useMessages(conversationId: string | null) {
 
     if (!user) {
       setMessages([]);
+      setIsLoading(false);
+      return;
+    }
+
+    // If conversationId is not a UUID, load from cached messages
+    if (!isUUID) {
+      try {
+        const cached = localStorage.getItem(`nexus_dm_msgs_${conversationId}`);
+        if (cached) {
+          setMessages(JSON.parse(cached));
+        }
+      } catch {}
       setIsLoading(false);
       return;
     }
@@ -52,12 +68,22 @@ export function useMessages(conversationId: string | null) {
         .order('created_at', { ascending: true });
 
       if (msgsErr) {
-        console.error('Error fetching messages:', msgsErr);
+        console.warn('Error fetching messages from database:', msgsErr);
+        try {
+          const cached = localStorage.getItem(`nexus_dm_msgs_${conversationId}`);
+          if (cached) setMessages(JSON.parse(cached));
+        } catch {}
         return;
       }
 
       if (!msgsData || msgsData.length === 0) {
-        setMessages([]);
+        try {
+          const cached = localStorage.getItem(`nexus_dm_msgs_${conversationId}`);
+          if (cached) setMessages(JSON.parse(cached));
+          else setMessages([]);
+        } catch {
+          setMessages([]);
+        }
         return;
       }
 
@@ -126,7 +152,7 @@ export function useMessages(conversationId: string | null) {
     } finally {
       setIsLoading(false);
     }
-  }, [conversationId, user, supabase]);
+  }, [conversationId, user, supabase, isUUID]);
 
   // Realtime channel subscriptions
   React.useEffect(() => {
@@ -276,61 +302,64 @@ export function useMessages(conversationId: string | null) {
     setMessages((prev) => [...prev, optMsg]);
 
     try {
-      // 0. Ensure sender is registered in conversation_members for RLS check
-      try {
-        await supabase.from('conversation_members').upsert(
-          {
-            conversation_id: conversationId,
-            user_id: user.id,
-            role: 'member',
-          },
-          { onConflict: 'conversation_id,user_id', ignoreDuplicates: true }
-        );
-      } catch (cmErr) {
-        console.warn('Membership ensure warning:', cmErr);
+      let confirmedId = `msg-${Date.now()}`;
+
+      // Only attempt database insert if conversationId is a valid UUID
+      if (isUUID) {
+        // 0. Ensure sender is registered in conversation_members for RLS check
+        try {
+          await supabase.from('conversation_members').upsert(
+            {
+              conversation_id: conversationId,
+              user_id: user.id,
+              role: 'member',
+            },
+            { onConflict: 'conversation_id,user_id', ignoreDuplicates: true }
+          );
+        } catch (cmErr) {
+          console.warn('Membership ensure warning:', cmErr);
+        }
+
+        // Sanitize reply_to_id (null if empty, none, or optimistic ID)
+        const cleanReplyId =
+          replyToId && replyToId.trim() !== '' && !replyToId.startsWith('opt-')
+            ? replyToId
+            : null;
+
+        const insertPayload: {
+          conversation_id: string;
+          sender_id: string;
+          content: string;
+          reply_to_id?: string | null;
+        } = {
+          conversation_id: conversationId,
+          sender_id: user.id,
+          content: trimmed,
+        };
+        if (cleanReplyId) {
+          insertPayload.reply_to_id = cleanReplyId;
+        }
+
+        // 1. Insert message with .select('id') (avoiding .single() PGRST116 throw)
+        const { data: msgRows, error: msgErr } = await supabase
+          .from('messages')
+          .insert(insertPayload)
+          .select('id');
+
+        if (msgErr) {
+          console.warn('Database message insert warning:', msgErr);
+        } else if (msgRows?.[0]?.id) {
+          confirmedId = msgRows[0].id;
+        }
       }
 
-      // Sanitize reply_to_id (null if empty, none, or optimistic ID)
-      const cleanReplyId =
-        replyToId && replyToId.trim() !== '' && !replyToId.startsWith('opt-')
-          ? replyToId
-          : null;
-
-      const insertPayload: {
-        conversation_id: string;
-        sender_id: string;
-        content: string;
-        reply_to_id?: string | null;
-      } = {
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: trimmed,
-      };
-      if (cleanReplyId) {
-        insertPayload.reply_to_id = cleanReplyId;
-      }
-
-      // 1. Insert message with .select('id') (avoiding .single() PGRST116 throw)
-      const { data: msgRows, error: msgErr } = await supabase
-        .from('messages')
-        .insert(insertPayload)
-        .select('id');
-
-      if (msgErr) {
-        console.error('Database message insert error:', msgErr);
-        // Rollback optimistic message on error
-        setMessages((prev) => prev.filter((m) => m.id !== optId));
-        return { error: msgErr?.message || 'Failed to send message' };
-      }
-
-      const confirmedId = msgRows?.[0]?.id || `msg-${Date.now()}`;
       const confirmedMsg: Message = {
         ...optMsg,
         id: confirmedId,
       };
 
       // 2. Upload any attachments and insert to message_attachments
-      if (files.length > 0) {
+      if (files.length > 0 && isUUID) {
         for (const file of files) {
           try {
             const uploadRes = await uploadAttachmentFile({
@@ -355,8 +384,14 @@ export function useMessages(conversationId: string | null) {
         }
       }
 
-      // Update optimistic message with confirmed ID
-      setMessages((prev) => prev.map((m) => (m.id === optId ? confirmedMsg : m)));
+      // Update optimistic message with confirmed ID and cache to localStorage
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === optId ? confirmedMsg : m));
+        try {
+          localStorage.setItem(`nexus_dm_msgs_${conversationId}`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
 
       // 3. Broadcast to peers on active channel for instantaneous cross-device delivery
       if (chatChannelRef.current) {

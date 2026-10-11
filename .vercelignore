@@ -1,0 +1,3 @@
+# Ignore desktop Tauri wrapper and tests during Vercel cloud deployments
+desktop/
+tests/

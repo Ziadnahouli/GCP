@@ -173,8 +173,9 @@ export function useServers() {
       .subscribe();
 
     const autoSyncTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchServers();
-    }, 5000);
+    }, 15000);
 
     return () => {
       clearInterval(autoSyncTimer);
@@ -193,7 +194,23 @@ export function useServers() {
 
   const createServer = React.useCallback(
     async (name: string, description?: string, iconUrl?: string) => {
-      const serverId = `server-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const serverId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`;
+      const chan1Id =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `00000000-0000-4000-8001-${Date.now().toString(16).padStart(12, '0')}`;
+      const chan2Id =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `00000000-0000-4000-8002-${Date.now().toString(16).padStart(12, '0')}`;
+      const memberId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `00000000-0000-4000-8003-${Date.now().toString(16).padStart(12, '0')}`;
+
       const newServer: Server = {
         id: serverId,
         name: name.trim(),
@@ -203,7 +220,7 @@ export function useServers() {
         created_at: new Date().toISOString(),
         channels: [
           {
-            id: `chan-${serverId}-gen`,
+            id: chan1Id,
             server_id: serverId,
             name: 'general',
             type: 'text',
@@ -212,7 +229,7 @@ export function useServers() {
             created_at: new Date().toISOString(),
           },
           {
-            id: `chan-${serverId}-voice`,
+            id: chan2Id,
             server_id: serverId,
             name: 'Voice Lounge',
             type: 'voice',
@@ -223,7 +240,7 @@ export function useServers() {
         ],
         members: [
           {
-            id: `mem-${Date.now()}`,
+            id: memberId,
             server_id: serverId,
             user_id: user?.id || 'current-user',
             role: 'owner',
@@ -239,19 +256,24 @@ export function useServers() {
       // Attempt Supabase insert if logged in
       if (user && supabase) {
         try {
-          await supabase.from('servers').insert({
+          const { error: srvErr } = await supabase.from('servers').insert({
             id: newServer.id,
             name: newServer.name,
             description: newServer.description,
             icon_url: newServer.icon_url,
             owner_id: user.id,
           });
-          await supabase.from('server_members').insert({
+          if (srvErr) throw srvErr;
+
+          const { error: memErr } = await supabase.from('server_members').insert({
+            id: memberId,
             server_id: newServer.id,
             user_id: user.id,
             role: 'owner',
           });
-          await supabase.from('channels').insert([
+          if (memErr) throw memErr;
+
+          const { error: chanErr } = await supabase.from('channels').insert([
             {
               id: newServer.channels[0].id,
               server_id: newServer.id,
@@ -268,12 +290,14 @@ export function useServers() {
               position: 1,
             },
           ]);
+          if (chanErr) throw chanErr;
+
           supabase
             .channel('servers-realtime')
             .send({ type: 'broadcast', event: 'servers_update', payload: {} })
             .catch(() => {});
         } catch (e) {
-          console.warn('Supabase server insert failed, local cached:', e);
+          console.error('Supabase server insert failed:', e);
         }
       }
 
@@ -284,7 +308,10 @@ export function useServers() {
 
   const createChannel = React.useCallback(
     async (serverId: string, name: string, type: ChannelType = 'text', topic?: string) => {
-      const channelId = `chan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const channelId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `00000000-0000-4000-8004-${Date.now().toString(16).padStart(12, '0')}`;
       const cleanName = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
 
       const newChannel: Channel = {
@@ -311,7 +338,7 @@ export function useServers() {
 
       if (user && supabase) {
         try {
-          await supabase.from('channels').insert({
+          const { error: chanErr } = await supabase.from('channels').insert({
             id: newChannel.id,
             server_id: serverId,
             name: newChannel.name,
@@ -319,12 +346,14 @@ export function useServers() {
             topic: newChannel.topic,
             position: newChannel.position,
           });
+          if (chanErr) throw chanErr;
+
           supabase
             .channel('servers-realtime')
             .send({ type: 'broadcast', event: 'servers_update', payload: {} })
             .catch(() => {});
         } catch (e) {
-          console.warn('Supabase channel insert failed:', e);
+          console.error('Supabase channel insert failed:', e);
         }
       }
 

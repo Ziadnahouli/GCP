@@ -128,7 +128,7 @@ export function useSocial() {
     } finally {
       setIsLoading(false);
     }
-  }, [isConfigured, user, supabase]);
+  }, [user, supabase]);
 
   // Initial fetch and Realtime subscription
   React.useEffect(() => {
@@ -159,10 +159,11 @@ export function useSocial() {
       })
       .subscribe();
 
-    // Auto-sync polling every 4s to ensure incoming requests & status changes appear without manual page refresh
+    // Auto-sync polling every 15s to ensure incoming requests & status changes stay fresh, pausing when tab is hidden
     const autoSyncTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchSocialData();
-    }, 4000);
+    }, 15000);
 
     return () => {
       clearInterval(autoSyncTimer);

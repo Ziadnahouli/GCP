@@ -110,8 +110,7 @@ export async function uploadAttachmentFile({
       });
 
     if (uploadErr) {
-      // If bucket does not exist or requires public fallback
-      return { storagePath: path, publicUrl: URL.createObjectURL(file), error: null };
+      return { storagePath: null, publicUrl: null, error: uploadErr.message };
     }
 
     const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
@@ -121,8 +120,8 @@ export async function uploadAttachmentFile({
       publicUrl: urlData?.publicUrl || null,
       error: null,
     };
-  } catch {
-    // Local fallback for offline/demo testing
-    return { storagePath: path, publicUrl: URL.createObjectURL(file), error: null };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Storage upload failed';
+    return { storagePath: null, publicUrl: null, error: errorMsg };
   }
 }

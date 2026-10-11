@@ -121,7 +121,7 @@ export function useMessages(conversationId: string | null) {
     } finally {
       setIsLoading(false);
     }
-  }, [conversationId, isConfigured, user, supabase]);
+  }, [conversationId, user, supabase]);
 
   // Realtime channel subscriptions
   React.useEffect(() => {

@@ -3,26 +3,21 @@
 import * as React from 'react';
 import {
   Activity,
-  Wifi,
-  ShieldCheck,
-  Server,
-  Zap,
   Radio,
   ArrowDown,
   ArrowUp,
-  Cpu,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 export interface DiagnosticsStats {
   connectionState: 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
-  rttMs: number;
-  jitterMs: number;
-  packetLossPercent: number;
-  incomingBitrateKbps: number;
-  outgoingBitrateKbps: number;
-  transportPath: 'direct_p2p' | 'relayed_turn' | 'livekit_sfu';
+  rttMs: number | null;
+  jitterMs: number | null;
+  packetLossPercent: number | null;
+  incomingBitrateKbps: number | null;
+  outgoingBitrateKbps: number | null;
+  transportPath: 'direct_p2p' | 'relayed_turn' | 'livekit_sfu' | 'unknown';
   isZeroTierActive?: boolean;
 }
 
@@ -32,19 +27,19 @@ interface NetworkDiagnosticsProps {
 }
 
 export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) {
-  // Default real-time simulated gaming telemetry if live stats not yet fed
   const currentStats: DiagnosticsStats = stats || {
-    connectionState: 'connected',
-    rttMs: 24,
-    jitterMs: 2.1,
-    packetLossPercent: 0.0,
-    incomingBitrateKbps: 384,
-    outgoingBitrateKbps: 128,
-    transportPath: 'direct_p2p',
-    isZeroTierActive: true,
+    connectionState: 'disconnected',
+    rttMs: null,
+    jitterMs: null,
+    packetLossPercent: null,
+    incomingBitrateKbps: null,
+    outgoingBitrateKbps: null,
+    transportPath: 'unknown',
+    isZeroTierActive: false,
   };
 
-  const getLatencyColor = (ms: number) => {
+  const getLatencyColor = (ms: number | null) => {
+    if (ms === null) return 'text-muted-foreground';
     if (ms < 50) return 'text-emerald-400';
     if (ms < 120) return 'text-amber-400';
     return 'text-rose-400';
@@ -70,7 +65,7 @@ export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) 
         <div className="p-2.5 rounded-xl bg-surface-default border border-border/60">
           <div className="text-[10px] text-muted-foreground uppercase font-semibold">Latency / RTT</div>
           <div className={cn('text-base font-black font-mono mt-0.5', getLatencyColor(currentStats.rttMs))}>
-            {currentStats.rttMs} ms
+            {currentStats.rttMs !== null ? `${currentStats.rttMs} ms` : '—'}
           </div>
         </div>
 
@@ -78,7 +73,9 @@ export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) 
         <div className="p-2.5 rounded-xl bg-surface-default border border-border/60">
           <div className="text-[10px] text-muted-foreground uppercase font-semibold">Packet Loss</div>
           <div className="text-base font-black font-mono text-foreground mt-0.5">
-            {currentStats.packetLossPercent.toFixed(1)}%
+            {currentStats.packetLossPercent !== null
+              ? `${currentStats.packetLossPercent.toFixed(1)}%`
+              : '—'}
           </div>
         </div>
 
@@ -86,7 +83,7 @@ export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) 
         <div className="p-2.5 rounded-xl bg-surface-default border border-border/60">
           <div className="text-[10px] text-muted-foreground uppercase font-semibold">Jitter</div>
           <div className="text-base font-black font-mono text-foreground mt-0.5">
-            {currentStats.jitterMs.toFixed(1)} ms
+            {currentStats.jitterMs !== null ? `${currentStats.jitterMs.toFixed(1)} ms` : '—'}
           </div>
         </div>
 
@@ -95,10 +92,12 @@ export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) 
           <div className="text-[10px] text-muted-foreground uppercase font-semibold">Media Path</div>
           <div className="text-[11px] font-bold text-primary mt-1 truncate">
             {currentStats.transportPath === 'direct_p2p'
-              ? 'Direct P2P / LAN'
+              ? 'Direct P2P'
               : currentStats.transportPath === 'livekit_sfu'
               ? 'LiveKit SFU'
-              : 'Relayed TURN'}
+              : currentStats.transportPath === 'relayed_turn'
+              ? 'Relayed TURN'
+              : '—'}
           </div>
         </div>
       </div>
@@ -110,7 +109,9 @@ export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) 
             <ArrowDown className="w-3.5 h-3.5 text-emerald-400" /> Inbound Bitrate
           </span>
           <span className="font-mono font-semibold text-foreground">
-            {currentStats.incomingBitrateKbps} kbps
+            {currentStats.incomingBitrateKbps !== null
+              ? `${currentStats.incomingBitrateKbps} kbps`
+              : '—'}
           </span>
         </div>
         <div className="flex items-center justify-between text-[11px]">
@@ -118,7 +119,9 @@ export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) 
             <ArrowUp className="w-3.5 h-3.5 text-primary" /> Outbound Bitrate
           </span>
           <span className="font-mono font-semibold text-foreground">
-            {currentStats.outgoingBitrateKbps} kbps
+            {currentStats.outgoingBitrateKbps !== null
+              ? `${currentStats.outgoingBitrateKbps} kbps`
+              : '—'}
           </span>
         </div>
       </div>
@@ -129,8 +132,8 @@ export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) 
           <Radio className="w-3.5 h-3.5 text-primary shrink-0" />
           <span className="font-medium text-foreground">ZeroTier LAN Peer Engine</span>
         </div>
-        <Badge variant="subtle" className="text-[9px] uppercase px-1.5 py-0">
-          Active
+        <Badge variant={currentStats.isZeroTierActive ? 'success' : 'outline'} className="text-[9px] uppercase px-1.5 py-0">
+          {currentStats.isZeroTierActive ? 'Active' : 'Desktop Required'}
         </Badge>
       </div>
 

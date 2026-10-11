@@ -96,7 +96,7 @@ export function useConversations() {
     } finally {
       setIsLoading(false);
     }
-  }, [isConfigured, user, supabase]);
+  }, [user, supabase]);
 
   React.useEffect(() => {
     fetchConversations();

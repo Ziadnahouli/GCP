@@ -88,8 +88,9 @@ export function useChannelMessages(channelId: string | null) {
       .subscribe();
 
     const autoSyncTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchChannelMessages();
-    }, 4000);
+    }, 10000);
 
     return () => {
       clearInterval(autoSyncTimer);
@@ -115,8 +116,13 @@ export function useChannelMessages(channelId: string | null) {
       if (!channelId || !content.trim()) return;
 
       const trimmed = content.trim();
+      const messageId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `00000000-0000-4000-8005-${Date.now().toString(16).padStart(12, '0')}`;
+
       const newMsg: ChannelMessage = {
-        id: `cmsg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        id: messageId,
         channel_id: channelId,
         user_id: user?.id || 'current-user',
         content: trimmed,
@@ -144,12 +150,13 @@ export function useChannelMessages(channelId: string | null) {
 
       if (user && supabase) {
         try {
-          await supabase.from('channel_messages').insert({
+          const { error: msgErr } = await supabase.from('channel_messages').insert({
             id: newMsg.id,
             channel_id: channelId,
             user_id: user.id,
             content: newMsg.content,
           });
+          if (msgErr) throw msgErr;
 
           // Broadcast to server peers
           supabase
@@ -161,7 +168,7 @@ export function useChannelMessages(channelId: string | null) {
             })
             .catch(() => {});
         } catch (e) {
-          console.warn('Supabase channel message insert failed:', e);
+          console.error('Supabase channel message insert failed:', e);
         }
       }
     },

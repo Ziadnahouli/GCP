@@ -130,6 +130,9 @@ In your [Supabase Dashboard SQL Editor](https://supabase.com/dashboard/project/o
 2. Execute `00002_social_and_messaging_rls.sql` (if not already done).
 3. Execute `00003_attachments_and_reactions.sql` (for attachments and reactions).
 4. Execute `00004_servers_and_channels.sql` (for servers, channels, and roles).
+5. Execute `00005_fix_rls_recursion.sql` (resolves recursive RLS subquery locks).
+6. Execute `00006_realtime_replica_identity.sql` (configures replica identity for Realtime events).
+7. Execute `00007_storage_buckets_and_call_sessions_rls.sql` (creates storage buckets and call sessions RLS).
 
 ### 3. Run Development Server
 ```bash

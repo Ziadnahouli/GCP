@@ -3,10 +3,19 @@ import { AccessToken } from 'livekit-server-sdk';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
-const tokenRequestSchema = z.object({
-  conversationId: z.string().min(1),
-  roomName: z.string().min(1),
-});
+const tokenRequestSchema = z
+  .object({
+    conversationId: z.string().min(1, { message: 'Conversation ID required' }),
+    roomName: z
+      .string()
+      .min(1)
+      .regex(/^nexus-room-[a-zA-Z0-9_-]+$/, {
+        message: 'Invalid room name format',
+      }),
+  })
+  .refine((data) => data.roomName === `nexus-room-${data.conversationId}`, {
+    message: 'roomName must strictly match conversation room identifier',
+  });
 
 export async function POST(request: Request) {
   try {

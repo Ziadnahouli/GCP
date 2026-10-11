@@ -7,7 +7,15 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
 import { soundboardEngine, SoundboardClip } from '@/lib/soundboard/audio-engine';
-import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
+import {
+  DEFAULT_RTC_CONFIG,
+  cleanIceCandidate,
+  getLocalZeroTierIp,
+  getPeerZeroTierIp,
+  setPeerZeroTierIp,
+  unmaskCandidate,
+  synthesizeZeroTierCandidate,
+} from '@/lib/webrtc/ice-config';
 
 export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_call' | 'ended';
 
@@ -28,6 +36,7 @@ export interface IncomingCallData {
   conversationId: string;
   isVideo: boolean;
   sdp: RTCSessionDescriptionInit;
+  callerZeroTierIp?: string | null;
 }
 
 interface CallContextType {
@@ -54,6 +63,8 @@ interface CallContextType {
   broadcastSoundboardClip: (clip: SoundboardClip) => void;
   isNoiseSuppressionEnabled: boolean;
   toggleNoiseSuppression: () => void;
+  peerZeroTierIp: string | null;
+  setPeerZeroTierDirectIp: (ip: string) => void;
 }
 
 export const CallContext = React.createContext<CallContextType | null>(null);
@@ -155,6 +166,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const outboundQueueRef = React.useRef<Map<string, Array<{ event: string; payload: unknown }>>>(new Map());
   const roomQueueRef = React.useRef<Array<{ event: string; payload: unknown }>>([]);
   const remoteAudioElementRef = React.useRef<HTMLAudioElement | null>(null);
+
+  // ZeroTier Virtual LAN IP states
+  const [peerZeroTierIp, setPeerZeroTierIpState] = React.useState<string | null>(getPeerZeroTierIp());
+  const peerZeroTierIpRef = React.useRef<string | null>(getPeerZeroTierIp());
 
   // ICE candidates buffering and deduplication
   const localIceCandidatesRef = React.useRef<RTCIceCandidateInit[]>([]);
@@ -794,7 +809,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return null;
   };
 
-  // Helper to add a remote ICE candidate cleanly with deduplication & cleaning
+  // Helper to add a remote ICE candidate cleanly with ZeroTier unmasking & deduplication
   const applyRemoteCandidate = React.useCallback(async (rawCandidate: RTCIceCandidateInit) => {
     const pc = pcRef.current;
     if (!pc || !rawCandidate) return;
@@ -802,6 +817,32 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const candidate = cleanIceCandidate(rawCandidate);
     if (!candidate) return;
 
+    // 1. If candidate contains .local and remote ZeroTier IP is known, unmask and inject direct route
+    const targetZeroTierIp = peerZeroTierIpRef.current || getPeerZeroTierIp();
+    if (targetZeroTierIp && candidate.candidate && candidate.candidate.includes('.local')) {
+      const unmasked = unmaskCandidate(candidate, targetZeroTierIp);
+      if (unmasked) {
+        const unmaskedKey = JSON.stringify({
+          candidate: unmasked.candidate,
+          sdpMid: unmasked.sdpMid,
+          sdpMLineIndex: unmasked.sdpMLineIndex,
+        });
+        if (!seenCandidatesRef.current.has(unmaskedKey)) {
+          seenCandidatesRef.current.add(unmaskedKey);
+          try {
+            if (pc.remoteDescription && pc.remoteDescription.type) {
+              await pc.addIceCandidate(new RTCIceCandidate(unmasked));
+            } else {
+              pendingRemoteCandidatesRef.current.push(unmasked);
+            }
+          } catch (e) {
+            console.warn('[CallZeroTier] Error applying unmasked candidate:', e);
+          }
+        }
+      }
+    }
+
+    // 2. Also register standard candidate (deduplicated)
     const candStr = JSON.stringify({
       candidate: candidate.candidate,
       sdpMid: candidate.sdpMid,
@@ -844,9 +885,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     try {
       console.log('[CallNAT] Initiating WebRTC ICE restart & relay candidate gathering...');
+      // Clear previously seen candidates so restart candidates are not discarded as duplicates
+      seenCandidatesRef.current.clear();
+      localIceCandidatesRef.current = [];
+      pendingRemoteCandidatesRef.current = [];
+
       toast({
         title: 'Optimizing Call Connection',
-        description: 'Bypassing strict router NAT/firewall via high-availability TURN relay...',
+        description: 'Re-routing candidate pairs & ZeroTier direct tunnels...',
         type: 'info',
         duration: 3500,
       });
@@ -859,9 +905,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       await pc.setLocalDescription(offer);
 
       const targetId = peerUserId || incomingCall?.callerId;
+      const localZtIp = getLocalZeroTierIp();
       const payload = {
         sdp: offer,
         senderId: user?.id,
+        senderZeroTierIp: localZtIp,
         conversationId: activeConversationId,
       };
 
@@ -877,6 +925,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }, 4000);
     }
   }, [peerUserId, incomingCall?.callerId, user?.id, activeConversationId, sendSignalToRoom, sendSignalToUser, toast]);
+
+  // Manually configure squadmate's ZeroTier IP for immediate direct routing
+  const setPeerZeroTierDirectIp = React.useCallback(
+    (ip: string) => {
+      const trimmed = ip.trim();
+      if (!trimmed) return;
+      setPeerZeroTierIp(trimmed);
+      peerZeroTierIpRef.current = trimmed;
+      setPeerZeroTierIpState(trimmed);
+      toast({
+        title: 'Squadmate ZeroTier IP Configured',
+        description: `Direct routing to ${trimmed}. Restarting ICE...`,
+        type: 'success',
+      });
+      seenCandidatesRef.current.clear();
+      restartIceConnection();
+    },
+    [restartIceConnection, toast]
+  );
 
   // Helper to apply incoming answer SDP
   const applyAnswerSdp = React.useCallback(
@@ -930,6 +997,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     myChannel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
         if (!payload || payload.callerId === user.id) return;
+        if (payload.callerZeroTierIp) {
+          peerZeroTierIpRef.current = payload.callerZeroTierIp;
+          setPeerZeroTierIpState(payload.callerZeroTierIp);
+          setPeerZeroTierIp(payload.callerZeroTierIp);
+        }
         setIncomingCall(payload as IncomingCallData);
         setCallStatus('incoming_ringing');
 
@@ -941,11 +1013,20 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         ringtoneRef.current = player;
       })
       .on('broadcast', { event: 'call_answer' }, async ({ payload }) => {
+        if (payload?.calleeZeroTierIp) {
+          peerZeroTierIpRef.current = payload.calleeZeroTierIp;
+          setPeerZeroTierIpState(payload.calleeZeroTierIp);
+          setPeerZeroTierIp(payload.calleeZeroTierIp);
+        }
         if (payload?.sdp) {
           await applyAnswerSdp(payload.sdp);
         }
       })
       .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
+        if (payload?.senderZeroTierIp) {
+          peerZeroTierIpRef.current = payload.senderZeroTierIp;
+          setPeerZeroTierIpState(payload.senderZeroTierIp);
+        }
         if (payload?.candidate && payload.senderId !== user.id) {
           await applyRemoteCandidate(payload.candidate);
         }
@@ -977,15 +1058,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (!pc) return;
         try {
           console.log('[CallNAT] Received remote ICE restart offer in mailbox, creating answer...');
+          if (payload.senderZeroTierIp) {
+            peerZeroTierIpRef.current = payload.senderZeroTierIp;
+            setPeerZeroTierIpState(payload.senderZeroTierIp);
+            setPeerZeroTierIp(payload.senderZeroTierIp);
+          }
+          seenCandidatesRef.current.clear();
+          localIceCandidatesRef.current = [];
+          pendingRemoteCandidatesRef.current = [];
+
           await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
           await drainPendingRemoteCandidates();
 
           const restartAns = await pc.createAnswer();
           await pc.setLocalDescription(restartAns);
 
+          const localZtIp = getLocalZeroTierIp();
           const ansPayload = {
             sdp: restartAns,
             senderId: user.id,
+            senderZeroTierIp: localZtIp,
             conversationId: activeConversationId,
           };
           sendSignalToRoom('ice_restart_answer', ansPayload);
@@ -1001,6 +1093,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const pc = pcRef.current;
         if (!pc) return;
         try {
+          if (payload.senderZeroTierIp) {
+            peerZeroTierIpRef.current = payload.senderZeroTierIp;
+            setPeerZeroTierIpState(payload.senderZeroTierIp);
+            setPeerZeroTierIp(payload.senderZeroTierIp);
+          }
           if (pc.signalingState === 'have-local-offer') {
             await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             await drainPendingRemoteCandidates();
@@ -1167,15 +1264,42 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Buffer and broadcast cleaned ICE candidates
+    // Buffer, unmask and broadcast cleaned ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         const cleaned = cleanIceCandidate(event.candidate.toJSON());
         if (cleaned) {
           localIceCandidatesRef.current.push(cleaned);
 
-          sendSignalToRoom('ice_candidate', { candidate: cleaned, senderId: user.id });
-          sendSignalToUser(recipientId, 'ice_candidate', { candidate: cleaned, senderId: user.id });
+          const localZtIp = getLocalZeroTierIp();
+          sendSignalToRoom('ice_candidate', {
+            candidate: cleaned,
+            senderId: user.id,
+            senderZeroTierIp: localZtIp,
+          });
+          sendSignalToUser(recipientId, 'ice_candidate', {
+            candidate: cleaned,
+            senderId: user.id,
+            senderZeroTierIp: localZtIp,
+          });
+
+          // If local ZeroTier IP is present, synthesize explicit direct route candidate
+          if (localZtIp) {
+            const synth = synthesizeZeroTierCandidate(cleaned, localZtIp);
+            if (synth) {
+              localIceCandidatesRef.current.push(synth);
+              sendSignalToRoom('ice_candidate', {
+                candidate: synth,
+                senderId: user.id,
+                senderZeroTierIp: localZtIp,
+              });
+              sendSignalToUser(recipientId, 'ice_candidate', {
+                candidate: synth,
+                senderId: user.id,
+                senderZeroTierIp: localZtIp,
+              });
+            }
+          }
         }
       }
     };
@@ -1186,11 +1310,20 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     roomChannel
       .on('broadcast', { event: 'call_answer' }, async ({ payload }) => {
+        if (payload?.calleeZeroTierIp) {
+          peerZeroTierIpRef.current = payload.calleeZeroTierIp;
+          setPeerZeroTierIpState(payload.calleeZeroTierIp);
+          setPeerZeroTierIp(payload.calleeZeroTierIp);
+        }
         if (payload?.sdp) {
           await applyAnswerSdp(payload.sdp);
         }
       })
       .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
+        if (payload?.senderZeroTierIp) {
+          peerZeroTierIpRef.current = payload.senderZeroTierIp;
+          setPeerZeroTierIpState(payload.senderZeroTierIp);
+        }
         if (payload?.candidate && payload.senderId !== user.id) {
           await applyRemoteCandidate(payload.candidate);
         }
@@ -1201,15 +1334,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (!activePc) return;
         try {
           console.log('[CallNAT] Received remote ICE restart offer in caller room, answering...');
+          if (payload.senderZeroTierIp) {
+            peerZeroTierIpRef.current = payload.senderZeroTierIp;
+            setPeerZeroTierIpState(payload.senderZeroTierIp);
+            setPeerZeroTierIp(payload.senderZeroTierIp);
+          }
+          seenCandidatesRef.current.clear();
+          localIceCandidatesRef.current = [];
+          pendingRemoteCandidatesRef.current = [];
+
           await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
           await drainPendingRemoteCandidates();
 
           const restartAns = await activePc.createAnswer();
           await activePc.setLocalDescription(restartAns);
 
+          const localZtIp = getLocalZeroTierIp();
           const ansPayload = {
             sdp: restartAns,
             senderId: user.id,
+            senderZeroTierIp: localZtIp,
             conversationId,
           };
           sendSignalToRoom('ice_restart_answer', ansPayload);
@@ -1223,6 +1367,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const activePc = pcRef.current;
         if (!activePc) return;
         try {
+          if (payload.senderZeroTierIp) {
+            peerZeroTierIpRef.current = payload.senderZeroTierIp;
+            setPeerZeroTierIpState(payload.senderZeroTierIp);
+            setPeerZeroTierIp(payload.senderZeroTierIp);
+          }
           if (activePc.signalingState === 'have-local-offer') {
             await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             await drainPendingRemoteCandidates();
@@ -1272,6 +1421,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               conversationId,
               isVideo: video,
               sdp: offer,
+              callerZeroTierIp: getLocalZeroTierIp(),
             };
 
             // Notify recipient directly via persistent user mailbox
@@ -1431,8 +1581,34 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (cleaned) {
           localIceCandidatesRef.current.push(cleaned);
 
-          sendSignalToRoom('ice_candidate', { candidate: cleaned, senderId: user.id });
-          sendSignalToUser(callerId, 'ice_candidate', { candidate: cleaned, senderId: user.id });
+          const localZtIp = getLocalZeroTierIp();
+          sendSignalToRoom('ice_candidate', {
+            candidate: cleaned,
+            senderId: user.id,
+            senderZeroTierIp: localZtIp,
+          });
+          sendSignalToUser(callerId, 'ice_candidate', {
+            candidate: cleaned,
+            senderId: user.id,
+            senderZeroTierIp: localZtIp,
+          });
+
+          if (localZtIp) {
+            const synth = synthesizeZeroTierCandidate(cleaned, localZtIp);
+            if (synth) {
+              localIceCandidatesRef.current.push(synth);
+              sendSignalToRoom('ice_candidate', {
+                candidate: synth,
+                senderId: user.id,
+                senderZeroTierIp: localZtIp,
+              });
+              sendSignalToUser(callerId, 'ice_candidate', {
+                candidate: synth,
+                senderId: user.id,
+                senderZeroTierIp: localZtIp,
+              });
+            }
+          }
         }
       }
     };
@@ -1443,6 +1619,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     roomChannel
       .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
+        if (payload?.senderZeroTierIp) {
+          peerZeroTierIpRef.current = payload.senderZeroTierIp;
+          setPeerZeroTierIpState(payload.senderZeroTierIp);
+        }
         if (payload?.candidate && payload.senderId !== user.id) {
           await applyRemoteCandidate(payload.candidate);
         }
@@ -1453,15 +1633,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (!activePc) return;
         try {
           console.log('[CallNAT] Received remote ICE restart offer in callee room, answering...');
+          if (payload.senderZeroTierIp) {
+            peerZeroTierIpRef.current = payload.senderZeroTierIp;
+            setPeerZeroTierIpState(payload.senderZeroTierIp);
+            setPeerZeroTierIp(payload.senderZeroTierIp);
+          }
+          seenCandidatesRef.current.clear();
+          localIceCandidatesRef.current = [];
+          pendingRemoteCandidatesRef.current = [];
+
           await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
           await drainPendingRemoteCandidates();
 
           const restartAns = await activePc.createAnswer();
           await activePc.setLocalDescription(restartAns);
 
+          const localZtIp = getLocalZeroTierIp();
           const ansPayload = {
             sdp: restartAns,
             senderId: user.id,
+            senderZeroTierIp: localZtIp,
             conversationId,
           };
           sendSignalToRoom('ice_restart_answer', ansPayload);
@@ -1475,6 +1666,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const activePc = pcRef.current;
         if (!activePc) return;
         try {
+          if (payload.senderZeroTierIp) {
+            peerZeroTierIpRef.current = payload.senderZeroTierIp;
+            setPeerZeroTierIpState(payload.senderZeroTierIp);
+            setPeerZeroTierIp(payload.senderZeroTierIp);
+          }
           if (activePc.signalingState === 'have-local-offer') {
             await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             await drainPendingRemoteCandidates();
@@ -1514,10 +1710,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
 
+            const localZtIp = getLocalZeroTierIp();
             const answerPayload = {
               sdp: answer,
               conversationId,
               calleeId: user.id,
+              calleeZeroTierIp: localZtIp,
             };
 
             // Broadcast answer on room channel
@@ -1532,8 +1730,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
             // Flush all gathered local candidates to room & caller
             localIceCandidatesRef.current.forEach((candidate) => {
-              sendSignalToRoom('ice_candidate', { candidate, senderId: user.id });
-              sendSignalToUser(callerId, 'ice_candidate', { candidate, senderId: user.id });
+              sendSignalToRoom('ice_candidate', { candidate, senderId: user.id, senderZeroTierIp: localZtIp });
+              sendSignalToUser(callerId, 'ice_candidate', { candidate, senderId: user.id, senderZeroTierIp: localZtIp });
             });
           } catch (e) {
             console.warn('[CallSignaling] Error creating answer:', e);
@@ -1825,6 +2023,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         broadcastSoundboardClip,
         isNoiseSuppressionEnabled,
         toggleNoiseSuppression,
+        peerZeroTierIp,
+        setPeerZeroTierDirectIp,
       }}
     >
       {children}

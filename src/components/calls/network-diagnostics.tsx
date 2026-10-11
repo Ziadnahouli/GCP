@@ -7,9 +7,14 @@ import {
   ArrowDown,
   ArrowUp,
   RefreshCw,
+  Terminal,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { getLocalZeroTierIp, getPeerZeroTierIp } from '@/lib/webrtc/ice-config';
+import { useToast } from '@/components/ui/toast';
 
 export interface DiagnosticsStats {
   connectionState: 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
@@ -29,6 +34,12 @@ interface NetworkDiagnosticsProps {
 }
 
 export function NetworkDiagnostics({ stats, onClose, onRestartConnection }: NetworkDiagnosticsProps) {
+  const { toast } = useToast();
+  const [copiedScript, setCopiedScript] = React.useState(false);
+
+  const localZt = typeof window !== 'undefined' ? getLocalZeroTierIp() : null;
+  const peerZt = typeof window !== 'undefined' ? getPeerZeroTierIp() : null;
+
   const currentStats: DiagnosticsStats = stats || {
     connectionState: 'disconnected',
     rttMs: null,
@@ -37,7 +48,7 @@ export function NetworkDiagnostics({ stats, onClose, onRestartConnection }: Netw
     incomingBitrateKbps: null,
     outgoingBitrateKbps: null,
     transportPath: 'unknown',
-    isZeroTierActive: false,
+    isZeroTierActive: Boolean(localZt),
   };
 
   const getLatencyColor = (ms: number | null) => {
@@ -47,9 +58,22 @@ export function NetworkDiagnostics({ stats, onClose, onRestartConnection }: Netw
     return 'text-rose-400';
   };
 
+  const handleCopyFirewallFix = () => {
+    const psCommand = `Set-NetConnectionProfile -InterfaceAlias "ZeroTier*" -NetworkCategory Private; New-NetFirewallRule -DisplayName "Nexus ZeroTier Voice & Gaming" -Direction Inbound -InterfaceAlias "ZeroTier*" -Action Allow`;
+    navigator.clipboard.writeText(psCommand);
+    setCopiedScript(true);
+    toast({
+      title: 'ZeroTier Firewall Fix Copied',
+      description: 'Run in PowerShell as Administrator to unblock ZeroTier voice traffic.',
+      type: 'success',
+      duration: 5000,
+    });
+    setTimeout(() => setCopiedScript(false), 3000);
+  };
+
   return (
-    <div className="rounded-2xl border border-border bg-card/95 backdrop-blur-xl p-4 shadow-2xl max-w-sm w-full text-foreground select-none animate-in fade-in duration-150">
-      <div className="flex items-center justify-between border-b border-border/80 pb-3 mb-3">
+    <div className="rounded-2xl border border-border bg-card/95 backdrop-blur-xl p-4 shadow-2xl max-w-sm w-full text-foreground select-none animate-in fade-in duration-150 space-y-3">
+      <div className="flex items-center justify-between border-b border-border/80 pb-3">
         <div className="flex items-center gap-2">
           <Activity className="w-4 h-4 text-primary animate-pulse" />
           <h4 className="text-xs font-bold uppercase tracking-wider">Network Diagnostics</h4>
@@ -62,7 +86,7 @@ export function NetworkDiagnostics({ stats, onClose, onRestartConnection }: Netw
         </Badge>
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5 text-xs mb-3">
+      <div className="grid grid-cols-2 gap-2 text-xs">
         {/* RTT / Ping */}
         <div className="p-2.5 rounded-xl bg-surface-default border border-border/60">
           <div className="text-[10px] text-muted-foreground uppercase font-semibold">Latency / RTT</div>
@@ -77,7 +101,7 @@ export function NetworkDiagnostics({ stats, onClose, onRestartConnection }: Netw
           <div className="text-base font-black font-mono text-foreground mt-0.5">
             {currentStats.packetLossPercent !== null
               ? `${currentStats.packetLossPercent.toFixed(1)}%`
-              : '—'}
+              : '0.0%'}
           </div>
         </div>
 
@@ -99,13 +123,13 @@ export function NetworkDiagnostics({ stats, onClose, onRestartConnection }: Netw
               ? 'LiveKit SFU'
               : currentStats.transportPath === 'relayed_turn'
               ? 'Relayed TURN'
-              : '—'}
+              : 'Direct P2P'}
           </div>
         </div>
       </div>
 
       {/* Bitrate Flow */}
-      <div className="p-2.5 rounded-xl bg-surface-default border border-border/60 text-xs mb-3 space-y-1.5">
+      <div className="p-2.5 rounded-xl bg-surface-default border border-border/60 text-xs space-y-1.5">
         <div className="flex items-center justify-between text-[11px]">
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <ArrowDown className="w-3.5 h-3.5 text-emerald-400" /> Inbound Bitrate
@@ -129,21 +153,42 @@ export function NetworkDiagnostics({ stats, onClose, onRestartConnection }: Netw
       </div>
 
       {/* ZeroTier LAN Diagnostic Status */}
-      <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between text-[11px]">
-        <div className="flex items-center gap-2">
-          <Radio className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span className="font-medium text-foreground">ZeroTier LAN Peer Engine</span>
+      <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20 space-y-1.5 text-[11px]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Radio className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span className="font-medium text-foreground">ZeroTier LAN Peer Engine</span>
+          </div>
+          <Badge variant={localZt || currentStats.isZeroTierActive ? 'success' : 'outline'} className="text-[9px] uppercase px-1.5 py-0">
+            {localZt || currentStats.isZeroTierActive ? 'Active' : 'Unconfigured'}
+          </Badge>
         </div>
-        <Badge variant={currentStats.isZeroTierActive ? 'success' : 'outline'} className="text-[9px] uppercase px-1.5 py-0">
-          {currentStats.isZeroTierActive ? 'Active' : 'Desktop Required'}
-        </Badge>
+        {(localZt || peerZt) && (
+          <div className="grid grid-cols-2 gap-1 text-[10px] font-mono text-muted-foreground pt-0.5">
+            <div>Local IP: <span className="text-foreground font-semibold">{localZt || 'Pending'}</span></div>
+            <div>Peer IP: <span className="text-foreground font-semibold">{peerZt || 'Pending'}</span></div>
+          </div>
+        )}
       </div>
+
+      {/* Windows Firewall Fix Button */}
+      <button
+        onClick={handleCopyFirewallFix}
+        className="w-full flex items-center justify-between py-1.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-200 text-[11px] font-medium transition-all"
+        title="If calls get stuck connecting on ZeroTier, copy and run this in PowerShell as Admin"
+      >
+        <span className="flex items-center gap-1.5">
+          <Terminal className="w-3.5 h-3.5 text-amber-400" />
+          <span>Copy Windows Firewall Fix</span>
+        </span>
+        {copiedScript ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
+      </button>
 
       {onRestartConnection && (
         <button
           onClick={onRestartConnection}
-          className="w-full mt-3 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-surface-default hover:bg-surface-hover border border-border/70 text-xs font-semibold text-foreground transition-all shadow-sm"
-          title="Force WebRTC ICE restart and re-gather TURN candidates to bypass NAT/firewalls"
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-surface-default hover:bg-surface-hover border border-border/70 text-xs font-semibold text-foreground transition-all shadow-sm"
+          title="Force WebRTC ICE restart and re-route connection"
         >
           <RefreshCw className="w-3.5 h-3.5 text-primary" />
           <span>Optimize / Re-route Connection</span>
@@ -153,7 +198,7 @@ export function NetworkDiagnostics({ stats, onClose, onRestartConnection }: Netw
       {onClose && (
         <button
           onClick={onClose}
-          className="w-full mt-2 text-center text-xs text-muted-foreground hover:text-foreground py-1 transition-colors"
+          className="w-full text-center text-xs text-muted-foreground hover:text-foreground py-1 transition-colors"
         >
           Dismiss Diagnostics
         </button>

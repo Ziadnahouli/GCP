@@ -15,6 +15,9 @@ import {
   Gamepad2,
   X,
   ArrowLeft,
+  Loader2,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Server, Channel } from '@/lib/types/server';
@@ -24,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/toast';
 
 interface ChannelViewProps {
   server: Server;
@@ -32,8 +36,10 @@ interface ChannelViewProps {
 
 export function ChannelView({ server, channel }: ChannelViewProps) {
   const router = useRouter();
-  const { messages, sendMessage } = useChannelMessages(channel.id);
+  const { messages, sendMessage, retryMessage } = useChannelMessages(channel.id);
+  const { toast } = useToast();
   const [inputText, setInputText] = React.useState('');
+  const [isSending, setIsSending] = React.useState(false);
   const [showMembers, setShowMembers] = React.useState(true);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -44,11 +50,33 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
-  const handleSend = (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!inputText.trim()) return;
-    sendMessage(inputText.trim());
-    setInputText('');
+    const content = inputText.trim();
+    if (!content || isSending) return;
+
+    setIsSending(true);
+    try {
+      const res = await sendMessage(content);
+      if (res?.error) {
+        toast({
+          title: 'Channel Message Failed',
+          description: res.error,
+          type: 'error',
+        });
+        // Preserves the draft in inputText
+      } else {
+        setInputText('');
+      }
+    } catch (err: unknown) {
+      toast({
+        title: 'Error Sending',
+        description: err instanceof Error ? err.message : 'Failed to send message',
+        type: 'error',
+      });
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -215,6 +243,28 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         minute: '2-digit',
                       })}
                     </span>
+
+                    {msg.status === 'sending' && (
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
+                        <Loader2 className="w-2.5 h-2.5 animate-spin text-primary" />
+                        <span>sending...</span>
+                      </span>
+                    )}
+
+                    {msg.status === 'failed' && (
+                      <span className="flex items-center gap-1.5 text-[10px] text-destructive font-mono">
+                        <AlertCircle className="w-3 h-3" />
+                        <span>failed</span>
+                        <button
+                          type="button"
+                          onClick={() => retryMessage(msg.id)}
+                          className="flex items-center gap-0.5 text-[10px] text-primary hover:underline ml-1"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          Retry
+                        </button>
+                      </span>
+                    )}
                   </div>
 
                   <p className="text-xs text-foreground/90 mt-1 leading-relaxed break-words">
@@ -254,10 +304,14 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             <Button
               type="submit"
               size="sm"
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() || isSending}
               className="h-8 w-8 p-0 rounded-xl shrink-0"
             >
-              <Send className="w-3.5 h-3.5" />
+              {isSending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Send className="w-3.5 h-3.5" />
+              )}
             </Button>
           </form>
         </div>

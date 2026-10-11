@@ -9,16 +9,16 @@ const STORAGE_KEY = 'nexus_gaming_servers_store';
 
 const DEFAULT_SERVERS: Server[] = [
   {
-    id: 'server-tsa',
+    id: '00000000-0000-0000-0000-000000000001',
     name: 'Tactical Squad Alpha',
     description: 'Competitive tactical FPS squad & scrims headquarters.',
     icon_url: null,
-    owner_id: 'system',
+    owner_id: '00000000-0000-0000-0000-000000000000',
     created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
     channels: [
       {
-        id: 'chan-tsa-gen',
-        server_id: 'server-tsa',
+        id: '00000000-0000-0000-0001-000000000001',
+        server_id: '00000000-0000-0000-0000-000000000001',
         name: 'general',
         type: 'text',
         topic: 'General chatter & gaming discussions.',
@@ -26,8 +26,8 @@ const DEFAULT_SERVERS: Server[] = [
         created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
       },
       {
-        id: 'chan-tsa-strat',
-        server_id: 'server-tsa',
+        id: '00000000-0000-0000-0001-000000000002',
+        server_id: '00000000-0000-0000-0000-000000000001',
         name: 'tactics-and-strats',
         type: 'text',
         topic: 'Lineups, execute timings, and map callouts.',
@@ -35,8 +35,8 @@ const DEFAULT_SERVERS: Server[] = [
         created_at: new Date(Date.now() - 86400000 * 25).toISOString(),
       },
       {
-        id: 'chan-tsa-clips',
-        server_id: 'server-tsa',
+        id: '00000000-0000-0000-0001-000000000003',
+        server_id: '00000000-0000-0000-0000-000000000001',
         name: 'highlights-and-clips',
         type: 'text',
         topic: 'Ace clips, funny moments, and plays of the game.',
@@ -44,8 +44,8 @@ const DEFAULT_SERVERS: Server[] = [
         created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
       },
       {
-        id: 'chan-tsa-voice1',
-        server_id: 'server-tsa',
+        id: '00000000-0000-0000-0001-000000000004',
+        server_id: '00000000-0000-0000-0000-000000000001',
         name: 'Squad Lounge 1',
         type: 'voice',
         topic: 'Casual hangout voice room.',
@@ -53,8 +53,8 @@ const DEFAULT_SERVERS: Server[] = [
         created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
       },
       {
-        id: 'chan-tsa-voice2',
-        server_id: 'server-tsa',
+        id: '00000000-0000-0000-0001-000000000005',
+        server_id: '00000000-0000-0000-0000-000000000001',
         name: 'Competitive Scrims',
         type: 'voice',
         topic: 'Ranked scrim comms only.',
@@ -65,16 +65,16 @@ const DEFAULT_SERVERS: Server[] = [
     members: [],
   },
   {
-    id: 'server-crg',
+    id: '00000000-0000-0000-0000-000000000002',
     name: 'Cyber Ranked Grinders',
     description: 'High-ELO competitive matchmaking and aim lab analysis.',
     icon_url: null,
-    owner_id: 'system',
+    owner_id: '00000000-0000-0000-0000-000000000000',
     created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
     channels: [
       {
-        id: 'chan-crg-gen',
-        server_id: 'server-crg',
+        id: '00000000-0000-0000-0002-000000000001',
+        server_id: '00000000-0000-0000-0000-000000000002',
         name: 'lobby-chat',
         type: 'text',
         topic: 'LFG and rank announcements.',
@@ -82,8 +82,8 @@ const DEFAULT_SERVERS: Server[] = [
         created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
       },
       {
-        id: 'chan-crg-voice1',
-        server_id: 'server-crg',
+        id: '00000000-0000-0000-0002-000000000002',
+        server_id: '00000000-0000-0000-0000-000000000002',
         name: 'Duo Queue Voice',
         type: 'voice',
         topic: 'Duo ranked voice comms.',

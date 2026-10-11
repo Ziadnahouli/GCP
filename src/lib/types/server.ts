@@ -42,4 +42,6 @@ export interface ChannelMessage {
   created_at: string;
   updated_at: string;
   profile?: Profile;
+  status?: 'sending' | 'sent' | 'failed';
+  error?: string;
 }

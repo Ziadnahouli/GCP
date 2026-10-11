@@ -18,147 +18,184 @@ export function useMessages(conversationId: string | null) {
   const [showPinnedOnly, setShowPinnedOnly] = React.useState(false);
 
   const chatChannelRef = React.useRef<any>(null);
+  const activeConversationIdRef = React.useRef<string | null>(conversationId);
 
-  const isUUID = React.useMemo(() => {
-    return conversationId ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId) : false;
+  React.useEffect(() => {
+    activeConversationIdRef.current = conversationId;
   }, [conversationId]);
 
+  const isUUID = React.useMemo(() => {
+    return conversationId
+      ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId)
+      : false;
+  }, [conversationId]);
+
+  const cacheKey = React.useMemo(() => {
+    if (!conversationId) return '';
+    return user ? `nexus_dm_msgs_${user.id}_${conversationId}` : `nexus_dm_msgs_guest_${conversationId}`;
+  }, [conversationId, user]);
+
   // Fetch messages with attachments and reactions
-  const fetchMessages = React.useCallback(async (isInitial = false) => {
-    if (!conversationId) {
-      setMessages([]);
-      setIsLoading(false);
-      return;
-    }
-
-    if (!user) {
-      setMessages([]);
-      setIsLoading(false);
-      return;
-    }
-
-    // If conversationId is not a UUID, load from cached messages
-    if (!isUUID) {
-      try {
-        const cached = localStorage.getItem(`nexus_dm_msgs_${conversationId}`);
-        if (cached) {
-          setMessages(JSON.parse(cached));
-        }
-      } catch {}
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      if (isInitial) {
-        setIsLoading(true);
-      }
-
-      const { data: msgsData, error: msgsErr } = await supabase
-        .from('messages')
-        .select(`
-          id, conversation_id, sender_id, content, reply_to_id,
-          is_pinned, is_edited, created_at, updated_at,
-          sender:sender_id (
-            id, username, display_name, avatar_url, banner_url, banner_color,
-            bio, custom_status, status, game_activity, created_at, updated_at
-          )
-        `)
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true });
-
-      if (msgsErr) {
-        console.warn('Error fetching messages from database:', msgsErr);
-        try {
-          const cached = localStorage.getItem(`nexus_dm_msgs_${conversationId}`);
-          if (cached) setMessages(JSON.parse(cached));
-        } catch {}
+  const fetchMessages = React.useCallback(
+    async (isInitial = false) => {
+      if (!conversationId) {
+        setMessages([]);
+        setIsLoading(false);
         return;
       }
 
-      if (!msgsData || msgsData.length === 0) {
-        try {
-          const cached = localStorage.getItem(`nexus_dm_msgs_${conversationId}`);
-          if (cached) setMessages(JSON.parse(cached));
-          else setMessages([]);
-        } catch {
+      if (!user) {
+        setMessages([]);
+        setIsLoading(false);
+        return;
+      }
+
+      // If conversationId is not a valid UUID in configured mode, do not pretend it's real
+      if (!isUUID) {
+        if (!isConfigured) {
+          try {
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) setMessages(JSON.parse(cached));
+          } catch {}
+        } else {
           setMessages([]);
         }
+        setIsLoading(false);
         return;
       }
 
-      const msgIds = msgsData.map((m) => m.id);
+      try {
+        if (isInitial) {
+          setIsLoading(true);
+          // Clear previous messages immediately on conversation switch to prevent stale flash
+          setMessages([]);
+        }
 
-      const [attachmentsRes, reactionsRes] = await Promise.all([
-        supabase
-          .from('message_attachments')
-          .select('*')
-          .eq('conversation_id', conversationId),
-        supabase
-          .from('message_reactions')
+        const { data: msgsData, error: msgsErr } = await supabase
+          .from('messages')
           .select(`
-            id, message_id, user_id, emoji, created_at,
-            profile:user_id (display_name, username)
+            id, conversation_id, sender_id, content, reply_to_id,
+            is_pinned, is_edited, created_at, updated_at,
+            sender:sender_id (
+              id, username, display_name, avatar_url, banner_url, banner_color,
+              bio, custom_status, status, game_activity, created_at, updated_at
+            )
           `)
-          .in('message_id', msgIds),
-      ]);
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true });
 
-      const parsed: Message[] = msgsData.map((m) => {
-        // Attachments
-        const mAttachments: MessageAttachment[] = (attachmentsRes.data || [])
-          .filter((a) => a.message_id === m.id)
-          .map((a) => {
-            const { data: urlData } = supabase.storage
-              .from('attachments')
-              .getPublicUrl(a.storage_path);
-            return {
-              ...a,
-              url: urlData?.publicUrl || undefined,
-            };
+        // Stale response guard: ignore if user has switched conversation while query was in-flight
+        if (activeConversationIdRef.current !== conversationId) return;
+
+        if (msgsErr) {
+          console.warn('Error fetching messages from database:', msgsErr);
+          setIsLoading(false);
+          return;
+        }
+
+        // Database is authoritative: an empty successful query must render an empty conversation
+        if (!msgsData || msgsData.length === 0) {
+          setMessages((prev) => prev.filter((m) => m.status === 'sending' || m.status === 'failed'));
+          try {
+            if (cacheKey) localStorage.removeItem(cacheKey);
+          } catch {}
+          setIsLoading(false);
+          return;
+        }
+
+        const msgIds = msgsData.map((m) => m.id);
+
+        const [attachmentsRes, reactionsRes] = await Promise.all([
+          supabase
+            .from('message_attachments')
+            .select('*')
+            .eq('conversation_id', conversationId),
+          supabase
+            .from('message_reactions')
+            .select(`
+              id, message_id, user_id, emoji, created_at,
+              profile:user_id (display_name, username)
+            `)
+            .in('message_id', msgIds),
+        ]);
+
+        if (activeConversationIdRef.current !== conversationId) return;
+
+        const parsed: Message[] = msgsData.map((m) => {
+          // Attachments
+          const mAttachments: MessageAttachment[] = (attachmentsRes.data || [])
+            .filter((a) => a.message_id === m.id)
+            .map((a) => {
+              const { data: urlData } = supabase.storage
+                .from('attachments')
+                .getPublicUrl(a.storage_path);
+              return {
+                ...a,
+                url: urlData?.publicUrl || undefined,
+              };
+            });
+
+          // Reactions grouped by emoji
+          const rawReactions = (reactionsRes.data || []).filter((r) => r.message_id === m.id);
+          const reactionMap = new Map<string, { count: number; has_reacted: boolean; users: string[] }>();
+
+          rawReactions.forEach((r) => {
+            const existing = reactionMap.get(r.emoji) || { count: 0, has_reacted: false, users: [] };
+            const userName =
+              (r.profile as unknown as { display_name?: string })?.display_name || 'Gamer';
+            existing.count += 1;
+            existing.users.push(userName);
+            if (r.user_id === user.id) existing.has_reacted = true;
+            reactionMap.set(r.emoji, existing);
           });
 
-        // Reactions grouped by emoji
-        const rawReactions = (reactionsRes.data || []).filter((r) => r.message_id === m.id);
-        const reactionMap = new Map<string, { count: number; has_reacted: boolean; users: string[] }>();
+          const mReactions: MessageReaction[] = Array.from(reactionMap.entries()).map(
+            ([emoji, data]) => ({
+              emoji,
+              ...data,
+            })
+          );
 
-        rawReactions.forEach((r) => {
-          const existing = reactionMap.get(r.emoji) || { count: 0, has_reacted: false, users: [] };
-          const userName =
-            (r.profile as unknown as { display_name?: string })?.display_name || 'Gamer';
-          existing.count += 1;
-          existing.users.push(userName);
-          if (r.user_id === user.id) existing.has_reacted = true;
-          reactionMap.set(r.emoji, existing);
+          return {
+            ...m,
+            status: 'sent' as const,
+            sender: m.sender as unknown as UserProfile,
+            attachments: mAttachments,
+            reactions: mReactions,
+          };
         });
 
-        const mReactions: MessageReaction[] = Array.from(reactionMap.entries()).map(
-          ([emoji, data]) => ({
-            emoji,
-            ...data,
-          })
-        );
+        setMessages((prev) => {
+          // Preserve any currently pending/sending messages while updating historical messages
+          const pending = prev.filter((m) => m.status === 'sending' || m.status === 'failed');
+          const combined = [...parsed];
+          for (const p of pending) {
+            if (!combined.some((c) => c.id === p.id)) {
+              combined.push(p);
+            }
+          }
+          return combined;
+        });
 
-        return {
-          ...m,
-          sender: m.sender as unknown as UserProfile,
-          attachments: mAttachments,
-          reactions: mReactions,
-        };
-      });
-
-      setMessages(parsed);
-    } catch (err) {
-      console.error('Error fetching messages:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [conversationId, user, supabase, isUUID]);
+        try {
+          if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(parsed));
+        } catch {}
+      } catch (err) {
+        console.error('Error fetching messages:', err);
+      } finally {
+        if (activeConversationIdRef.current === conversationId) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [conversationId, user, supabase, isUUID, isConfigured, cacheKey]
+  );
 
   // Realtime channel subscriptions
   React.useEffect(() => {
-    fetchMessages();
+    fetchMessages(true);
 
-    if (!conversationId || !isConfigured || !user) return;
+    if (!conversationId || !isConfigured || !user || !isUUID) return;
 
     const channel = supabase
       .channel(`chat-room-${conversationId}`, {
@@ -169,12 +206,50 @@ export function useMessages(conversationId: string | null) {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const newRow = payload.new as any;
+          if (!newRow?.id) return;
+          // Reconcile sender's message or fetch if from peer
+          setMessages((prev) => {
+            const exists = prev.some((m) => m.id === newRow.id);
+            if (exists) return prev;
+            // Peer message arrived: trigger refetch
+            fetchMessages();
+            return prev;
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
           schema: 'public',
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`,
         },
         () => fetchMessages()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const oldRow = payload.old as any;
+          if (oldRow?.id) {
+            setMessages((prev) => prev.filter((m) => m.id !== oldRow.id));
+          } else {
+            fetchMessages();
+          }
+        }
       )
       .on(
         'postgres_changes',
@@ -203,46 +278,50 @@ export function useMessages(conversationId: string | null) {
             return [...prev, incomingMsg];
           });
         }
-        fetchMessages();
       })
       .on('broadcast', { event: 'typing' }, (payload) => {
         const { username } = payload.payload;
         if (username && username !== profile?.username) {
           setTypingUsers((prev) => (prev.includes(username) ? prev : [...prev, username]));
-          setTimeout(() => {
+          const timer = setTimeout(() => {
             setTypingUsers((prev) => prev.filter((u) => u !== username));
           }, 3000);
+          return () => clearTimeout(timer);
         }
       })
       .subscribe();
 
     chatChannelRef.current = channel;
 
-    // High-frequency auto-sync polling every 2.5s to ensure delivery across tabs/devices
+    // Visibility-guarded periodic fallback poll (30s)
     const syncInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchMessages();
-    }, 2500);
+    }, 30000);
 
     return () => {
       clearInterval(syncInterval);
       chatChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [conversationId, fetchMessages, isConfigured, user, profile, supabase]);
+  }, [conversationId, fetchMessages, isConfigured, user, profile, supabase, isUUID]);
 
   // Send message with optional file uploads
   const sendMessage = async (
     content: string,
     replyToId: string | null = null,
     files: File[] = []
-  ) => {
+  ): Promise<{ error: string | null; messageId?: string }> => {
     const trimmed = content.trim();
     if (!trimmed && files.length === 0) return { error: 'Empty content' };
-    if (!conversationId) return { error: 'No conversation' };
+    if (!conversationId) return { error: 'No conversation selected' };
 
-    if (!isConfigured || !user) {
-      // Local demo mode simulation
+    if (isConfigured && !user) {
+      return { error: 'User is not authenticated' };
+    }
+
+    // Local demo mode simulation ONLY when Supabase is not configured
+    if (!isConfigured) {
       const mockAttachments: MessageAttachment[] = files.map((f, i) => ({
         id: `att-mock-${Date.now()}-${i}`,
         message_id: `local-msg-${Date.now()}`,
@@ -268,19 +347,37 @@ export function useMessages(conversationId: string | null) {
         sender: profile || undefined,
         attachments: mockAttachments,
         reactions: [],
+        status: 'sent',
       };
       setMessages((prev) => [...prev, newMsg]);
-      return { error: null };
+      return { error: null, messageId: newMsg.id };
     }
 
-    // Optimistic local update for instantaneous message display (0ms lag)
-    const optId = `opt-${Date.now()}`;
+    if (!isUUID) {
+      return { error: 'Invalid conversation ID. Expected valid UUID.' };
+    }
+
+    if (!user) {
+      return { error: 'User is not authenticated' };
+    }
+
+    // Validate reply ID: must reference an existing real message in this conversation
+    const cleanReplyId =
+      replyToId &&
+      replyToId.trim() !== '' &&
+      !replyToId.startsWith('opt-') &&
+      messages.some((m) => m.id === replyToId && m.status !== 'failed')
+        ? replyToId
+        : null;
+
+    // Optimistic local update with 'sending' status
+    const optId = `opt-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const optMsg: Message = {
       id: optId,
       conversation_id: conversationId,
       sender_id: user.id,
       content: trimmed,
-      reply_to_id: replyToId,
+      reply_to_id: cleanReplyId,
       is_pinned: false,
       is_edited: false,
       created_at: new Date().toISOString(),
@@ -298,68 +395,48 @@ export function useMessages(conversationId: string | null) {
         created_at: new Date().toISOString(),
       })),
       reactions: [],
+      status: 'sending',
     };
+
     setMessages((prev) => [...prev, optMsg]);
 
     try {
-      let confirmedId = `msg-${Date.now()}`;
-
-      // Only attempt database insert if conversationId is a valid UUID
-      if (isUUID) {
-        // 0. Ensure sender is registered in conversation_members for RLS check
-        try {
-          await supabase.from('conversation_members').upsert(
-            {
-              conversation_id: conversationId,
-              user_id: user.id,
-              role: 'member',
-            },
-            { onConflict: 'conversation_id,user_id', ignoreDuplicates: true }
-          );
-        } catch (cmErr) {
-          console.warn('Membership ensure warning:', cmErr);
-        }
-
-        // Sanitize reply_to_id (null if empty, none, or optimistic ID)
-        const cleanReplyId =
-          replyToId && replyToId.trim() !== '' && !replyToId.startsWith('opt-')
-            ? replyToId
-            : null;
-
-        const insertPayload: {
-          conversation_id: string;
-          sender_id: string;
-          content: string;
-          reply_to_id?: string | null;
-        } = {
-          conversation_id: conversationId,
-          sender_id: user.id,
-          content: trimmed,
-        };
-        if (cleanReplyId) {
-          insertPayload.reply_to_id = cleanReplyId;
-        }
-
-        // 1. Insert message with .select('id') (avoiding .single() PGRST116 throw)
-        const { data: msgRows, error: msgErr } = await supabase
-          .from('messages')
-          .insert(insertPayload)
-          .select('id');
-
-        if (msgErr) {
-          console.warn('Database message insert warning:', msgErr);
-        } else if (msgRows?.[0]?.id) {
-          confirmedId = msgRows[0].id;
-        }
+      const insertPayload: {
+        conversation_id: string;
+        sender_id: string;
+        content: string;
+        reply_to_id?: string | null;
+      } = {
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: trimmed,
+      };
+      if (cleanReplyId) {
+        insertPayload.reply_to_id = cleanReplyId;
       }
 
-      const confirmedMsg: Message = {
-        ...optMsg,
-        id: confirmedId,
-      };
+      // 1. Insert message to database
+      const { data: msgRows, error: msgErr } = await supabase
+        .from('messages')
+        .insert(insertPayload)
+        .select('id, created_at');
 
-      // 2. Upload any attachments and insert to message_attachments
-      if (files.length > 0 && isUUID) {
+      if (msgErr || !msgRows?.[0]?.id) {
+        const errorMsg = msgErr?.message || 'Database rejected message insert';
+        console.error('Database message insert failure:', errorMsg);
+        // Mark optimistic message as failed
+        setMessages((prev) =>
+          prev.map((m) => (m.id === optId ? { ...m, status: 'failed', error: errorMsg } : m))
+        );
+        return { error: errorMsg };
+      }
+
+      const confirmedId = msgRows[0].id;
+      const confirmedCreatedAt = msgRows[0].created_at;
+
+      // 2. Upload any attachments and persist to message_attachments
+      const uploadedAttachments: MessageAttachment[] = [];
+      if (files.length > 0) {
         for (const file of files) {
           try {
             const uploadRes = await uploadAttachmentFile({
@@ -369,14 +446,28 @@ export function useMessages(conversationId: string | null) {
             });
 
             if (uploadRes.storagePath) {
-              await supabase.from('message_attachments').insert({
-                message_id: confirmedId,
-                conversation_id: conversationId,
-                file_name: file.name,
-                file_type: file.type || 'application/octet-stream',
-                file_size: file.size,
-                storage_path: uploadRes.storagePath,
-              });
+              const { data: attData } = await supabase
+                .from('message_attachments')
+                .insert({
+                  message_id: confirmedId,
+                  conversation_id: conversationId,
+                  file_name: file.name,
+                  file_type: file.type || 'application/octet-stream',
+                  file_size: file.size,
+                  storage_path: uploadRes.storagePath,
+                })
+                .select('*')
+                .single();
+
+              if (attData) {
+                const { data: urlData } = supabase.storage
+                  .from('attachments')
+                  .getPublicUrl(uploadRes.storagePath);
+                uploadedAttachments.push({
+                  ...attData,
+                  url: urlData?.publicUrl || undefined,
+                });
+              }
             }
           } catch (attErr) {
             console.warn('Attachment upload failed:', attErr);
@@ -384,16 +475,25 @@ export function useMessages(conversationId: string | null) {
         }
       }
 
-      // Update optimistic message with confirmed ID and cache to localStorage
+      const confirmedMsg: Message = {
+        ...optMsg,
+        id: confirmedId,
+        created_at: confirmedCreatedAt || optMsg.created_at,
+        attachments: uploadedAttachments.length > 0 ? uploadedAttachments : optMsg.attachments,
+        status: 'sent',
+        error: undefined,
+      };
+
+      // 3. Reconcile optimistic message with confirmed persisted message
       setMessages((prev) => {
         const next = prev.map((m) => (m.id === optId ? confirmedMsg : m));
         try {
-          localStorage.setItem(`nexus_dm_msgs_${conversationId}`, JSON.stringify(next));
+          if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(next));
         } catch {}
         return next;
       });
 
-      // 3. Broadcast to peers on active channel for instantaneous cross-device delivery
+      // 4. Broadcast to peers ONLY AFTER successful database persistence
       if (chatChannelRef.current) {
         chatChannelRef.current
           .send({
@@ -406,7 +506,7 @@ export function useMessages(conversationId: string | null) {
           });
       }
 
-      // 4. Broadcast conversation update so sidebar updates immediately
+      // 5. Broadcast conversation update so sidebar updates immediately
       try {
         const convListChannel = supabase.channel('conversations-realtime');
         convListChannel
@@ -425,17 +525,29 @@ export function useMessages(conversationId: string | null) {
         .eq('id', conversationId)
         .then(() => {}, () => {});
 
-      fetchMessages().catch(() => {});
-      return { error: null };
+      return { error: null, messageId: confirmedId };
     } catch (err: unknown) {
-      console.error('Send message failed:', err);
-      setMessages((prev) => prev.filter((m) => m.id !== optId));
-      return { error: err instanceof Error ? err.message : 'Failed to send message' };
+      console.error('Send message exception:', err);
+      const errMsg = err instanceof Error ? err.message : 'Network error sending message';
+      setMessages((prev) =>
+        prev.map((m) => (m.id === optId ? { ...m, status: 'failed', error: errMsg } : m))
+      );
+      return { error: errMsg };
     }
   };
 
+  // Retry sending a previously failed message
+  const retryMessage = async (messageId: string): Promise<{ error: string | null }> => {
+    const target = messages.find((m) => m.id === messageId && m.status === 'failed');
+    if (!target) return { error: 'Failed message not found' };
+
+    // Remove the failed message and re-send
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    return sendMessage(target.content, target.reply_to_id);
+  };
+
   // Add emoji reaction
-  const addReaction = async (messageId: string, emoji: string) => {
+  const addReaction = async (messageId: string, emoji: string): Promise<{ error: string | null }> => {
     if (!isConfigured || !user) {
       setMessages((prev) =>
         prev.map((m) => {
@@ -451,19 +563,26 @@ export function useMessages(conversationId: string | null) {
           return { ...m, reactions };
         })
       );
-      return;
+      return { error: null };
     }
 
-    await supabase.from('message_reactions').upsert({
+    const { error } = await supabase.from('message_reactions').upsert({
       message_id: messageId,
       user_id: user.id,
       emoji,
     });
+
+    if (error) {
+      console.error('Failed to add reaction:', error);
+      return { error: error.message };
+    }
+
     await fetchMessages();
+    return { error: null };
   };
 
   // Remove emoji reaction
-  const removeReaction = async (messageId: string, emoji: string) => {
+  const removeReaction = async (messageId: string, emoji: string): Promise<{ error: string | null }> => {
     if (!isConfigured || !user) {
       setMessages((prev) =>
         prev.map((m) => {
@@ -476,35 +595,51 @@ export function useMessages(conversationId: string | null) {
           return { ...m, reactions };
         })
       );
-      return;
+      return { error: null };
     }
 
-    await supabase
+    const { error } = await supabase
       .from('message_reactions')
       .delete()
       .eq('message_id', messageId)
       .eq('user_id', user.id)
       .eq('emoji', emoji);
 
+    if (error) {
+      console.error('Failed to remove reaction:', error);
+      return { error: error.message };
+    }
+
     await fetchMessages();
+    return { error: null };
   };
 
   // Toggle Pin message
-  const togglePinMessage = async (messageId: string, isCurrentlyPinned: boolean) => {
+  const togglePinMessage = async (
+    messageId: string,
+    isCurrentlyPinned: boolean
+  ): Promise<{ error: string | null }> => {
     const nextPinned = !isCurrentlyPinned;
+
     if (!isConfigured || !user) {
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, is_pinned: nextPinned } : m))
       );
-      return;
+      return { error: null };
     }
 
-    await supabase
+    const { error } = await supabase
       .from('messages')
       .update({ is_pinned: nextPinned })
       .eq('id', messageId);
 
+    if (error) {
+      console.error('Failed to toggle pin:', error);
+      return { error: error.message };
+    }
+
     await fetchMessages();
+    return { error: null };
   };
 
   // Broadcast typing
@@ -522,7 +657,10 @@ export function useMessages(conversationId: string | null) {
   };
 
   // Edit message
-  const editMessage = async (messageId: string, newContent: string) => {
+  const editMessage = async (
+    messageId: string,
+    newContent: string
+  ): Promise<{ error: string | null }> => {
     if (!isConfigured || !user) {
       setMessages((prev) =>
         prev.map((m) =>
@@ -538,11 +676,21 @@ export function useMessages(conversationId: string | null) {
       .eq('id', messageId)
       .eq('sender_id', user.id);
 
-    return { error: error?.message || null };
+    if (error) {
+      console.error('Failed to edit message:', error);
+      return { error: error.message };
+    }
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId ? { ...m, content: newContent, is_edited: true } : m
+      )
+    );
+    return { error: null };
   };
 
   // Delete message
-  const deleteMessage = async (messageId: string) => {
+  const deleteMessage = async (messageId: string): Promise<{ error: string | null }> => {
     if (!isConfigured || !user) {
       setMessages((prev) => prev.filter((m) => m.id !== messageId));
       return { error: null };
@@ -554,7 +702,13 @@ export function useMessages(conversationId: string | null) {
       .eq('id', messageId)
       .eq('sender_id', user.id);
 
-    return { error: error?.message || null };
+    if (error) {
+      console.error('Failed to delete message:', error);
+      return { error: error.message };
+    }
+
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    return { error: null };
   };
 
   // Filtered messages by search query or pinned only
@@ -564,9 +718,9 @@ export function useMessages(conversationId: string | null) {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesContent = m.content.toLowerCase().includes(q);
-        const matchesSender = m.sender?.display_name.toLowerCase().includes(q);
+        const matchesSender = m.sender?.display_name?.toLowerCase().includes(q);
         const matchesFile = m.attachments?.some((a) => a.file_name.toLowerCase().includes(q));
-        return matchesContent || matchesSender || matchesFile;
+        return Boolean(matchesContent || matchesSender || matchesFile);
       }
       return true;
     });
@@ -582,6 +736,7 @@ export function useMessages(conversationId: string | null) {
     showPinnedOnly,
     setShowPinnedOnly,
     sendMessage,
+    retryMessage,
     sendTyping,
     editMessage,
     deleteMessage,

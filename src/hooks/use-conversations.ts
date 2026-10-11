@@ -125,10 +125,11 @@ export function useConversations() {
       })
       .subscribe();
 
-    // Auto-sync polling every 4.5s so conversations list stays live across devices
+    // Visibility-guarded periodic fallback poll (30s)
     const autoSyncTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchConversations();
-    }, 4500);
+    }, 30000);
 
     return () => {
       clearInterval(autoSyncTimer);
@@ -140,8 +141,12 @@ export function useConversations() {
   const getOrCreateDirectConversation = async (
     targetUserId: string
   ): Promise<{ conversationId: string | null; error: string | null }> => {
-    if (!isConfigured || !user) {
-      return { conversationId: 'mock-conv-1', error: null };
+    if (isConfigured && !user) {
+      return { conversationId: null, error: 'User is not authenticated' };
+    }
+
+    if (!isConfigured) {
+      return { conversationId: 'demo-conv-1', error: null };
     }
 
     try {
@@ -156,8 +161,11 @@ export function useConversations() {
 
       await fetchConversations();
       return { conversationId: data as string, error: null };
-    } catch {
-      return { conversationId: null, error: 'Failed to open conversation' };
+    } catch (err: unknown) {
+      return {
+        conversationId: null,
+        error: err instanceof Error ? err.message : 'Failed to open conversation',
+      };
     }
   };
 

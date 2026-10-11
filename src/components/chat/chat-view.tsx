@@ -57,6 +57,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     showPinnedOnly,
     setShowPinnedOnly,
     sendMessage,
+    retryMessage,
     sendTyping,
     editMessage,
     deleteMessage,
@@ -81,8 +82,16 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const [showSearchInput, setShowSearchInput] = React.useState(false);
 
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const isNearBottomRef = React.useRef(true);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 150;
+  };
 
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
@@ -148,7 +157,9 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   }, [rawMessages]);
 
   React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, typingUsers]);
 
   // Handle file addition
@@ -201,16 +212,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const content = inputContent.trim();
-    if (!content && selectedFiles.length === 0) return;
+    if ((!content && selectedFiles.length === 0) || isSending) return;
 
     const replyId = replyingTo ? replyingTo.id : null;
     const filesToSend = [...selectedFiles];
-
-    // Instantly reset input controls for snappy, zero-latency user feedback
-    setInputContent('');
-    setSelectedFiles([]);
-    setReplyingTo(null);
-    inputRef.current?.focus();
 
     setIsSending(true);
     try {
@@ -221,9 +226,14 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           description: res.error,
           type: 'error',
         });
-        // Restore user's draft so nothing is lost
-        setInputContent(content);
-        setSelectedFiles(filesToSend);
+        // Preserves user's draft in inputContent & selectedFiles
+      } else {
+        setInputContent('');
+        setSelectedFiles([]);
+        setReplyingTo(null);
+        inputRef.current?.focus();
+        // Unconditional scroll to bottom when current user sends a message
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
     } catch (err: unknown) {
       toast({
@@ -231,8 +241,6 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         description: err instanceof Error ? err.message : 'Failed to send message',
         type: 'error',
       });
-      setInputContent(content);
-      setSelectedFiles(filesToSend);
     } finally {
       setIsSending(false);
     }
@@ -421,7 +429,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       )}
 
       {/* Messages Scrollable Stage */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4"
+      >
         {/* Empty state when conversation begins */}
         {messages.length === 0 && !isLoading && (
           <div className="p-10 text-center space-y-3">
@@ -499,6 +511,26 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                   <span className="text-[10px] text-muted-foreground/70 font-mono">
                     {formatTimestamp(msg.created_at)}
                   </span>
+
+                  {msg.status === 'sending' && (
+                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
+                      <Loader2 className="w-2.5 h-2.5 animate-spin text-primary" />
+                      <span>sending...</span>
+                    </span>
+                  )}
+
+                  {msg.status === 'failed' && (
+                    <span className="flex items-center gap-1.5 text-[10px] text-destructive font-mono">
+                      <span>failed</span>
+                      <button
+                        type="button"
+                        onClick={() => retryMessage(msg.id)}
+                        className="text-[10px] text-primary underline hover:opacity-80"
+                      >
+                        Retry
+                      </button>
+                    </span>
+                  )}
                 </div>
 
                 {/* Message Text Bubble */}

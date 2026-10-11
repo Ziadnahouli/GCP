@@ -19,6 +19,8 @@ export interface MessageReaction {
   users: string[]; // usernames or display names
 }
 
+export type MessageDeliveryStatus = 'sending' | 'sent' | 'failed';
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -33,6 +35,8 @@ export interface Message {
   sender?: UserProfile;
   attachments?: MessageAttachment[];
   reactions?: MessageReaction[];
+  status?: MessageDeliveryStatus;
+  error?: string;
 }
 
 export interface ConversationMember {

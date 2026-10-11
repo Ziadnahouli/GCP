@@ -47,6 +47,7 @@ const config: Config = {
         ring: 'hsl(var(--ring))',
         surface: {
           DEFAULT: 'hsl(var(--surface-default))',
+          default: 'hsl(var(--surface-default))',
           hover: 'hsl(var(--surface-hover))',
           active: 'hsl(var(--surface-active))',
           header: 'hsl(var(--surface-header))',

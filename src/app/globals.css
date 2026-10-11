@@ -96,6 +96,23 @@ body {
   user-select: none;
 }
 
+/* Ensure inputs, textareas, and selects always have dark surface background and white text */
+input, textarea, select {
+  background-color: hsl(var(--surface-default)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+/* Fix browser autofill from turning inputs bright white */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: hsl(var(--foreground)) !important;
+  -webkit-box-shadow: 0 0 0px 1000px hsl(var(--surface-default)) inset !important;
+  box-shadow: 0 0 0px 1000px hsl(var(--surface-default)) inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
 /* Custom Gaming Slim Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

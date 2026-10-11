@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Server, Channel, ChannelType } from '@/lib/types/server';
 import { useAuth } from '@/features/auth/auth-provider';
 import { supabase } from '@/lib/supabase/client';
+import { UserProfile } from '@/lib/types/profile';
 
 const STORAGE_KEY = 'nexus_gaming_servers_store';
 
@@ -13,7 +14,7 @@ const DEFAULT_SERVERS: Server[] = [
     name: 'Tactical Squad Alpha',
     description: 'Competitive tactical FPS squad & scrims headquarters.',
     icon_url: null,
-    owner_id: '00000000-0000-0000-0000-000000000000',
+    owner_id: null,
     created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
     channels: [
       {
@@ -69,7 +70,7 @@ const DEFAULT_SERVERS: Server[] = [
     name: 'Cyber Ranked Grinders',
     description: 'High-ELO competitive matchmaking and aim lab analysis.',
     icon_url: null,
-    owner_id: '00000000-0000-0000-0000-000000000000',
+    owner_id: null,
     created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
     channels: [
       {
@@ -109,7 +110,13 @@ export function useServers() {
         .select(`
           id, name, description, icon_url, owner_id, created_at,
           channels ( id, server_id, name, type, topic, position, created_at ),
-          server_members ( id, server_id, user_id, role, joined_at )
+          server_members (
+            id, server_id, user_id, role, joined_at,
+            profile:user_id (
+              id, username, display_name, avatar_url, banner_url, banner_color,
+              bio, custom_status, status, game_activity, created_at, updated_at
+            )
+          )
         `);
 
       if (!error && srvData && srvData.length > 0) {
@@ -123,12 +130,13 @@ export function useServers() {
           channels: (s.channels || []).sort(
             (a: Channel, b: Channel) => a.position - b.position
           ),
-          members: (s.server_members || []).map((m: { id: string; server_id: string; user_id: string; role: 'owner' | 'admin' | 'moderator' | 'member'; joined_at: string }) => ({
+          members: (s.server_members || []).map((m: any) => ({
             id: m.id,
             server_id: m.server_id,
             user_id: m.user_id,
             role: m.role,
             joined_at: m.joined_at,
+            profile: (m.profile as unknown as UserProfile) || undefined,
           })),
         }));
 

@@ -52,7 +52,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
   const { getOrCreateDirectConversation } = useConversations();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = React.useState<'online' | 'all' | 'pending' | 'blocked' | 'add'>('online');
+  const [activeTab, setActiveTab] = React.useState<'online' | 'all' | 'pending' | 'blocked' | 'add'>('all');
   const [searchFilter, setSearchFilter] = React.useState('');
   const [addUsernameInput, setAddUsernameInput] = React.useState('');
   const [isSendingRequest, setIsSendingRequest] = React.useState(false);

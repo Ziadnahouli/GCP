@@ -26,6 +26,8 @@ import { useChannelMessages } from '@/hooks/use-channel-messages';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useSocial } from '@/hooks/use-social';
 import { useConversations } from '@/hooks/use-conversations';
+import { getBrowserClient } from '@/lib/supabase/client';
+import { UserProfile } from '@/lib/types/profile';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -57,15 +59,44 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   const [showSoundboard, setShowSoundboard] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showSearch, setShowSearch] = React.useState(false);
+  const [communityProfiles, setCommunityProfiles] = React.useState<UserProfile[]>([]);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
+  // Load real community member profiles from database
+  React.useEffect(() => {
+    if (!user) return;
+    try {
+      const supabase = getBrowserClient();
+      supabase
+        .from('profiles')
+        .select('*')
+        .neq('id', user.id)
+        .limit(10)
+        .then(({ data }) => {
+          if (data && data.length > 0) {
+            setCommunityProfiles(data as UserProfile[]);
+          }
+        });
+    } catch {}
+  }, [user]);
+
   const handleStartDirectChat = async (targetUserId: string, targetName: string) => {
     if (!targetUserId || targetUserId === user?.id) {
       toast({ title: 'You', description: 'This is your own profile.', type: 'info' });
+      return;
+    }
+
+    const isMock = DEFAULT_COMMUNITY_MEMBERS.some((d) => d.id === targetUserId);
+    if (isMock) {
+      toast({
+        title: 'Demo Squadmate',
+        description: `${targetName} is an automated bot. Add registered friends to start private chats!`,
+        type: 'info',
+      });
       return;
     }
 
@@ -79,7 +110,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
         type: 'success',
         duration: 1500,
       });
-      router.push(`/?c=${conversationId}`);
+      router.push(`/?c=${conversationId}&s=${server.id}&ch=${channel.id}`);
     }
   };
 
@@ -173,24 +204,42 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
       }
     }
 
-    // 3. Fallback community profiles
-    for (const cm of DEFAULT_COMMUNITY_MEMBERS) {
-      if (!seenIds.has(cm.id)) {
-        seenIds.add(cm.id);
+    // 3. Registered Community Profiles
+    for (const cp of communityProfiles) {
+      if (!seenIds.has(cp.id)) {
+        seenIds.add(cp.id);
         list.push({
-          id: cm.id,
-          display_name: cm.display_name,
-          username: cm.username,
-          avatar_url: null,
-          role: cm.role,
-          status: cm.status,
-          game_activity: null,
+          id: cp.id,
+          display_name: cp.display_name || cp.username,
+          username: cp.username,
+          avatar_url: cp.avatar_url || null,
+          role: 'member',
+          status: (cp.status as any) || 'online',
+          game_activity: cp.game_activity || null,
         });
       }
     }
 
+    // 4. Fallback mock community profiles only if list is empty
+    if (list.length === 0) {
+      for (const cm of DEFAULT_COMMUNITY_MEMBERS) {
+        if (!seenIds.has(cm.id)) {
+          seenIds.add(cm.id);
+          list.push({
+            id: cm.id,
+            display_name: cm.display_name,
+            username: cm.username,
+            avatar_url: null,
+            role: cm.role,
+            status: cm.status,
+            game_activity: null,
+          });
+        }
+      }
+    }
+
     return list;
-  }, [server.members, friends]);
+  }, [server.members, friends, communityProfiles]);
 
   return (
     <div className="flex-1 flex h-full overflow-hidden bg-background">

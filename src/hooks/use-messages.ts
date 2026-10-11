@@ -19,6 +19,7 @@ export function useMessages(conversationId: string | null) {
 
   const chatChannelRef = React.useRef<any>(null);
   const activeConversationIdRef = React.useRef<string | null>(conversationId);
+  const prevConversationIdRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     activeConversationIdRef.current = conversationId;
@@ -65,10 +66,13 @@ export function useMessages(conversationId: string | null) {
       }
 
       try {
-        if (isInitial) {
-          setIsLoading(true);
-          // Clear previous messages immediately on conversation switch to prevent stale flash
+        const convChanged = prevConversationIdRef.current !== conversationId;
+        if (convChanged) {
+          prevConversationIdRef.current = conversationId;
           setMessages([]);
+          setIsLoading(true);
+        } else if (isInitial) {
+          // Keep current messages visible during background revalidation
         }
 
         const { data: msgsData, error: msgsErr } = await supabase
@@ -93,15 +97,17 @@ export function useMessages(conversationId: string | null) {
           return;
         }
 
-        // Database is authoritative: an empty successful query must render an empty conversation
+        // Database is authoritative, but retain sending, failed, and messages sent in the last 30s
         if (!msgsData || msgsData.length === 0) {
-          setMessages((prev) =>
-            prev.filter(
-              (m) =>
-                (m.status === 'sending' || m.status === 'failed') &&
-                m.conversation_id === conversationId
-            )
-          );
+          setMessages((prev) => {
+            const recentCutoff = Date.now() - 30000;
+            return prev.filter((m) => {
+              if (m.conversation_id !== conversationId) return false;
+              if (m.status === 'sending' || m.status === 'failed') return true;
+              const t = new Date(m.created_at).getTime();
+              return !isNaN(t) && t > recentCutoff;
+            });
+          });
           try {
             if (cacheKey) localStorage.removeItem(cacheKey);
           } catch {}
@@ -172,16 +178,18 @@ export function useMessages(conversationId: string | null) {
         });
 
         setMessages((prev) => {
-          // Preserve any currently pending/sending messages while updating historical messages
-          const pending = prev.filter(
-            (m) =>
-              (m.status === 'sending' || m.status === 'failed') &&
-              m.conversation_id === conversationId
-          );
           const combined = [...parsed];
-          for (const p of pending) {
-            if (!combined.some((c) => c.id === p.id)) {
-              combined.push(p);
+          const recentCutoff = Date.now() - 30000;
+          for (const p of prev) {
+            if (p.conversation_id === conversationId && !combined.some((c) => c.id === p.id)) {
+              const msgTime = new Date(p.created_at).getTime();
+              if (
+                p.status === 'sending' ||
+                p.status === 'failed' ||
+                (!isNaN(msgTime) && msgTime > recentCutoff)
+              ) {
+                combined.push(p);
+              }
             }
           }
           return combined;
@@ -203,6 +211,10 @@ export function useMessages(conversationId: string | null) {
 
   // Realtime channel subscriptions
   React.useEffect(() => {
+    if (prevConversationIdRef.current !== conversationId) {
+      prevConversationIdRef.current = conversationId;
+      setMessages([]);
+    }
     fetchMessages(true);
 
     if (!conversationId || !isConfigured || !user || !isUUID) return;
@@ -224,6 +236,7 @@ export function useMessages(conversationId: string | null) {
         (payload) => {
           const newRow = payload.new as any;
           if (!newRow?.id) return;
+          if (newRow.conversation_id && newRow.conversation_id !== conversationId) return;
           // Reconcile sender's message or fetch if from peer
           setMessages((prev) => {
             const exists = prev.some((m) => m.id === newRow.id);

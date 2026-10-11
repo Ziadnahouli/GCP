@@ -214,7 +214,10 @@ INSERT INTO public.servers (id, name, description, icon_url, owner_id)
 VALUES 
     ('00000000-0000-0000-0000-000000000001', 'Tactical Squad Alpha', 'Competitive tactical FPS squad & scrims headquarters.', NULL, NULL),
     ('00000000-0000-0000-0000-000000000002', 'Cyber Ranked Grinders', 'High-ELO competitive matchmaking and aim lab analysis.', NULL, NULL)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET owner_id = NULL;
+
+UPDATE public.servers SET owner_id = NULL 
+WHERE id IN ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002');
 
 INSERT INTO public.channels (id, server_id, name, type, topic, position)
 VALUES 

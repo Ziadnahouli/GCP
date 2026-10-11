@@ -28,7 +28,7 @@ export interface Server {
   name: string;
   description?: string | null;
   icon_url?: string | null;
-  owner_id: string;
+  owner_id: string | null;
   created_at: string;
   channels: Channel[];
   members: ServerMember[];

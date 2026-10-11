@@ -15,6 +15,7 @@ export function useChannelMessages(channelId: string | null) {
   const [isLoading, setIsLoading] = React.useState(true);
   const channelRef = React.useRef<any>(null);
   const activeChannelIdRef = React.useRef<string | null>(channelId);
+  const prevChannelIdRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     activeChannelIdRef.current = channelId;
@@ -31,10 +32,13 @@ export function useChannelMessages(channelId: string | null) {
       return;
     }
 
-    if (isInitial) {
-      setIsLoading(true);
-      // Reset messages immediately so previous channel's messages do not flash
+    const channelChanged = prevChannelIdRef.current !== channelId;
+    if (channelChanged) {
+      prevChannelIdRef.current = channelId;
       setMessages([]);
+      setIsLoading(true);
+    } else if (isInitial) {
+      // Background revalidation: keep existing messages visible while loading
     }
 
     try {
@@ -67,13 +71,19 @@ export function useChannelMessages(channelId: string | null) {
           }));
 
           setMessages((prev) => {
-            const pending = prev.filter(
-              (m) => (m.status === 'sending' || m.status === 'failed') && m.channel_id === channelId
-            );
             const combined = [...parsed];
-            for (const p of pending) {
-              if (!combined.some((c) => c.id === p.id)) {
-                combined.push(p);
+            const recentCutoff = Date.now() - 30000; // 30s threshold
+            for (const p of prev) {
+              if (p.channel_id === channelId && !combined.some((c) => c.id === p.id)) {
+                const msgTime = new Date(p.created_at).getTime();
+                // Retain pending, failed, and messages created recently so they are never lost to read delays
+                if (
+                  p.status === 'sending' ||
+                  p.status === 'failed' ||
+                  (!isNaN(msgTime) && msgTime > recentCutoff)
+                ) {
+                  combined.push(p);
+                }
               }
             }
             return combined;
@@ -106,7 +116,10 @@ export function useChannelMessages(channelId: string | null) {
   }, [channelId, user, isConfigured, isUUID, supabase]);
 
   React.useEffect(() => {
-    setMessages([]);
+    if (prevChannelIdRef.current !== channelId) {
+      prevChannelIdRef.current = channelId;
+      setMessages([]);
+    }
     fetchChannelMessages(true);
 
     if (!channelId || !isConfigured || !user) return;
@@ -140,6 +153,7 @@ export function useChannelMessages(channelId: string | null) {
         (payload) => {
           const newRow = payload.new as any;
           if (!newRow?.id) return;
+          if (newRow.channel_id && newRow.channel_id !== channelId) return;
           // Reconcile: If sent by current user, we already have it optimistically
           setMessages((prev) => {
             const existingIdx = prev.findIndex((m) => m.id === newRow.id);

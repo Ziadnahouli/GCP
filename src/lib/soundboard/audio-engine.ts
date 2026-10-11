@@ -179,6 +179,11 @@ class SoundboardAudioEngine {
     }
     this.lastPlayTimestamp = Date.now();
     this.initContext();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      try {
+        await this.ctx.resume();
+      } catch {}
+    }
     if (!this.ctx || !this.masterGain) return false;
 
     if (clip.type === 'custom' && clip.audioDataUri) {

@@ -214,7 +214,25 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
     setIsSending(true);
     try {
-      await sendMessage(content, replyId, filesToSend);
+      const res = await sendMessage(content, replyId, filesToSend);
+      if (res?.error) {
+        toast({
+          title: 'Message Not Delivered',
+          description: res.error,
+          type: 'error',
+        });
+        // Restore user's draft so nothing is lost
+        setInputContent(content);
+        setSelectedFiles(filesToSend);
+      }
+    } catch (err: unknown) {
+      toast({
+        title: 'Error Sending Message',
+        description: err instanceof Error ? err.message : 'Failed to send message',
+        type: 'error',
+      });
+      setInputContent(content);
+      setSelectedFiles(filesToSend);
     } finally {
       setIsSending(false);
     }

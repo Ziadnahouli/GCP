@@ -72,7 +72,9 @@ export function useChannelMessages(channelId: string | null) {
 
     // Realtime postgres changes + broadcast channel
     const channel = supabase
-      .channel(`chan-room-${channelId}`)
+      .channel(`chan-room-${channelId}`, {
+        config: { broadcast: { self: false } },
+      })
       .on(
         'postgres_changes',
         {
@@ -83,7 +85,18 @@ export function useChannelMessages(channelId: string | null) {
         },
         () => fetchChannelMessages()
       )
-      .on('broadcast', { event: 'new_channel_msg' }, () => {
+      .on('broadcast', { event: 'new_channel_msg' }, ({ payload }) => {
+        if (payload?.message) {
+          const incoming = payload.message as ChannelMessage;
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === incoming.id)) return prev;
+            const next = [...prev, incoming];
+            try {
+              localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+        }
         fetchChannelMessages();
       })
       .subscribe();
@@ -93,7 +106,7 @@ export function useChannelMessages(channelId: string | null) {
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchChannelMessages();
-    }, 10000);
+    }, 2500);
 
     return () => {
       clearInterval(autoSyncTimer);
@@ -152,7 +165,22 @@ export function useChannelMessages(channelId: string | null) {
       const updated = [...messages, newMsg];
       saveMessages(updated);
 
-      if (user && supabase) {
+      // Broadcast immediately to channel peers for real-time delivery
+      if (channelRef.current) {
+        channelRef.current
+          .send({
+            type: 'broadcast',
+            event: 'new_channel_msg',
+            payload: { message: newMsg },
+          })
+          .catch((err: unknown) => {
+            console.warn('Channel broadcast warning:', err);
+          });
+      }
+
+      // If channel is a valid UUID, persist to Supabase
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(channelId);
+      if (user && supabase && isUUID) {
         try {
           const { error: msgErr } = await supabase.from('channel_messages').insert({
             id: newMsg.id,
@@ -160,20 +188,11 @@ export function useChannelMessages(channelId: string | null) {
             user_id: user.id,
             content: newMsg.content,
           });
-          if (msgErr) throw msgErr;
-
-          // Broadcast to server peers
-          if (channelRef.current) {
-            channelRef.current
-              .send({
-                type: 'broadcast',
-                event: 'new_channel_msg',
-                payload: { messageId: newMsg.id },
-              })
-              .catch(() => {});
+          if (msgErr) {
+            console.warn('Supabase channel message insert warning:', msgErr);
           }
         } catch (e) {
-          console.error('Supabase channel message insert failed:', e);
+          console.warn('Supabase channel message insert failed:', e);
         }
       }
     },

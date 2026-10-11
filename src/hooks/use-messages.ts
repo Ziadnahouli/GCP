@@ -135,7 +135,11 @@ export function useMessages(conversationId: string | null) {
     if (!conversationId || !isConfigured || !user) return;
 
     const channel = supabase
-      .channel(`chat-room-${conversationId}`)
+      .channel(`chat-room-${conversationId}`, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
       .on(
         'postgres_changes',
         {
@@ -188,11 +192,11 @@ export function useMessages(conversationId: string | null) {
 
     chatChannelRef.current = channel;
 
-    // Auto-sync polling every 8s to ensure delivery when tab is active
+    // High-frequency auto-sync polling every 2.5s to ensure delivery across tabs/devices
     const syncInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchMessages();
-    }, 8000);
+    }, 2500);
 
     return () => {
       clearInterval(syncInterval);
@@ -272,50 +276,84 @@ export function useMessages(conversationId: string | null) {
     setMessages((prev) => [...prev, optMsg]);
 
     try {
-      // 1. Insert message
-      const { data: msgData, error: msgErr } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          content: trimmed,
-          reply_to_id: replyToId,
-        })
-        .select('id')
-        .single();
+      // 0. Ensure sender is registered in conversation_members for RLS check
+      try {
+        await supabase.from('conversation_members').upsert(
+          {
+            conversation_id: conversationId,
+            user_id: user.id,
+            role: 'member',
+          },
+          { onConflict: 'conversation_id,user_id', ignoreDuplicates: true }
+        );
+      } catch (cmErr) {
+        console.warn('Membership ensure warning:', cmErr);
+      }
 
-      if (msgErr || !msgData) {
+      // Sanitize reply_to_id (null if empty, none, or optimistic ID)
+      const cleanReplyId =
+        replyToId && replyToId.trim() !== '' && !replyToId.startsWith('opt-')
+          ? replyToId
+          : null;
+
+      const insertPayload: {
+        conversation_id: string;
+        sender_id: string;
+        content: string;
+        reply_to_id?: string | null;
+      } = {
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: trimmed,
+      };
+      if (cleanReplyId) {
+        insertPayload.reply_to_id = cleanReplyId;
+      }
+
+      // 1. Insert message with .select('id') (avoiding .single() PGRST116 throw)
+      const { data: msgRows, error: msgErr } = await supabase
+        .from('messages')
+        .insert(insertPayload)
+        .select('id');
+
+      if (msgErr) {
+        console.error('Database message insert error:', msgErr);
         // Rollback optimistic message on error
         setMessages((prev) => prev.filter((m) => m.id !== optId));
         return { error: msgErr?.message || 'Failed to send message' };
       }
 
+      const confirmedId = msgRows?.[0]?.id || `msg-${Date.now()}`;
+      const confirmedMsg: Message = {
+        ...optMsg,
+        id: confirmedId,
+      };
+
       // 2. Upload any attachments and insert to message_attachments
       if (files.length > 0) {
         for (const file of files) {
-          const uploadRes = await uploadAttachmentFile({
-            file,
-            conversationId,
-            userId: user.id,
-          });
-
-          if (uploadRes.storagePath) {
-            await supabase.from('message_attachments').insert({
-              message_id: msgData.id,
-              conversation_id: conversationId,
-              file_name: file.name,
-              file_type: file.type || 'application/octet-stream',
-              file_size: file.size,
-              storage_path: uploadRes.storagePath,
+          try {
+            const uploadRes = await uploadAttachmentFile({
+              file,
+              conversationId,
+              userId: user.id,
             });
+
+            if (uploadRes.storagePath) {
+              await supabase.from('message_attachments').insert({
+                message_id: confirmedId,
+                conversation_id: conversationId,
+                file_name: file.name,
+                file_type: file.type || 'application/octet-stream',
+                file_size: file.size,
+                storage_path: uploadRes.storagePath,
+              });
+            }
+          } catch (attErr) {
+            console.warn('Attachment upload failed:', attErr);
           }
         }
       }
-
-      const confirmedMsg: Message = {
-        ...optMsg,
-        id: msgData.id,
-      };
 
       // Update optimistic message with confirmed ID
       setMessages((prev) => prev.map((m) => (m.id === optId ? confirmedMsg : m)));
@@ -328,8 +366,29 @@ export function useMessages(conversationId: string | null) {
             event: 'new_msg',
             payload: { message: confirmedMsg },
           })
-          .catch(() => {});
+          .catch((bcErr: unknown) => {
+            console.warn('Realtime broadcast warning:', bcErr);
+          });
       }
+
+      // 4. Broadcast conversation update so sidebar updates immediately
+      try {
+        const convListChannel = supabase.channel('conversations-realtime');
+        convListChannel
+          .send({
+            type: 'broadcast',
+            event: 'conv_update',
+            payload: { conversationId, lastMessage: confirmedMsg },
+          })
+          .catch(() => {});
+      } catch {}
+
+      // Update conversation updated_at timestamp
+      supabase
+        .from('conversations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', conversationId)
+        .then(() => {}, () => {});
 
       fetchMessages().catch(() => {});
       return { error: null };

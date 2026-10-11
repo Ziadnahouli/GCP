@@ -3,7 +3,19 @@
   "services": {
     "app": {
       "root": ".",
-      "framework": "nextjs"
+      "framework": "nextjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "src-tauri",
+          "format": "url",
+          "env": "TAURI_SERVICE_URL"
+        }
+      ]
+    },
+    "src-tauri": {
+      "root": "desktop/src-tauri",
+      "runtime": "rust"
     }
   },
   "rewrites": [

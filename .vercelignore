@@ -1,3 +1,4 @@
-# Ignore desktop Tauri wrapper and tests during Vercel cloud deployments
-desktop/
+# Ignored files for Vercel cloud deployments
+desktop/src-tauri/target/
 tests/
+*.log

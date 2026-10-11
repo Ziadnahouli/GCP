@@ -15,7 +15,8 @@
     },
     "src-tauri": {
       "root": "desktop/src-tauri",
-      "runtime": "rust"
+      "runtime": "rust",
+      "entrypoint": "src/main.rs"
     }
   },
   "rewrites": [

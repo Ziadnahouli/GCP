@@ -72,7 +72,7 @@ function HomePageContent() {
       {/* Center Stage: Friends & Social Hub */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         {/* Profile Gamer Header Banner */}
-        <div className="px-4 pt-4 shrink-0">
+        <div className="px-2.5 sm:px-4 pt-2.5 sm:pt-4 shrink-0">
           <div className="rounded-2xl border border-border/80 bg-surface-default overflow-hidden shadow-md">
             <div
               className="h-20 w-full transition-colors relative"
@@ -95,7 +95,7 @@ function HomePageContent() {
               </div>
             </div>
 
-            <div className="px-5 pb-4 pt-0 relative flex items-end justify-between -mt-8 gap-3">
+            <div className="px-3 sm:px-5 pb-3 sm:pb-4 pt-0 relative flex items-end justify-between -mt-8 gap-3">
               <div className="flex items-end gap-3.5">
                 <Avatar
                   src={profile?.avatar_url || null}

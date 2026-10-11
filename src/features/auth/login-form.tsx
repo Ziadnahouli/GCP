@@ -73,7 +73,7 @@ export function LoginForm() {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-8 rounded-2xl bg-card/90 border border-border shadow-2xl backdrop-blur-xl">
+    <div className="w-full max-w-md mx-auto p-5 sm:p-8 rounded-2xl bg-card/90 border border-border shadow-2xl backdrop-blur-xl">
       <div className="flex flex-col items-center text-center mb-8">
         <div className="w-14 h-14 rounded-2xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary mb-3 shadow-glow-sm">
           <Gamepad2 className="w-8 h-8" />

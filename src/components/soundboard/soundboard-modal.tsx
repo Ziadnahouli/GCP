@@ -140,23 +140,23 @@ export function SoundboardModal({
       {/* Modal Dialog Card */}
       <div className="relative w-full max-w-2xl rounded-2xl border border-border/80 bg-surface-default shadow-2xl overflow-hidden flex flex-col max-h-[85vh] z-10 animate-in zoom-in-95 duration-150">
         {/* Top Header */}
-        <div className="px-6 py-4 border-b border-border/80 flex items-center justify-between bg-surface-sidebar/50">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shadow-glow-sm">
-              <Sparkles className="w-5 h-5" />
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border/80 flex items-center justify-between bg-surface-sidebar/50">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shadow-glow-sm shrink-0">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-foreground">Gaming Soundboard</h3>
+                <h3 className="text-sm sm:text-base font-bold text-foreground">Gaming Soundboard</h3>
                 {isInCall && (
-                  <Badge variant="default" className="text-[10px] bg-emerald-500/20 text-emerald-400 border-emerald-500/30 gap-1">
+                  <Badge variant="default" className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-emerald-400 border-emerald-500/30 gap-1">
                     <Radio className="w-3 h-3 animate-pulse" />
-                    Broadcasting in Call
+                    In Call
                   </Badge>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Trigger procedural audio effects, gaming memes, and custom clips with hotkeys.
+              <p className="text-[11px] sm:text-xs text-muted-foreground line-clamp-1">
+                Audio effects, gaming memes, and custom clips with hotkeys.
               </p>
             </div>
           </div>
@@ -172,9 +172,9 @@ export function SoundboardModal({
         </div>
 
         {/* Action & Filter Bar */}
-        <div className="px-6 py-3 border-b border-border/60 bg-surface-default flex flex-wrap items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 py-2.5 sm:py-3 border-b border-border/60 bg-surface-default flex flex-wrap items-center justify-between gap-2 sm:gap-3">
           {/* Categories */}
-          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 no-scrollbar">
             {categories.map((cat) => (
               <button
                 key={cat.id}
@@ -255,7 +255,7 @@ export function SoundboardModal({
         </div>
 
         {/* Clips Grid */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6">
           {filteredClips.length === 0 ? (
             <div className="py-12 text-center space-y-3">
               <Music className="w-10 h-10 text-muted-foreground mx-auto opacity-50" />
@@ -265,7 +265,7 @@ export function SoundboardModal({
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3">
               {filteredClips.map((clip) => {
                 const isPlaying = playingClipId === clip.id;
 

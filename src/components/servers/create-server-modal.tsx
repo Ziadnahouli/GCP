@@ -89,7 +89,7 @@ export function CreateServerModal({
       />
 
       {/* Modal Dialog */}
-      <div className="relative w-full max-w-lg rounded-2xl border border-border/80 bg-surface-default p-6 shadow-2xl z-10 animate-in zoom-in-95 duration-150 space-y-5">
+      <div className="relative w-full max-w-lg rounded-2xl border border-border/80 bg-surface-default p-4 sm:p-6 shadow-2xl z-10 animate-in zoom-in-95 duration-150 space-y-4 sm:space-y-5 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">

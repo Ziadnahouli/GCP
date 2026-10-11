@@ -14,7 +14,9 @@ import {
   Crown,
   Gamepad2,
   X,
+  ArrowLeft,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Server, Channel } from '@/lib/types/server';
 import { useChannelMessages } from '@/hooks/use-channel-messages';
 import { Avatar } from '@/components/ui/avatar';
@@ -29,6 +31,7 @@ interface ChannelViewProps {
 }
 
 export function ChannelView({ server, channel }: ChannelViewProps) {
+  const router = useRouter();
   const { messages, sendMessage } = useChannelMessages(channel.id);
   const [inputText, setInputText] = React.useState('');
   const [showMembers, setShowMembers] = React.useState(true);
@@ -66,9 +69,17 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
       {/* Center Stage: Channel Chat Feed */}
       <div className="flex-1 flex flex-col h-full min-w-0">
         {/* Top Channel Header */}
-        <div className="h-14 border-b border-border/80 px-4 flex items-center justify-between shrink-0 bg-surface-header/60 select-none">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex items-center gap-2">
+        <div className="h-14 border-b border-border/80 px-3 sm:px-4 flex items-center justify-between shrink-0 bg-surface-header/60 select-none">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <button
+              onClick={() => router.push('/')}
+              className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground rounded-lg transition-colors"
+              title="Back to Servers & Friends"
+              aria-label="Back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
               <Hash className="w-5 h-5 text-muted-foreground shrink-0" />
               <h3 className="font-extrabold text-sm text-foreground truncate">
                 {channel.name}
@@ -77,7 +88,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
             {channel.topic && (
               <>
-                <span className="w-1 h-1 rounded-full bg-border shrink-0" />
+                <span className="w-1 h-1 rounded-full bg-border shrink-0 hidden sm:inline-block" />
                 <span className="text-xs text-muted-foreground truncate hidden sm:inline-block max-w-sm">
                   {channel.topic}
                 </span>

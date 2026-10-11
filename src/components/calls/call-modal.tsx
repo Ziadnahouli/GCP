@@ -66,7 +66,7 @@ export function CallModal({
         'fixed z-50 transition-all duration-200 flex flex-col overflow-hidden bg-card/95 border border-border shadow-2xl backdrop-blur-2xl',
         isFullscreen
           ? 'inset-0 rounded-none'
-          : 'bottom-6 right-6 w-full max-w-2xl h-[480px] rounded-2xl'
+          : 'inset-0 sm:inset-auto sm:bottom-6 sm:right-6 sm:w-full sm:max-w-2xl sm:h-[480px] sm:rounded-2xl rounded-none'
       )}
     >
       {/* Call Header */}
@@ -231,12 +231,12 @@ export function CallModal({
       </div>
 
       {/* Floating Bottom Media Toolbar */}
-      <div className="h-16 border-t border-border/80 bg-surface-header/90 backdrop-blur-md px-6 flex items-center justify-center gap-3 select-none shrink-0">
+      <div className="h-16 border-t border-border/80 bg-surface-header/90 backdrop-blur-md px-3 sm:px-6 flex items-center justify-center gap-2 sm:gap-3 select-none shrink-0">
         {/* Mic Toggle */}
         <button
           onClick={onToggleMic}
           className={cn(
-            'p-3 rounded-2xl transition-all shadow-md',
+            'p-2.5 sm:p-3 rounded-xl sm:rounded-2xl transition-all shadow-md',
             isMicMuted
               ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 hover:bg-rose-500/30'
               : 'bg-surface-default text-foreground hover:bg-surface-hover border border-border'

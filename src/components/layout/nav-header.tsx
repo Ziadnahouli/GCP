@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Search, Bell, Wifi, ShieldAlert, Sparkles, Terminal, Radio } from 'lucide-react';
+import { Search, Bell, Wifi, ShieldAlert, Sparkles, Terminal, Radio, Menu } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { Badge } from '@/components/ui/badge';
 import { ZeroTierModal } from '@/components/network/zerotier-modal';
@@ -9,19 +9,30 @@ import { ZeroTierModal } from '@/components/network/zerotier-modal';
 interface NavHeaderProps {
   title?: string;
   subtitle?: string;
+  onOpenMobileMenu?: () => void;
 }
 
-export function NavHeader({ title = 'Friends & Activity', subtitle }: NavHeaderProps) {
+export function NavHeader({ title = 'Friends & Activity', subtitle, onOpenMobileMenu }: NavHeaderProps) {
   const { isConfigured } = useAuth();
   const [showZeroTier, setShowZeroTier] = React.useState(false);
 
   return (
-    <header className="h-14 border-b border-border/80 bg-surface-header/90 backdrop-blur-md px-4 flex items-center justify-between shrink-0 select-none z-10">
-      {/* Title & Section */}
-      <div className="flex items-center gap-3">
-        <h1 className="text-sm font-bold text-foreground tracking-tight">{title}</h1>
+    <header className="h-14 border-b border-border/80 bg-surface-header/90 backdrop-blur-md px-3 sm:px-4 flex items-center justify-between shrink-0 select-none z-10">
+      {/* Title & Mobile Menu Trigger */}
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        {onOpenMobileMenu && (
+          <button
+            onClick={onOpenMobileMenu}
+            className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground hover:bg-surface-hover rounded-lg transition-colors"
+            title="Open Server & Channels Menu"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+        <h1 className="text-sm font-bold text-foreground tracking-tight truncate">{title}</h1>
         {subtitle && (
-          <span className="text-xs text-muted-foreground hidden sm:inline">
+          <span className="text-xs text-muted-foreground hidden sm:inline truncate">
             • {subtitle}
           </span>
         )}

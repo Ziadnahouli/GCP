@@ -144,20 +144,20 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-4xl p-0 h-[620px] flex flex-row overflow-hidden border-border bg-card"
+        className="max-w-4xl p-0 h-[620px] max-h-[92vh] flex flex-col md:flex-row overflow-hidden border-border bg-card w-[95vw] md:w-full"
         onClose={() => onOpenChange(false)}
       >
         {/* Settings Navigation Sidebar */}
-        <div className="w-56 bg-surface-sidebar p-4 border-r border-border shrink-0 flex flex-col justify-between">
-          <div className="space-y-1">
-            <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+        <div className="w-full md:w-56 bg-surface-sidebar p-3 md:p-4 border-b md:border-b-0 md:border-r border-border shrink-0 flex flex-row md:flex-col justify-between overflow-x-auto md:overflow-x-visible gap-2 no-scrollbar">
+          <div className="flex flex-row md:flex-col gap-1 items-center md:items-stretch overflow-x-auto shrink-0 no-scrollbar">
+            <div className="hidden md:block px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
               User Settings
             </div>
 
             <button
               onClick={() => setActiveTab('profile')}
               className={cn(
-                'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left',
+                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
                 activeTab === 'profile'
                   ? 'bg-primary/15 text-primary font-semibold'
                   : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
@@ -170,44 +170,44 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <button
               onClick={() => setActiveTab('appearance')}
               className={cn(
-                'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left',
+                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
                 activeTab === 'appearance'
                   ? 'bg-primary/15 text-primary font-semibold'
                   : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
               )}
             >
               <Palette className="w-4 h-4 shrink-0" />
-              <span>Appearance & Theme</span>
+              <span className="hidden sm:inline">Appearance &</span> Theme
             </button>
 
             <button
               onClick={() => setActiveTab('audio')}
               className={cn(
-                'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left',
+                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
                 activeTab === 'audio'
                   ? 'bg-primary/15 text-primary font-semibold'
                   : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
               )}
             >
               <Volume2 className="w-4 h-4 shrink-0" />
-              <span>Voice & Sound</span>
+              <span>Voice</span>
             </button>
 
             <button
               onClick={() => setActiveTab('notifications')}
               className={cn(
-                'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left',
+                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
                 activeTab === 'notifications'
                   ? 'bg-primary/15 text-primary font-semibold'
                   : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
               )}
             >
               <Bell className="w-4 h-4 shrink-0" />
-              <span>Notifications</span>
+              <span>Notifs</span>
             </button>
           </div>
 
-          <div className="border-t border-border/80 pt-3">
+          <div className="border-t-0 md:border-t border-border/80 pt-0 md:pt-3 shrink-0 flex items-center">
             <button
               onClick={async () => {
                 await signOut();
@@ -218,7 +218,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   type: 'info',
                 });
               }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors text-left"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors text-left shrink-0"
             >
               <LogOut className="w-4 h-4 shrink-0" />
               <span>Sign Out</span>
@@ -227,7 +227,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </div>
 
         {/* Settings Body Content */}
-        <div className="flex-1 overflow-y-auto p-6 bg-card">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-card">
           {activeTab === 'profile' && (
             <div className="space-y-6 max-w-xl">
               <div>

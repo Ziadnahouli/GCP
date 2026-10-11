@@ -101,7 +101,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
     <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
       {/* Social Tab Navigation Bar */}
       <div className="h-14 border-b border-border/80 px-4 flex items-center justify-between shrink-0 select-none bg-surface-header/60 backdrop-blur-md">
-        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto py-1">
+        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto py-1 no-scrollbar">
           <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground mr-3 shrink-0">
             <Users className="w-4 h-4 text-primary" />
             <span className="hidden sm:inline">Friends</span>

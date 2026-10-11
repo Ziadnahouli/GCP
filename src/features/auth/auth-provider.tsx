@@ -56,8 +56,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (userId: string, currentUser?: User) => {
       try {
         const [profileRes, settingsRes] = await Promise.all([
-          supabase.from('profiles').select('*').eq('id', userId).single(),
-          supabase.from('user_settings').select('*').eq('user_id', userId).single(),
+          supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
+          supabase.from('user_settings').select('*').eq('user_id', userId).maybeSingle(),
         ]);
 
         if (profileRes.data) {
@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               banner_color: '#7c3aed',
             })
             .select()
-            .single();
+            .maybeSingle();
 
           if (createdProfile) {
             setProfile(createdProfile as UserProfile);

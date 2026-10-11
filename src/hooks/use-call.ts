@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/toast';
 import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
 import { supabase } from '@/lib/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
 
 export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_call' | 'ended';
 
@@ -160,14 +161,8 @@ export function useCall() {
     // 2. Acquire local audio/video stream
     const stream = await getMedia(video);
 
-    // 3. Setup WebRTC Peer Connection
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-      ],
-    });
+    // 3. Setup WebRTC Peer Connection with TURN relay support
+    const pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
     pcRef.current = pc;
 
     if (stream) {
@@ -221,9 +216,10 @@ export function useCall() {
           }
         })
         .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
-          if (payload.candidate && pcRef.current) {
+          const cleaned = cleanIceCandidate(payload?.candidate);
+          if (cleaned && pcRef.current) {
             try {
-              await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+              await pcRef.current.addIceCandidate(new RTCIceCandidate(cleaned));
             } catch {}
           }
         })
@@ -254,11 +250,14 @@ export function useCall() {
 
       pc.onicecandidate = (event) => {
         if (event.candidate && channelRef.current) {
-          channelRef.current.send({
-            type: 'broadcast',
-            event: 'ice_candidate',
-            payload: { candidate: event.candidate },
-          });
+          const cleaned = cleanIceCandidate(event.candidate.toJSON());
+          if (cleaned) {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'ice_candidate',
+              payload: { candidate: cleaned },
+            });
+          }
         }
       };
     }

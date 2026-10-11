@@ -45,6 +45,7 @@ interface CallModalProps {
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
   onToggleNoiseSuppression?: () => void;
+  onRestartConnection?: () => void;
 }
 
 export function CallModal({
@@ -65,6 +66,7 @@ export function CallModal({
   onToggleCamera,
   onToggleScreenShare,
   onToggleNoiseSuppression,
+  onRestartConnection,
 }: CallModalProps) {
   const { user } = useAuth();
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
@@ -332,7 +334,11 @@ export function CallModal({
         {/* Telemetry diagnostics popup panel */}
         {showDiagnostics && (
           <div className="absolute top-4 right-4 z-20 w-80 max-w-[calc(100%-2rem)]">
-            <NetworkDiagnostics stats={stats} />
+            <NetworkDiagnostics
+              stats={stats}
+              onRestartConnection={onRestartConnection}
+              onClose={() => setShowDiagnostics(false)}
+            />
           </div>
         )}
       </div>

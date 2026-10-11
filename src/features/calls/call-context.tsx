@@ -7,6 +7,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
 import { soundboardEngine, SoundboardClip } from '@/lib/soundboard/audio-engine';
+import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
 
 export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_call' | 'ended';
 
@@ -46,6 +47,7 @@ interface CallContextType {
   acceptCall: () => Promise<void>;
   rejectCall: () => void;
   endCall: () => void;
+  restartConnection: () => Promise<void>;
   toggleMic: () => void;
   toggleCamera: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
@@ -55,14 +57,6 @@ interface CallContextType {
 }
 
 export const CallContext = React.createContext<CallContextType | null>(null);
-
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'stun:stun.services.mozilla.com' },
-];
 
 // Procedural Web Audio Ringtone Generator (no external assets needed)
 class RingtonePlayer {
@@ -154,8 +148,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const screenStreamRef = React.useRef<MediaStream | null>(null);
   const ringtoneRef = React.useRef<RingtonePlayer | null>(null);
   const ringingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const iceWatchdogTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const iceRestartingRef = React.useRef<boolean>(false);
   const roomChannelRef = React.useRef<RealtimeChannel | null>(null);
   const outboundChannelsRef = React.useRef<Map<string, RealtimeChannel>>(new Map());
+  const outboundQueueRef = React.useRef<Map<string, Array<{ event: string; payload: unknown }>>>(new Map());
+  const roomQueueRef = React.useRef<Array<{ event: string; payload: unknown }>>([]);
   const remoteAudioElementRef = React.useRef<HTMLAudioElement | null>(null);
 
   // ICE candidates buffering and deduplication
@@ -182,68 +180,86 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     bytesSent: number;
   } | null>(null);
 
-  // Helper to reliably send a signal to a peer's personal channel
+  // Helper to reliably send a signal to a peer's personal channel with FIFO queuing
   const sendSignalToUser = React.useCallback(
     (targetUserId: string, event: string, payload: unknown) => {
       if (!supabase || !targetUserId) return;
 
-      const existingChannel = outboundChannelsRef.current.get(targetUserId);
-      if (existingChannel) {
-        if (existingChannel.state === 'joined') {
-          existingChannel
-            .send({
-              type: 'broadcast',
-              event,
-              payload,
-            })
-            .catch(() => {});
-        } else if (typeof (existingChannel as any).httpSend === 'function') {
-          (existingChannel as any)
-            .httpSend({
-              type: 'broadcast',
-              event,
-              payload,
-            })
-            .catch(() => {});
-        }
-        return;
+      let queue = outboundQueueRef.current.get(targetUserId);
+      if (!queue) {
+        queue = [];
+        outboundQueueRef.current.set(targetUserId, queue);
       }
 
-      const ch = supabase.channel(`user-signals-${targetUserId}`);
-      outboundChannelsRef.current.set(targetUserId, ch);
-
-      ch.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          ch.send({
-            type: 'broadcast',
-            event,
-            payload,
-          }).catch(() => {});
-        }
-      });
-    },
-    [supabase]
-  );
-
-  // Helper to broadcast on the active room channel
-  const sendSignalToRoom = React.useCallback((event: string, payload: unknown) => {
-    if (roomChannelRef.current) {
-      if (roomChannelRef.current.state === 'joined') {
-        roomChannelRef.current
+      const existingChannel = outboundChannelsRef.current.get(targetUserId);
+      if (existingChannel && existingChannel.state === 'joined') {
+        existingChannel
           .send({
             type: 'broadcast',
             event,
             payload,
           })
-          .catch(() => {});
-      } else if (typeof (roomChannelRef.current as any).httpSend === 'function') {
-        (roomChannelRef.current as any)
-          .httpSend({
-            type: 'broadcast',
-            event,
-            payload,
-          })
-          .catch(() => {});
+          .catch((err) => {
+            console.warn('[CallSignaling] Error sending to user channel:', err);
+          });
+        return;
+      }
+
+      // If channel is joining or not yet created, queue signal for delivery on join
+      queue.push({ event, payload });
+
+      if (!existingChannel) {
+        const ch = supabase.channel(`user-signals-${targetUserId}`);
+        outboundChannelsRef.current.set(targetUserId, ch);
+
+        ch.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            const pending = outboundQueueRef.current.get(targetUserId) || [];
+            while (pending.length > 0) {
+              const msg = pending.shift();
+              if (msg) {
+                ch.send({
+                  type: 'broadcast',
+                  event: msg.event,
+                  payload: msg.payload,
+                }).catch(() => {});
+              }
+            }
+          }
+        });
+      }
+    },
+    [supabase]
+  );
+
+  // Helper to broadcast on the active room channel with FIFO queuing
+  const sendSignalToRoom = React.useCallback((event: string, payload: unknown) => {
+    const ch = roomChannelRef.current;
+    if (ch && ch.state === 'joined') {
+      ch.send({
+        type: 'broadcast',
+        event,
+        payload,
+      }).catch(() => {});
+      return;
+    }
+
+    // Queue signal until room channel joins
+    roomQueueRef.current.push({ event, payload });
+  }, []);
+
+  // Flush queued room signals once subscribed
+  const flushRoomQueue = React.useCallback(() => {
+    const ch = roomChannelRef.current;
+    if (!ch || ch.state !== 'joined') return;
+    while (roomQueueRef.current.length > 0) {
+      const msg = roomQueueRef.current.shift();
+      if (msg) {
+        ch.send({
+          type: 'broadcast',
+          event: msg.event,
+          payload: msg.payload,
+        }).catch(() => {});
       }
     }
   }, []);
@@ -338,6 +354,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(ringingTimerRef.current);
       ringingTimerRef.current = null;
     }
+    if (iceWatchdogTimerRef.current) {
+      clearTimeout(iceWatchdogTimerRef.current);
+      iceWatchdogTimerRef.current = null;
+    }
+    iceRestartingRef.current = false;
+    outboundQueueRef.current.clear();
+    roomQueueRef.current = [];
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
         try {
@@ -678,12 +702,20 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           typeof window !== 'undefined' &&
           ('__TAURI_IPC__' in window || '__TAURI__' in window);
 
+        const isConnected =
+          pc.connectionState === 'connected' ||
+          pc.iceConnectionState === 'connected' ||
+          pc.iceConnectionState === 'completed';
+
+        const isFailed =
+          pc.connectionState === 'failed' || pc.iceConnectionState === 'failed';
+
         const currentConnectionState: 'connected' | 'connecting' | 'reconnecting' | 'disconnected' =
-          pc.connectionState === 'connected'
+          isConnected
             ? 'connected'
-            : pc.connectionState === 'connecting'
-            ? 'connecting'
-            : pc.connectionState === 'failed' || pc.connectionState === 'closed'
+            : isFailed
+            ? 'reconnecting'
+            : pc.connectionState === 'closed'
             ? 'disconnected'
             : 'connecting';
 
@@ -762,12 +794,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return null;
   };
 
-  // Helper to add a remote ICE candidate cleanly with deduplication
-  const applyRemoteCandidate = React.useCallback(async (candidate: RTCIceCandidateInit) => {
+  // Helper to add a remote ICE candidate cleanly with deduplication & cleaning
+  const applyRemoteCandidate = React.useCallback(async (rawCandidate: RTCIceCandidateInit) => {
     const pc = pcRef.current;
-    if (!pc || !candidate) return;
+    if (!pc || !rawCandidate) return;
 
-    const candStr = JSON.stringify(candidate);
+    const candidate = cleanIceCandidate(rawCandidate);
+    if (!candidate) return;
+
+    const candStr = JSON.stringify({
+      candidate: candidate.candidate,
+      sdpMid: candidate.sdpMid,
+      sdpMLineIndex: candidate.sdpMLineIndex,
+    });
     if (seenCandidatesRef.current.has(candStr)) return;
     seenCandidatesRef.current.add(candStr);
 
@@ -797,6 +836,48 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Dynamic ICE restart to bypass Symmetric NAT, CGNAT, or firewall timeouts
+  const restartIceConnection = React.useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc || iceRestartingRef.current) return;
+    iceRestartingRef.current = true;
+
+    try {
+      console.log('[CallNAT] Initiating WebRTC ICE restart & relay candidate gathering...');
+      toast({
+        title: 'Optimizing Call Connection',
+        description: 'Bypassing strict router NAT/firewall via high-availability TURN relay...',
+        type: 'info',
+        duration: 3500,
+      });
+
+      if (typeof pc.restartIce === 'function') {
+        pc.restartIce();
+      }
+
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+
+      const targetId = peerUserId || incomingCall?.callerId;
+      const payload = {
+        sdp: offer,
+        senderId: user?.id,
+        conversationId: activeConversationId,
+      };
+
+      sendSignalToRoom('ice_restart_offer', payload);
+      if (targetId) {
+        sendSignalToUser(targetId, 'ice_restart_offer', payload);
+      }
+    } catch (err) {
+      console.warn('[CallNAT] ICE restart offer error:', err);
+    } finally {
+      setTimeout(() => {
+        iceRestartingRef.current = false;
+      }, 4000);
+    }
+  }, [peerUserId, incomingCall?.callerId, user?.id, activeConversationId, sendSignalToRoom, sendSignalToUser, toast]);
+
   // Helper to apply incoming answer SDP
   const applyAnswerSdp = React.useCallback(
     async (sdp: RTCSessionDescriptionInit) => {
@@ -818,14 +899,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           setCallStatus('in_call');
           await drainPendingRemoteCandidates();
 
-          // Flush all gathered local ICE candidates so callee receives any candidates generated before answer
+          // Flush all gathered local ICE candidates to BOTH room AND peer mailbox
           localIceCandidatesRef.current.forEach((candidate) => {
             sendSignalToRoom('ice_candidate', { candidate, senderId: user?.id });
+            if (peerUserId) {
+              sendSignalToUser(peerUserId, 'ice_candidate', { candidate, senderId: user?.id });
+            }
           });
 
           toast({
             title: 'Call Connected',
-            description: 'Connected via direct P2P WebRTC audio stream.',
+            description: 'Connected via direct WebRTC stream with NAT traversal.',
             type: 'success',
           });
         }
@@ -833,7 +917,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         console.warn('[CallSignaling] Error applying answer SDP:', e);
       }
     },
-    [drainPendingRemoteCandidates, sendSignalToRoom, toast, user?.id]
+    [drainPendingRemoteCandidates, sendSignalToRoom, sendSignalToUser, peerUserId, toast, user?.id]
   );
 
   // 1. GLOBAL SIGNALING LISTENER: Subscribes on mount for the authenticated user
@@ -887,6 +971,45 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setCallStatus('idle');
         setIncomingCall(null);
       })
+      .on('broadcast', { event: 'ice_restart_offer' }, async ({ payload }) => {
+        if (!payload?.sdp || payload.senderId === user.id) return;
+        const pc = pcRef.current;
+        if (!pc) return;
+        try {
+          console.log('[CallNAT] Received remote ICE restart offer in mailbox, creating answer...');
+          await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          await drainPendingRemoteCandidates();
+
+          const restartAns = await pc.createAnswer();
+          await pc.setLocalDescription(restartAns);
+
+          const ansPayload = {
+            sdp: restartAns,
+            senderId: user.id,
+            conversationId: activeConversationId,
+          };
+          sendSignalToRoom('ice_restart_answer', ansPayload);
+          if (payload.senderId) {
+            sendSignalToUser(payload.senderId, 'ice_restart_answer', ansPayload);
+          }
+        } catch (e) {
+          console.warn('[CallNAT] Error handling ice_restart_offer in mailbox:', e);
+        }
+      })
+      .on('broadcast', { event: 'ice_restart_answer' }, async ({ payload }) => {
+        if (!payload?.sdp || payload.senderId === user.id) return;
+        const pc = pcRef.current;
+        if (!pc) return;
+        try {
+          if (pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            await drainPendingRemoteCandidates();
+            console.log('[CallNAT] ICE restart answer applied successfully via mailbox.');
+          }
+        } catch (e) {
+          console.warn('[CallNAT] Error applying ice_restart_answer in mailbox:', e);
+        }
+      })
       .on('broadcast', { event: 'call_ended' }, () => {
         stopMediaTracks();
         setCallStatus('idle');
@@ -898,7 +1021,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(myChannel);
     };
-  }, [user, supabase, stopMediaTracks, toast, applyAnswerSdp, applyRemoteCandidate, handlePeerMediaToggle]);
+  }, [user, supabase, stopMediaTracks, toast, applyAnswerSdp, applyRemoteCandidate, handlePeerMediaToggle, activeConversationId, drainPendingRemoteCandidates, sendSignalToRoom, sendSignalToUser]);
 
   // 2. START OUTGOING CALL
   const startCall = async (targetUserId: string, conversationId: string, video = false) => {
@@ -945,8 +1068,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Acquire microphone & optional camera
     const stream = await getMedia(video);
 
-    // Setup WebRTC Peer Connection
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    // Setup WebRTC Peer Connection with TURN relay support and candidate pre-fetching
+    const pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
     pcRef.current = pc;
     localIceCandidatesRef.current = [];
     pendingRemoteCandidatesRef.current = [];
@@ -1008,26 +1131,52 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       ]);
     };
 
+    // 12-second connection watchdog: if stuck in checking/connecting, trigger automatic ICE restart
+    if (iceWatchdogTimerRef.current) clearTimeout(iceWatchdogTimerRef.current);
+    iceWatchdogTimerRef.current = setTimeout(() => {
+      const activePc = pcRef.current;
+      if (activePc && activePc.iceConnectionState !== 'connected' && activePc.iceConnectionState !== 'completed') {
+        console.log('[CallNAT] WebRTC connection still pending after 12s on caller, restarting ICE...');
+        restartIceConnection();
+      }
+    }, 12000);
+
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        if (iceWatchdogTimerRef.current) {
+          clearTimeout(iceWatchdogTimerRef.current);
+          iceWatchdogTimerRef.current = null;
+        }
         setCallStatus('in_call');
+      } else if (pc.iceConnectionState === 'failed') {
+        console.warn('[CallNAT] Caller ICE connection failed, restarting ICE...');
+        restartIceConnection();
       }
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'connected') {
+        if (iceWatchdogTimerRef.current) {
+          clearTimeout(iceWatchdogTimerRef.current);
+          iceWatchdogTimerRef.current = null;
+        }
         setCallStatus('in_call');
+      } else if (pc.connectionState === 'failed') {
+        console.warn('[CallNAT] Caller connectionState failed, restarting ICE...');
+        restartIceConnection();
       }
     };
 
-    // Buffer and broadcast ICE candidates
+    // Buffer and broadcast cleaned ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        const candJson = event.candidate.toJSON();
-        localIceCandidatesRef.current.push(candJson);
+        const cleaned = cleanIceCandidate(event.candidate.toJSON());
+        if (cleaned) {
+          localIceCandidatesRef.current.push(cleaned);
 
-        sendSignalToRoom('ice_candidate', { candidate: candJson, senderId: user.id });
-        sendSignalToUser(recipientId, 'ice_candidate', { candidate: candJson, senderId: user.id });
+          sendSignalToRoom('ice_candidate', { candidate: cleaned, senderId: user.id });
+          sendSignalToUser(recipientId, 'ice_candidate', { candidate: cleaned, senderId: user.id });
+        }
       }
     };
 
@@ -1044,6 +1193,43 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
         if (payload?.candidate && payload.senderId !== user.id) {
           await applyRemoteCandidate(payload.candidate);
+        }
+      })
+      .on('broadcast', { event: 'ice_restart_offer' }, async ({ payload }) => {
+        if (!payload?.sdp || payload.senderId === user.id) return;
+        const activePc = pcRef.current;
+        if (!activePc) return;
+        try {
+          console.log('[CallNAT] Received remote ICE restart offer in caller room, answering...');
+          await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          await drainPendingRemoteCandidates();
+
+          const restartAns = await activePc.createAnswer();
+          await activePc.setLocalDescription(restartAns);
+
+          const ansPayload = {
+            sdp: restartAns,
+            senderId: user.id,
+            conversationId,
+          };
+          sendSignalToRoom('ice_restart_answer', ansPayload);
+          sendSignalToUser(recipientId, 'ice_restart_answer', ansPayload);
+        } catch (e) {
+          console.warn('[CallNAT] Error handling ice_restart_offer in room:', e);
+        }
+      })
+      .on('broadcast', { event: 'ice_restart_answer' }, async ({ payload }) => {
+        if (!payload?.sdp || payload.senderId === user.id) return;
+        const activePc = pcRef.current;
+        if (!activePc) return;
+        try {
+          if (activePc.signalingState === 'have-local-offer') {
+            await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            await drainPendingRemoteCandidates();
+            console.log('[CallNAT] ICE restart answer applied in caller room.');
+          }
+        } catch (e) {
+          console.warn('[CallNAT] Error applying ice_restart_answer in caller room:', e);
         }
       })
       .on('broadcast', { event: 'peer_media_toggle' }, ({ payload }) => {
@@ -1073,6 +1259,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
+          flushRoomQueue();
           try {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
@@ -1158,8 +1345,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Acquire microphone & optional camera
     const stream = await getMedia(isVideo);
 
-    // Setup WebRTC Peer Connection
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    // Setup WebRTC Peer Connection with TURN relay and candidate pre-fetching
+    const pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
     pcRef.current = pc;
     localIceCandidatesRef.current = [];
     pendingRemoteCandidatesRef.current = [];
@@ -1202,25 +1389,51 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    // 12-second connection watchdog: if stuck in checking/connecting, trigger automatic ICE restart
+    if (iceWatchdogTimerRef.current) clearTimeout(iceWatchdogTimerRef.current);
+    iceWatchdogTimerRef.current = setTimeout(() => {
+      const activePc = pcRef.current;
+      if (activePc && activePc.iceConnectionState !== 'connected' && activePc.iceConnectionState !== 'completed') {
+        console.log('[CallNAT] WebRTC connection still pending after 12s on callee, restarting ICE...');
+        restartIceConnection();
+      }
+    }, 12000);
+
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        if (iceWatchdogTimerRef.current) {
+          clearTimeout(iceWatchdogTimerRef.current);
+          iceWatchdogTimerRef.current = null;
+        }
         setCallStatus('in_call');
+      } else if (pc.iceConnectionState === 'failed') {
+        console.warn('[CallNAT] Callee ICE connection failed, restarting ICE...');
+        restartIceConnection();
       }
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'connected') {
+        if (iceWatchdogTimerRef.current) {
+          clearTimeout(iceWatchdogTimerRef.current);
+          iceWatchdogTimerRef.current = null;
+        }
         setCallStatus('in_call');
+      } else if (pc.connectionState === 'failed') {
+        console.warn('[CallNAT] Callee connectionState failed, restarting ICE...');
+        restartIceConnection();
       }
     };
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        const candJson = event.candidate.toJSON();
-        localIceCandidatesRef.current.push(candJson);
+        const cleaned = cleanIceCandidate(event.candidate.toJSON());
+        if (cleaned) {
+          localIceCandidatesRef.current.push(cleaned);
 
-        sendSignalToRoom('ice_candidate', { candidate: candJson, senderId: user.id });
-        sendSignalToUser(callerId, 'ice_candidate', { candidate: candJson, senderId: user.id });
+          sendSignalToRoom('ice_candidate', { candidate: cleaned, senderId: user.id });
+          sendSignalToUser(callerId, 'ice_candidate', { candidate: cleaned, senderId: user.id });
+        }
       }
     };
 
@@ -1232,6 +1445,43 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
         if (payload?.candidate && payload.senderId !== user.id) {
           await applyRemoteCandidate(payload.candidate);
+        }
+      })
+      .on('broadcast', { event: 'ice_restart_offer' }, async ({ payload }) => {
+        if (!payload?.sdp || payload.senderId === user.id) return;
+        const activePc = pcRef.current;
+        if (!activePc) return;
+        try {
+          console.log('[CallNAT] Received remote ICE restart offer in callee room, answering...');
+          await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          await drainPendingRemoteCandidates();
+
+          const restartAns = await activePc.createAnswer();
+          await activePc.setLocalDescription(restartAns);
+
+          const ansPayload = {
+            sdp: restartAns,
+            senderId: user.id,
+            conversationId,
+          };
+          sendSignalToRoom('ice_restart_answer', ansPayload);
+          sendSignalToUser(callerId, 'ice_restart_answer', ansPayload);
+        } catch (e) {
+          console.warn('[CallNAT] Error handling ice_restart_offer in callee room:', e);
+        }
+      })
+      .on('broadcast', { event: 'ice_restart_answer' }, async ({ payload }) => {
+        if (!payload?.sdp || payload.senderId === user.id) return;
+        const activePc = pcRef.current;
+        if (!activePc) return;
+        try {
+          if (activePc.signalingState === 'have-local-offer') {
+            await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            await drainPendingRemoteCandidates();
+            console.log('[CallNAT] ICE restart answer applied in callee room.');
+          }
+        } catch (e) {
+          console.warn('[CallNAT] Error applying ice_restart_answer in callee room:', e);
         }
       })
       .on('broadcast', { event: 'peer_media_toggle' }, ({ payload }) => {
@@ -1256,6 +1506,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
+          flushRoomQueue();
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(sdp));
             await drainPendingRemoteCandidates();
@@ -1282,6 +1533,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             // Flush all gathered local candidates to room & caller
             localIceCandidatesRef.current.forEach((candidate) => {
               sendSignalToRoom('ice_candidate', { candidate, senderId: user.id });
+              sendSignalToUser(callerId, 'ice_candidate', { candidate, senderId: user.id });
             });
           } catch (e) {
             console.warn('[CallSignaling] Error creating answer:', e);
@@ -1566,6 +1818,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         acceptCall,
         rejectCall,
         endCall,
+        restartConnection: restartIceConnection,
         toggleMic,
         toggleCamera,
         toggleScreenShare,

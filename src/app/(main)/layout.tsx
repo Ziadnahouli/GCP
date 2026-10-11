@@ -315,6 +315,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         onToggleCamera={call.toggleCamera}
         onToggleScreenShare={call.toggleScreenShare}
         onToggleNoiseSuppression={call.toggleNoiseSuppression}
+        onRestartConnection={call.restartConnection}
       />
     </div>
   );

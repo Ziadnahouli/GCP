@@ -6,6 +6,7 @@ import {
   Radio,
   ArrowDown,
   ArrowUp,
+  RefreshCw,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -24,9 +25,10 @@ export interface DiagnosticsStats {
 interface NetworkDiagnosticsProps {
   stats?: DiagnosticsStats;
   onClose?: () => void;
+  onRestartConnection?: () => void;
 }
 
-export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) {
+export function NetworkDiagnostics({ stats, onClose, onRestartConnection }: NetworkDiagnosticsProps) {
   const currentStats: DiagnosticsStats = stats || {
     connectionState: 'disconnected',
     rttMs: null,
@@ -137,10 +139,21 @@ export function NetworkDiagnostics({ stats, onClose }: NetworkDiagnosticsProps) 
         </Badge>
       </div>
 
+      {onRestartConnection && (
+        <button
+          onClick={onRestartConnection}
+          className="w-full mt-3 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-surface-default hover:bg-surface-hover border border-border/70 text-xs font-semibold text-foreground transition-all shadow-sm"
+          title="Force WebRTC ICE restart and re-gather TURN candidates to bypass NAT/firewalls"
+        >
+          <RefreshCw className="w-3.5 h-3.5 text-primary" />
+          <span>Optimize / Re-route Connection</span>
+        </button>
+      )}
+
       {onClose && (
         <button
           onClick={onClose}
-          className="w-full mt-3 text-center text-xs text-muted-foreground hover:text-foreground py-1 transition-colors"
+          className="w-full mt-2 text-center text-xs text-muted-foreground hover:text-foreground py-1 transition-colors"
         >
           Dismiss Diagnostics
         </button>

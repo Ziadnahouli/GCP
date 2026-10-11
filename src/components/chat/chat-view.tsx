@@ -34,8 +34,8 @@ import { Message, MessageAttachment } from '@/lib/types/messaging';
 import { validateFile, formatFileSize } from '@/lib/storage/upload';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
-import { useCall } from '@/hooks/use-call';
-import { CallModal } from '@/components/calls/call-modal';
+import { useCallContext } from '@/features/calls/call-context';
+import { getBrowserClient } from '@/lib/supabase/client';
 
 interface ChatViewProps {
   conversationId: string;
@@ -65,7 +65,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     togglePinMessage,
   } = useMessages(conversationId);
 
-  const call = useCall();
+  const call = useCallContext();
   const { toast } = useToast();
 
   const [inputContent, setInputContent] = React.useState('');
@@ -84,14 +84,64 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const supabase = React.useMemo(() => getBrowserClient(), []);
+
   const currentConversation = React.useMemo(() => {
     return conversations.find((c) => c.id === conversationId) || null;
   }, [conversations, conversationId]);
 
-  const targetMember = React.useMemo(() => {
+  const otherMember = React.useMemo(() => {
     if (!currentConversation) return null;
-    return currentConversation.members.find((m) => m.user_id !== user?.id)?.profile || null;
+    return currentConversation.members.find((m) => m.user_id !== user?.id) || null;
   }, [currentConversation, user]);
+
+  const [directRecipient, setDirectRecipient] = React.useState<{
+    id: string;
+    profile: any;
+  } | null>(null);
+
+  React.useEffect(() => {
+    if (otherMember) {
+      setDirectRecipient({
+        id: otherMember.user_id,
+        profile: otherMember.profile,
+      });
+      return;
+    }
+
+    if (!conversationId || !user) return;
+
+    let isMounted = true;
+    async function resolveDirectMember() {
+      const { data } = await supabase
+        .from('conversation_members')
+        .select(`
+          user_id,
+          profile:user_id (
+            id, username, display_name, avatar_url, banner_url, banner_color,
+            bio, custom_status, status, game_activity, created_at, updated_at
+          )
+        `)
+        .eq('conversation_id', conversationId)
+        .neq('user_id', user?.id)
+        .maybeSingle();
+
+      if (isMounted && data) {
+        setDirectRecipient({
+          id: data.user_id,
+          profile: data.profile,
+        });
+      }
+    }
+
+    resolveDirectMember();
+    return () => {
+      isMounted = false;
+    };
+  }, [conversationId, user, otherMember, supabase]);
+
+  const targetMember = otherMember?.profile || directRecipient?.profile || null;
+  const targetUserId = otherMember?.user_id || directRecipient?.id || null;
 
   const pinnedCount = React.useMemo(() => {
     return rawMessages.filter((m) => m.is_pinned).length;
@@ -286,7 +336,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
           {/* Voice & Video Call */}
           <button
-            onClick={() => call.startCall(conversationId, false)}
+            onClick={() => {
+              const peerId = targetUserId || conversationId;
+              call.startCall(peerId, conversationId, false);
+            }}
             className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
             title="Start Voice Call"
           >
@@ -294,7 +347,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           </button>
 
           <button
-            onClick={() => call.startCall(conversationId, true)}
+            onClick={() => {
+              const peerId = targetUserId || conversationId;
+              call.startCall(peerId, conversationId, true);
+            }}
             className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
             title="Start Video Call"
           >
@@ -802,23 +858,6 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         </div>
       )}
 
-      {/* Real-Time WebRTC Call Modal */}
-      <CallModal
-        open={call.callStatus !== 'idle'}
-        callStatus={call.callStatus}
-        isVideo={call.isVideoCall}
-        isMicMuted={call.isMicMuted}
-        isCameraOn={call.isCameraOn}
-        isScreenSharing={call.isScreenSharing}
-        participants={call.participants}
-        stats={call.stats}
-        localStream={call.localStream}
-        remoteStream={call.remoteStream}
-        onEndCall={call.endCall}
-        onToggleMic={call.toggleMic}
-        onToggleCamera={call.toggleCamera}
-        onToggleScreenShare={call.toggleScreenShare}
-      />
     </div>
   );
 }

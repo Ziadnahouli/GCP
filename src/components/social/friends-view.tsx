@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
+import { useCallContext } from '@/features/calls/call-context';
 
 interface FriendsViewProps {
   onOpenConversation?: (conversationId: string) => void;
@@ -76,6 +77,8 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
     (f) => f.friend.status === 'online' || f.friend.status === 'idle' || f.friend.status === 'dnd'
   ).length;
 
+  const call = useCallContext();
+
   const handleStartChat = async (targetUserId: string) => {
     const { conversationId, error } = await getOrCreateDirectConversation(targetUserId);
     if (error) {
@@ -83,6 +86,15 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
     } else if (conversationId && onOpenConversation) {
       onOpenConversation(conversationId);
     }
+  };
+
+  const handleCallFriend = async (targetUserId: string, isVideo = false) => {
+    const { conversationId, error } = await getOrCreateDirectConversation(targetUserId);
+    if (error || !conversationId) {
+      toast({ title: 'Error', description: error || 'Failed to start call', type: 'error' });
+      return;
+    }
+    call.startCall(targetUserId, conversationId, isVideo);
   };
 
   const handleSendFriendRequest = async (e: React.FormEvent) => {
@@ -504,10 +516,10 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
                         {/* Call button */}
                         <button
-                          onClick={() => handleStartChat(item.friend.id)}
+                          onClick={() => handleCallFriend(item.friend.id, false)}
                           className="w-9 h-9 rounded-xl bg-surface-default hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border flex items-center justify-center transition-colors"
-                          title="Call Friend"
-                          aria-label="Call Friend"
+                          title="Voice Call Friend"
+                          aria-label="Voice Call Friend"
                         >
                           <Phone className="w-4 h-4" />
                         </button>

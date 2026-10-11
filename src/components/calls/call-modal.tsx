@@ -22,7 +22,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { NetworkDiagnostics, DiagnosticsStats } from './network-diagnostics';
 import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
-import { CallParticipant, CallStatus } from '@/hooks/use-call';
+import { CallParticipant, CallStatus } from '@/features/calls/call-context';
 import { cn } from '@/lib/utils';
 
 interface CallModalProps {
@@ -337,6 +337,9 @@ export function CallModal({
         onOpenChange={setShowSoundboard}
         isInCall
       />
+
+      {/* Hidden audio element to playback remote participant voice stream */}
+      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
     </div>
   );
 }

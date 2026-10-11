@@ -10,6 +10,9 @@ import { ServerSidebar } from '@/components/servers/server-sidebar';
 import { CreateServerModal } from '@/components/servers/create-server-modal';
 import { ServerSettingsModal } from '@/components/servers/server-settings-modal';
 import { SettingsModal } from '@/components/layout/settings-modal';
+import { CallProvider, useCallContext } from '@/features/calls/call-context';
+import { IncomingCallModal } from '@/components/calls/incoming-call-modal';
+import { CallModal } from '@/components/calls/call-modal';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers } from '@/hooks/use-servers';
 import { Gamepad2, MessageSquare, Users, X } from 'lucide-react';
@@ -19,6 +22,7 @@ import { cn } from '@/lib/utils';
 
 function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, profile, isLoading } = useAuth();
+  const call = useCallContext();
   const [collapsed, setCollapsed] = React.useState(false);
   const [showCreateServer, setShowCreateServer] = React.useState(false);
   const [showServerSettings, setShowServerSettings] = React.useState(false);
@@ -285,21 +289,26 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
       {/* User Settings Modal for Mobile & Global */}
       <SettingsModal open={showUserSettings} onOpenChange={setShowUserSettings} />
 
-      {/* Server Settings Modal */}
-      {activeServer && (
-        <ServerSettingsModal
-          open={showServerSettings}
-          onOpenChange={setShowServerSettings}
-          server={activeServer}
-          onDeleteServer={async (srvId) => {
-            await deleteServer(srvId);
-            router.push('/');
-          }}
-          onDeleteChannel={async (chanId) => {
-            await deleteChannel(activeServer.id, chanId);
-          }}
-        />
-      )}
+      {/* Global Incoming Call Ringing Modal */}
+      <IncomingCallModal />
+
+      {/* Global Active WebRTC Voice/Video Call Modal */}
+      <CallModal
+        open={call.callStatus === 'in_call' || call.callStatus === 'outgoing_ringing'}
+        callStatus={call.callStatus}
+        isVideo={call.isVideoCall}
+        isMicMuted={call.isMicMuted}
+        isCameraOn={call.isCameraOn}
+        isScreenSharing={call.isScreenSharing}
+        participants={call.participants}
+        stats={call.stats}
+        localStream={call.localStream}
+        remoteStream={call.remoteStream}
+        onEndCall={call.endCall}
+        onToggleMic={call.toggleMic}
+        onToggleCamera={call.toggleCamera}
+        onToggleScreenShare={call.toggleScreenShare}
+      />
     </div>
   );
 }
@@ -313,7 +322,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         </div>
       }
     >
-      <MainLayoutContent>{children}</MainLayoutContent>
+      <CallProvider>
+        <MainLayoutContent>{children}</MainLayoutContent>
+      </CallProvider>
     </React.Suspense>
   );
 }

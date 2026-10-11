@@ -20,6 +20,8 @@ export function useMessages(conversationId: string | null) {
   const chatChannelRef = React.useRef<any>(null);
   const activeConversationIdRef = React.useRef<string | null>(conversationId);
   const prevConversationIdRef = React.useRef<string | null>(null);
+  const isFetchingRef = React.useRef(false);
+  const membershipVerifiedRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     activeConversationIdRef.current = conversationId;
@@ -65,6 +67,9 @@ export function useMessages(conversationId: string | null) {
         return;
       }
 
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
+
       try {
         const convChanged = prevConversationIdRef.current !== conversationId;
         if (convChanged) {
@@ -97,15 +102,12 @@ export function useMessages(conversationId: string | null) {
           return;
         }
 
-        // Database is authoritative, but retain sending, failed, and messages sent in the last 30s
+        // Database is authoritative, but retain active sending and failed drafts
         if (!msgsData || msgsData.length === 0) {
           setMessages((prev) => {
-            const recentCutoff = Date.now() - 30000;
             return prev.filter((m) => {
               if (m.conversation_id !== conversationId) return false;
-              if (m.status === 'sending' || m.status === 'failed') return true;
-              const t = new Date(m.created_at).getTime();
-              return !isNaN(t) && t > recentCutoff;
+              return m.status === 'sending' || m.status === 'failed';
             });
           });
           try {
@@ -179,19 +181,12 @@ export function useMessages(conversationId: string | null) {
 
         setMessages((prev) => {
           const combined = [...parsed];
-          const recentCutoff = Date.now() - 30000;
           for (const p of prev) {
             if (p.conversation_id === conversationId && !combined.some((c) => c.id === p.id)) {
-              const msgTime = new Date(p.created_at).getTime();
-              if (
-                p.status === 'sending' ||
-                p.status === 'failed' ||
-                (!isNaN(msgTime) && msgTime > recentCutoff)
-              ) {
-                combined.push(p);
-              }
+              combined.push(p);
             }
           }
+          combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
           return combined;
         });
 
@@ -201,6 +196,7 @@ export function useMessages(conversationId: string | null) {
       } catch (err) {
         console.error('Error fetching messages:', err);
       } finally {
+        isFetchingRef.current = false;
         if (activeConversationIdRef.current === conversationId) {
           setIsLoading(false);
         }
@@ -321,11 +317,11 @@ export function useMessages(conversationId: string | null) {
 
     chatChannelRef.current = channel;
 
-    // High-frequency live-sync fallback poll (2.5s when visible)
+    // Live-sync fallback poll (12s when visible)
     const syncInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchMessages();
-    }, 2500);
+    }, 12000);
 
     // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {
@@ -461,31 +457,69 @@ export function useMessages(conversationId: string | null) {
         insertPayload.reply_to_id = cleanReplyId;
       }
 
-      // Ensure user is recorded in conversation_members to satisfy RLS
-      try {
-        const { data: memberData } = await supabase
-          .from('conversation_members')
-          .select('id')
-          .eq('conversation_id', conversationId)
-          .eq('user_id', user.id)
-          .maybeSingle();
+      // Ensure user is recorded in conversation_members to satisfy RLS (cached per conversation)
+      if (!membershipVerifiedRef.current.has(conversationId)) {
+        try {
+          const { data: memberData } = await supabase
+            .from('conversation_members')
+            .select('id')
+            .eq('conversation_id', conversationId)
+            .eq('user_id', user.id)
+            .maybeSingle();
 
-        if (!memberData) {
-          await supabase.from('conversation_members').insert({
-            conversation_id: conversationId,
-            user_id: user.id,
-            role: 'member',
-          });
+          if (!memberData) {
+            await supabase.from('conversation_members').insert({
+              conversation_id: conversationId,
+              user_id: user.id,
+              role: 'member',
+            });
+          }
+          membershipVerifiedRef.current.add(conversationId);
+        } catch (cmErr) {
+          console.warn('Ensure conversation member error:', cmErr);
         }
-      } catch (cmErr) {
-        console.warn('Ensure conversation member error:', cmErr);
       }
 
-      // 1. Insert message to database
-      const { data: msgRows, error: msgErr } = await supabase
+      // 1. Insert message to database with auto-recovery on token expiry/RLS
+      let insertRes = await supabase
         .from('messages')
         .insert(insertPayload)
         .select('id, created_at');
+
+      let msgRows = insertRes.data;
+      let msgErr = insertRes.error;
+
+      // Auto-recovery: If rejected due to RLS/auth/JWT expiration or PGRST301, refresh session and retry once
+      if (msgErr) {
+        const errLower = (msgErr.message || '').toLowerCase();
+        const isAuthOrRls =
+          errLower.includes('jwt') ||
+          errLower.includes('security') ||
+          errLower.includes('rls') ||
+          errLower.includes('unauthorized') ||
+          errLower.includes('authenticated') ||
+          (msgErr as any).code === 'PGRST301' ||
+          (msgErr as any).code === '42501';
+
+        if (isAuthOrRls && supabase.auth?.refreshSession) {
+          try {
+            console.warn('Potential token expiry detected, refreshing auth session and retrying message insert...');
+            const { data: refreshed } = await supabase.auth.refreshSession();
+            if (refreshed?.session?.user) {
+              const retryRes = await supabase
+                .from('messages')
+                .insert(insertPayload)
+                .select('id, created_at');
+              if (!retryRes.error && retryRes.data?.[0]?.id) {
+                msgRows = retryRes.data;
+                msgErr = null;
+              }
+            }
+          } catch (refreshErr) {
+            console.warn('Auto session refresh retry failed:', refreshErr);
+          }
+        }
+      }
 
       if (msgErr || !msgRows?.[0]?.id) {
         const errorMsg = msgErr?.message || 'Database rejected message insert';

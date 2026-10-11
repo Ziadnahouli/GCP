@@ -100,6 +100,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     let mounted = true;
 
+    // Helper to refresh session if expired or close to expiry (within 5 mins)
+    const ensureValidSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.expires_at) {
+          const expiresAtMs = session.expires_at * 1000;
+          const timeLeftMs = expiresAtMs - Date.now();
+          // If expired or less than 5 minutes remaining, refresh
+          if (timeLeftMs < 300000) {
+            await supabase.auth.refreshSession();
+          }
+        }
+      } catch (e) {
+        console.warn('Session refresh check notice:', e);
+      }
+    };
+
     async function init() {
       try {
         const {
@@ -141,15 +160,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       });
 
+      // Proactive periodic keepalive every 3 minutes
+      const keepaliveTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        ensureValidSession();
+      }, 180000);
+
+      // Revalidate/refresh immediately when tab becomes active or focused
+      const handleResume = () => {
+        if (typeof document !== 'undefined' && !document.hidden) {
+          ensureValidSession();
+        }
+      };
+
+      if (typeof window !== 'undefined') {
+        window.addEventListener('focus', handleResume);
+        document.addEventListener('visibilitychange', handleResume);
+      }
+
       return () => {
         subscription.unsubscribe();
+        clearInterval(keepaliveTimer);
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('focus', handleResume);
+          document.removeEventListener('visibilitychange', handleResume);
+        }
       };
     }
 
-    init();
+    const cleanupPromise = init();
 
     return () => {
       mounted = false;
+      cleanupPromise.then((cleanup) => cleanup && cleanup());
     };
   }, [supabase, fetchProfileAndSettings]);
 
@@ -288,14 +331,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Broadcast to social-realtime so all peers see status/presence change instantly
         try {
-          const socialChannel = supabase.channel('social-realtime');
-          socialChannel
-            .send({
-              type: 'broadcast',
-              event: 'social_update',
-              payload: { userId: user.id, updates },
-            })
-            .catch(() => {});
+          const channels = supabase.getChannels ? supabase.getChannels() : [];
+          const socialChannel = channels.find((c: any) => c.topic === 'realtime:social-realtime') || supabase.channel('social-realtime');
+          if (socialChannel.state === 'joined') {
+            socialChannel
+              .send({
+                type: 'broadcast',
+                event: 'social_update',
+                payload: { userId: user.id, updates },
+              })
+              .catch(() => {});
+          } else if (typeof (socialChannel as any).httpSend === 'function') {
+            (socialChannel as any)
+              .httpSend({
+                type: 'broadcast',
+                event: 'social_update',
+                payload: { userId: user.id, updates },
+              })
+              .catch(() => {});
+          }
         } catch {}
 
         return { error: null };

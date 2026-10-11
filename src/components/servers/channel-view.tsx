@@ -121,7 +121,11 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
     setIsSending(true);
     try {
-      const res = await sendMessage(content);
+      const sendPromise = sendMessage(content);
+      const timeoutPromise = new Promise<{ error: string }>((resolve) =>
+        setTimeout(() => resolve({ error: 'Network timeout: channel message send took too long' }), 12000)
+      );
+      const res = await Promise.race([sendPromise, timeoutPromise]);
       if (res?.error) {
         toast({
           title: 'Channel Message Failed',

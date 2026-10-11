@@ -27,6 +27,7 @@ export function useSocial() {
   const [isLoading, setIsLoading] = React.useState(true);
 
   const socialChannelRef = React.useRef<any>(null);
+  const isFetchingRef = React.useRef(false);
 
   // Fetch all social data
   const fetchSocialData = React.useCallback(async () => {
@@ -38,6 +39,9 @@ export function useSocial() {
       setIsLoading(false);
       return;
     }
+
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
 
     try {
       setIsLoading(true);
@@ -161,6 +165,7 @@ export function useSocial() {
     } catch (err) {
       console.error('Error fetching social data:', err);
     } finally {
+      isFetchingRef.current = false;
       setIsLoading(false);
     }
   }, [user, supabase]);
@@ -203,14 +208,28 @@ export function useSocial() {
 
     socialChannelRef.current = channel;
 
-    // High-frequency auto-sync polling every 2.5s so presence & friends stay live
+    // Background auto-sync polling every 30s as safety fallback
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchSocialData();
-    }, 2500);
+    }, 30000);
+
+    const handleResume = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        fetchSocialData();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleResume);
+      document.addEventListener('visibilitychange', handleResume);
+    }
 
     return () => {
       clearInterval(autoSyncTimer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleResume);
+        document.removeEventListener('visibilitychange', handleResume);
+      }
       socialChannelRef.current = null;
       supabase.removeChannel(channel);
     };

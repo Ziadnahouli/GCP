@@ -16,6 +16,8 @@ export function useChannelMessages(channelId: string | null) {
   const channelRef = React.useRef<any>(null);
   const activeChannelIdRef = React.useRef<string | null>(channelId);
   const prevChannelIdRef = React.useRef<string | null>(null);
+  const isFetchingRef = React.useRef(false);
+  const serverMemberVerifiedRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     activeChannelIdRef.current = channelId;
@@ -31,6 +33,9 @@ export function useChannelMessages(channelId: string | null) {
       setIsLoading(false);
       return;
     }
+
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
 
     const channelChanged = prevChannelIdRef.current !== channelId;
     if (channelChanged) {
@@ -72,20 +77,12 @@ export function useChannelMessages(channelId: string | null) {
 
           setMessages((prev) => {
             const combined = [...parsed];
-            const recentCutoff = Date.now() - 30000; // 30s threshold
             for (const p of prev) {
               if (p.channel_id === channelId && !combined.some((c) => c.id === p.id)) {
-                const msgTime = new Date(p.created_at).getTime();
-                // Retain pending, failed, and messages created recently so they are never lost to read delays
-                if (
-                  p.status === 'sending' ||
-                  p.status === 'failed' ||
-                  (!isNaN(msgTime) && msgTime > recentCutoff)
-                ) {
-                  combined.push(p);
-                }
+                combined.push(p);
               }
             }
+            combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
             return combined;
           });
           try {
@@ -109,6 +106,7 @@ export function useChannelMessages(channelId: string | null) {
     } catch (e) {
       console.warn('Failed to fetch channel messages:', e);
     } finally {
+      isFetchingRef.current = false;
       if (activeChannelIdRef.current === channelId) {
         setIsLoading(false);
       }
@@ -181,13 +179,13 @@ export function useChannelMessages(channelId: string | null) {
     });
     channelRef.current = channel;
 
-    // High-frequency live-sync fallback poll (2.5s when visible)
+    // Live-sync fallback poll (12s when visible)
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       if (isUUID) {
         fetchChannelMessages();
       }
-    }, 2500);
+    }, 12000);
 
     // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {
@@ -275,40 +273,76 @@ export function useChannelMessages(channelId: string | null) {
 
       // 2. Persist to Supabase BEFORE considering delivered
       try {
-        // Ensure user is in server_members to satisfy RLS
-        try {
-          const { data: chanData } = await supabase
-            .from('channels')
-            .select('server_id')
-            .eq('id', channelId)
-            .maybeSingle();
-
-          if (chanData?.server_id) {
-            const { data: existing } = await supabase
-              .from('server_members')
-              .select('id')
-              .eq('server_id', chanData.server_id)
-              .eq('user_id', user.id)
+        // Ensure user is in server_members to satisfy RLS (cached per channel)
+        if (!serverMemberVerifiedRef.current.has(channelId)) {
+          try {
+            const { data: chanData } = await supabase
+              .from('channels')
+              .select('server_id')
+              .eq('id', channelId)
               .maybeSingle();
 
-            if (!existing) {
-              await supabase.from('server_members').insert({
-                server_id: chanData.server_id,
-                user_id: user.id,
-                role: 'member',
-              });
+            if (chanData?.server_id) {
+              const { data: existing } = await supabase
+                .from('server_members')
+                .select('id')
+                .eq('server_id', chanData.server_id)
+                .eq('user_id', user.id)
+                .maybeSingle();
+
+              if (!existing) {
+                await supabase.from('server_members').insert({
+                  server_id: chanData.server_id,
+                  user_id: user.id,
+                  role: 'member',
+                });
+              }
             }
+            serverMemberVerifiedRef.current.add(channelId);
+          } catch (smErr) {
+            console.warn('server_members ensure notice:', smErr);
           }
-        } catch (smErr) {
-          console.warn('server_members ensure notice:', smErr);
         }
 
-        const { error: insertErr } = await supabase.from('channel_messages').insert({
+        let { error: insertErr } = await supabase.from('channel_messages').insert({
           id: messageId,
           channel_id: channelId,
           user_id: user.id,
           content: trimmed,
         });
+
+        // Auto-recovery: If rejected due to RLS/auth/JWT expiration or PGRST301, refresh session and retry once
+        if (insertErr) {
+          const errLower = (insertErr.message || '').toLowerCase();
+          const isAuthOrRls =
+            errLower.includes('jwt') ||
+            errLower.includes('security') ||
+            errLower.includes('rls') ||
+            errLower.includes('unauthorized') ||
+            errLower.includes('authenticated') ||
+            (insertErr as any).code === 'PGRST301' ||
+            (insertErr as any).code === '42501';
+
+          if (isAuthOrRls && supabase.auth?.refreshSession) {
+            try {
+              console.warn('Channel message insert auth issue detected, refreshing session and retrying...');
+              const { data: refreshed } = await supabase.auth.refreshSession();
+              if (refreshed?.session?.user) {
+                const retryRes = await supabase.from('channel_messages').insert({
+                  id: messageId,
+                  channel_id: channelId,
+                  user_id: user.id,
+                  content: trimmed,
+                });
+                if (!retryRes.error) {
+                  insertErr = null;
+                }
+              }
+            } catch (refreshErr) {
+              console.warn('Auto session refresh retry failed:', refreshErr);
+            }
+          }
+        }
 
         if (insertErr) {
           console.error('Failed to persist channel message:', insertErr);

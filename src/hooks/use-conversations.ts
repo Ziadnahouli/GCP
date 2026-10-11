@@ -12,6 +12,7 @@ export function useConversations() {
 
   const [conversations, setConversations] = React.useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const isFetchingRef = React.useRef(false);
 
   const fetchConversations = React.useCallback(async () => {
     if (!user) {
@@ -19,6 +20,9 @@ export function useConversations() {
       setIsLoading(false);
       return;
     }
+
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
 
     try {
       setIsLoading(true);
@@ -94,6 +98,7 @@ export function useConversations() {
     } catch (err) {
       console.error('Error fetching conversations:', err);
     } finally {
+      isFetchingRef.current = false;
       setIsLoading(false);
     }
   }, [user, supabase]);
@@ -129,11 +134,11 @@ export function useConversations() {
         }
       });
 
-    // High-frequency live-sync fallback poll (3s when visible)
+    // Fallback sync poll (25s when visible)
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchConversations();
-    }, 3000);
+    }, 25000);
 
     // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {

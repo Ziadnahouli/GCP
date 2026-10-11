@@ -186,7 +186,7 @@ export function useServers() {
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchServers();
-    }, 15000);
+    }, 30000);
 
     return () => {
       clearInterval(autoSyncTimer);

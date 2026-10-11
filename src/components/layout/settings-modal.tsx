@@ -15,6 +15,7 @@ import {
   Headphones,
   Check,
   AlertTriangle,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { AccentTheme, UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
@@ -62,6 +63,13 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [inputVol, setInputVol] = React.useState(85);
   const [outputVol, setOutputVol] = React.useState(100);
   const [desktopNotifs, setDesktopNotifs] = React.useState(true);
+  const [noiseSuppression, setNoiseSuppression] = React.useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('nexus_noise_suppression');
+      return stored !== null ? stored === 'true' : true;
+    }
+    return true;
+  });
 
   // Sync state when profile/settings change or modal opens
   React.useEffect(() => {
@@ -128,6 +136,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const handleSaveAudio = async () => {
     setIsSaving(true);
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('nexus_noise_suppression', String(noiseSuppression));
+      }
       await updateSettings({
         sound_effects_enabled: soundEffects,
         push_to_talk_enabled: pushToTalk,
@@ -136,7 +147,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       });
       toast({
         title: 'Audio Settings Saved',
-        description: 'Microphone & speaker preferences updated.',
+        description: `Microphone noise suppression ${noiseSuppression ? 'enabled' : 'disabled'} and audio preferences updated.`,
         type: 'success',
       });
     } finally {
@@ -499,6 +510,24 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 </div>
 
                 <div className="pt-2 border-t border-border space-y-3">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-surface-default border border-border cursor-pointer">
+                    <div>
+                      <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                        AI Noise Suppression & Acoustic Filtering
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        Filters background mechanical keyboard clicks, fan hum, and room noise in voice calls.
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={noiseSuppression}
+                      onChange={(e) => setNoiseSuppression(e.target.checked)}
+                      className="accent-primary w-4 h-4 rounded cursor-pointer"
+                    />
+                  </label>
+
                   <label className="flex items-center justify-between p-3 rounded-lg bg-surface-default border border-border cursor-pointer">
                     <span className="text-xs font-medium text-foreground">
                       Enable Soundboard & System Sound Effects

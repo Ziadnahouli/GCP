@@ -304,6 +304,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         isMicMuted={call.isMicMuted}
         isCameraOn={call.isCameraOn}
         isScreenSharing={call.isScreenSharing}
+        isNoiseSuppressionEnabled={call.isNoiseSuppressionEnabled}
         participants={call.participants}
         stats={call.stats}
         localStream={call.localStream}
@@ -313,6 +314,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         onToggleMic={call.toggleMic}
         onToggleCamera={call.toggleCamera}
         onToggleScreenShare={call.toggleScreenShare}
+        onToggleNoiseSuppression={call.toggleNoiseSuppression}
       />
     </div>
   );

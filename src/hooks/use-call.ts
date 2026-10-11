@@ -36,11 +36,39 @@ export function useCall() {
   const [isCameraOn, setIsCameraOn] = React.useState(false);
   const [isScreenSharing, setIsScreenSharing] = React.useState(false);
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
+  const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = React.useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('nexus_noise_suppression');
+      return stored !== null ? stored === 'true' : true;
+    }
+    return true;
+  });
 
   // WebRTC Peer Connection & Signaling Channel
   const pcRef = React.useRef<RTCPeerConnection | null>(null);
   const channelRef = React.useRef<RealtimeChannel | null>(null);
   const localStreamRef = React.useRef<MediaStream | null>(null);
+
+  // Toggle noise suppression dynamically
+  const toggleNoiseSuppression = React.useCallback(async () => {
+    const nextState = !isNoiseSuppressionEnabled;
+    setIsNoiseSuppressionEnabled(nextState);
+    try {
+      localStorage.setItem('nexus_noise_suppression', String(nextState));
+    } catch {}
+
+    if (localStreamRef.current) {
+      for (const track of localStreamRef.current.getAudioTracks()) {
+        try {
+          await track.applyConstraints({
+            echoCancellation: true,
+            noiseSuppression: nextState,
+            autoGainControl: nextState,
+          });
+        } catch {}
+      }
+    }
+  }, [isNoiseSuppressionEnabled]);
 
   // Participants list
   const [participants, setParticipants] = React.useState<CallParticipant[]>([]);
@@ -92,8 +120,8 @@ export function useCall() {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
+            noiseSuppression: isNoiseSuppressionEnabled,
+            autoGainControl: isNoiseSuppressionEnabled,
           },
           video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
         });
@@ -394,5 +422,7 @@ export function useCall() {
     toggleMic,
     toggleCamera,
     toggleScreenShare,
+    isNoiseSuppressionEnabled,
+    toggleNoiseSuppression,
   };
 }

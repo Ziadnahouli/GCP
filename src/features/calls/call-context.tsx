@@ -50,6 +50,8 @@ interface CallContextType {
   toggleCamera: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
   broadcastSoundboardClip: (clip: SoundboardClip) => void;
+  isNoiseSuppressionEnabled: boolean;
+  toggleNoiseSuppression: () => void;
 }
 
 export const CallContext = React.createContext<CallContextType | null>(null);
@@ -137,6 +139,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [isMicMuted, setIsMicMuted] = React.useState(false);
   const [isCameraOn, setIsCameraOn] = React.useState(false);
   const [isScreenSharing, setIsScreenSharing] = React.useState(false);
+  const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = React.useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('nexus_noise_suppression');
+      return stored !== null ? stored === 'true' : true;
+    }
+    return true;
+  });
 
   // Stable references
   const pcRef = React.useRef<RTCPeerConnection | null>(null);
@@ -256,6 +265,40 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     },
     [user, profile, peerUserId, sendSignalToRoom, sendSignalToUser]
   );
+
+  // Toggle noise suppression for microphone dynamically in active call
+  const toggleNoiseSuppression = React.useCallback(async () => {
+    const nextState = !isNoiseSuppressionEnabled;
+    setIsNoiseSuppressionEnabled(nextState);
+    try {
+      localStorage.setItem('nexus_noise_suppression', String(nextState));
+    } catch {}
+
+    // Apply updated constraints to all active microphone audio tracks
+    if (localStreamRef.current) {
+      const audioTracks = localStreamRef.current.getAudioTracks();
+      for (const track of audioTracks) {
+        try {
+          await track.applyConstraints({
+            echoCancellation: true,
+            noiseSuppression: nextState,
+            autoGainControl: nextState,
+          });
+        } catch (err) {
+          console.warn('[CallContext] applyConstraints for noise suppression notice:', err);
+        }
+      }
+    }
+
+    toast({
+      title: nextState ? 'Noise Suppression Active' : 'Noise Suppression Off',
+      description: nextState
+        ? 'AI & acoustic filtering active: keyboard clatter and ambient fan noise removed.'
+        : 'Raw microphone pass-through active.',
+      type: nextState ? 'success' : 'info',
+      duration: 2500,
+    });
+  }, [isNoiseSuppressionEnabled, toast]);
 
   // Update participant media state from remote signals
   const handlePeerMediaToggle = React.useCallback(
@@ -672,8 +715,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          noiseSuppression: isNoiseSuppressionEnabled,
+          autoGainControl: isNoiseSuppressionEnabled,
         },
         video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
       });
@@ -690,8 +733,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           const audioStream = await navigator.mediaDevices.getUserMedia({
             audio: {
               echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
+              noiseSuppression: isNoiseSuppressionEnabled,
+              autoGainControl: isNoiseSuppressionEnabled,
             },
             video: false,
           });
@@ -1527,6 +1570,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         toggleCamera,
         toggleScreenShare,
         broadcastSoundboardClip,
+        isNoiseSuppressionEnabled,
+        toggleNoiseSuppression,
       }}
     >
       {children}

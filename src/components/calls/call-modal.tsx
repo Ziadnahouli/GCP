@@ -17,6 +17,7 @@ import {
   X,
   Phone,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +34,7 @@ interface CallModalProps {
   isMicMuted: boolean;
   isCameraOn: boolean;
   isScreenSharing: boolean;
+  isNoiseSuppressionEnabled?: boolean;
   participants: CallParticipant[];
   stats: DiagnosticsStats;
   localStream?: MediaStream | null;
@@ -42,6 +44,7 @@ interface CallModalProps {
   onToggleMic: () => void;
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
+  onToggleNoiseSuppression?: () => void;
 }
 
 export function CallModal({
@@ -51,6 +54,7 @@ export function CallModal({
   isMicMuted,
   isCameraOn,
   isScreenSharing,
+  isNoiseSuppressionEnabled = true,
   participants,
   stats,
   localStream,
@@ -60,6 +64,7 @@ export function CallModal({
   onToggleMic,
   onToggleCamera,
   onToggleScreenShare,
+  onToggleNoiseSuppression,
 }: CallModalProps) {
   const { user } = useAuth();
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
@@ -144,6 +149,15 @@ export function CallModal({
               ? 'Tactical Video Stream'
               : 'Encrypted Voice Room'}
           </span>
+          {isNoiseSuppressionEnabled && (
+            <Badge
+              variant="outline"
+              className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 font-mono"
+            >
+              <ShieldCheck className="w-3 h-3 text-emerald-400" />
+              <span>AI Noise Filter ON</span>
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -334,6 +348,35 @@ export function CallModal({
           >
             <Sparkles className="w-4 h-4" />
           </button>
+
+          {/* Noise Suppression Toggle Button */}
+          {onToggleNoiseSuppression && (
+            <button
+              onClick={onToggleNoiseSuppression}
+              className={cn(
+                'flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-semibold transition-all',
+                isNoiseSuppressionEnabled
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25 shadow-glow-sm'
+                  : 'bg-surface-default border-border/60 text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+              )}
+              title={
+                isNoiseSuppressionEnabled
+                  ? 'Noise Suppression Active: Background keyboard and fan noise filtered. Click to disable.'
+                  : 'Noise Suppression Inactive: Raw mic pass-through. Click to enable.'
+              }
+            >
+              <ShieldCheck
+                className={cn('w-4 h-4', isNoiseSuppressionEnabled ? 'text-emerald-400' : 'text-muted-foreground')}
+              />
+              <span className="hidden sm:inline">Noise Filter</span>
+              <span
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full',
+                  isNoiseSuppressionEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/40'
+                )}
+              />
+            </button>
+          )}
         </div>
 
         {/* Media Call Controls */}

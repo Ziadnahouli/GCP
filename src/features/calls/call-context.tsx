@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useToast } from '@/components/ui/toast';
 import { getBrowserClient } from '@/lib/supabase/client';
+import { RealtimeChannel } from '@supabase/supabase-js';
 import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
 
 export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_call' | 'ended';
@@ -50,7 +51,15 @@ interface CallContextType {
 
 const CallContext = React.createContext<CallContextType | null>(null);
 
-// Web Audio Ringtone Generator (procedural tones, no audio file dependencies)
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.services.mozilla.com' },
+];
+
+// Procedural Web Audio Ringtone Generator (no assets needed)
 class RingtonePlayer {
   private ctx: AudioContext | null = null;
   private intervalId: NodeJS.Timeout | null = null;
@@ -127,6 +136,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const ringtoneRef = React.useRef<RingtonePlayer | null>(null);
   const pendingCandidatesRef = React.useRef<RTCIceCandidateInit[]>([]);
 
+  // Mutex and sequential send queues for realtime channels
+  const channelPromisesRef = React.useRef<Map<string, Promise<RealtimeChannel>>>(new Map());
+  const sendQueueRef = React.useRef<Map<string, Promise<unknown>>>(new Map());
+
   const [participants, setParticipants] = React.useState<CallParticipant[]>([]);
 
   const [stats] = React.useState<DiagnosticsStats>({
@@ -186,57 +199,97 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return null;
   };
 
-  // Helper to safely send broadcast signaling over Supabase Realtime
-  const sendSignal = React.useCallback(
-    async (targetUserId: string, event: string, payload: unknown) => {
-      if (!supabase) return;
-
-      const channelName = `user-signals-${targetUserId}`;
+  // Helper to ensure a channel is subscribed once without duplicate callback overwrites
+  const getOrSubscribeChannel = React.useCallback(
+    async (channelName: string): Promise<RealtimeChannel> => {
       let channel = supabase
         .getChannels()
         .find((c) => c.topic === `realtime:${channelName}` || c.topic === channelName);
+
+      if (channel && channel.state === 'joined') {
+        return channel;
+      }
+
+      if (channelPromisesRef.current.has(channelName)) {
+        return channelPromisesRef.current.get(channelName)!;
+      }
 
       if (!channel) {
         channel = supabase.channel(channelName);
       }
 
-      const doSend = async (chan: typeof channel) => {
-        try {
-          const res = await chan.send({
+      const chanInstance = channel;
+      const promise = new Promise<RealtimeChannel>((resolve) => {
+        const timer = setTimeout(() => {
+          channelPromisesRef.current.delete(channelName);
+          resolve(chanInstance);
+        }, 2500);
+
+        chanInstance.subscribe((status) => {
+          if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            clearTimeout(timer);
+            channelPromisesRef.current.delete(channelName);
+            resolve(chanInstance);
+          }
+        });
+      });
+
+      channelPromisesRef.current.set(channelName, promise);
+      return promise;
+    },
+    [supabase]
+  );
+
+  // Helper to send signal sequentially through channel send queue
+  const sendSignal = React.useCallback(
+    async (targetUserId: string, event: string, payload: unknown) => {
+      if (!supabase) return;
+      const channelName = `user-signals-${targetUserId}`;
+
+      const prev = sendQueueRef.current.get(channelName) || Promise.resolve();
+      const current = prev
+        .then(async () => {
+          const channel = await getOrSubscribeChannel(channelName);
+          const res = await channel.send({
             type: 'broadcast',
             event,
             payload,
           });
           console.log(`[CallSignaling] Sent [${event}] to ${channelName}:`, res);
           return res;
-        } catch (err) {
+        })
+        .catch((err) => {
           console.error(`[CallSignaling] Error sending [${event}] to ${channelName}:`, err);
-        }
-      };
-
-      if (channel.state === 'joined') {
-        return await doSend(channel);
-      }
-
-      return new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          console.warn(`[CallSignaling] Subscribe timed out on ${channelName}, sending anyway`);
-          doSend(channel).finally(() => resolve());
-        }, 2000);
-
-        channel.subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            clearTimeout(timer);
-            await doSend(channel);
-            resolve();
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            clearTimeout(timer);
-            resolve();
-          }
         });
-      });
+
+      sendQueueRef.current.set(channelName, current);
+      return current;
     },
-    [supabase]
+    [supabase, getOrSubscribeChannel]
+  );
+
+  // Helper to send redundant signal through room channel
+  const sendRoomSignal = React.useCallback(
+    async (conversationId: string, event: string, payload: unknown) => {
+      if (!supabase || !conversationId) return;
+      const channelName = `call-signaling-${conversationId}`;
+
+      const prev = sendQueueRef.current.get(channelName) || Promise.resolve();
+      const current = prev
+        .then(async () => {
+          const channel = await getOrSubscribeChannel(channelName);
+          return await channel.send({
+            type: 'broadcast',
+            event,
+            payload,
+          });
+        })
+        .catch(() => {});
+
+      sendQueueRef.current.set(channelName, current);
+      return current;
+    },
+    [supabase, getOrSubscribeChannel]
   );
 
   // 1. GLOBAL SIGNALING LISTENER: Subscribes on mount for the authenticated user
@@ -244,9 +297,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!user || !supabase) return;
 
     const personalChannelName = `user-signals-${user.id}`;
-    console.log(`[CallSignaling] Subscribing listener for user: ${user.id} on channel: ${personalChannelName}`);
+    console.log(`[CallSignaling] Registering global listener on: ${personalChannelName}`);
 
-    // Remove existing channel to guarantee fresh listener subscription
     const existing = supabase
       .getChannels()
       .find((c) => c.topic === `realtime:${personalChannelName}` || c.topic === personalChannelName);
@@ -258,13 +310,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     myChannel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
-        console.log('[CallSignaling] Received incoming_call broadcast:', payload);
+        console.log('[CallSignaling] Incoming call payload received:', payload);
         if (!payload || payload.callerId === user.id) return;
 
         setIncomingCall(payload as IncomingCallData);
         setCallStatus('incoming_ringing');
 
-        // Play audible ringtone
         if (ringtoneRef.current) {
           ringtoneRef.current.stop();
         }
@@ -273,7 +324,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         ringtoneRef.current = player;
       })
       .on('broadcast', { event: 'call_answer' }, async ({ payload }) => {
-        console.log('[CallSignaling] Received call_answer broadcast:', payload);
+        console.log('[CallSignaling] Received call_answer payload:', payload);
         if (ringtoneRef.current) {
           ringtoneRef.current.stop();
           ringtoneRef.current = null;
@@ -284,7 +335,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             setCallStatus('in_call');
 
-            // Drain any ICE candidates received prior to remote description
             while (pendingCandidatesRef.current.length > 0) {
               const cand = pendingCandidatesRef.current.shift();
               if (cand) {
@@ -298,7 +348,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               type: 'success',
             });
           } catch (e) {
-            console.warn('[CallSignaling] Error setting remote description on caller:', e);
+            console.warn('[CallSignaling] Error setting remote description:', e);
           }
         }
       })
@@ -311,25 +361,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             pendingCandidatesRef.current.push(payload.candidate);
           }
         } catch (e) {
-          console.warn('[CallSignaling] Error adding ice candidate:', e);
+          console.warn('[CallSignaling] Error applying ice candidate:', e);
         }
       })
       .on('broadcast', { event: 'call_rejected' }, () => {
-        console.log('[CallSignaling] Received call_rejected broadcast');
         toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
         stopMediaTracks();
         setCallStatus('idle');
         setIncomingCall(null);
       })
       .on('broadcast', { event: 'call_ended' }, () => {
-        console.log('[CallSignaling] Received call_ended broadcast');
         stopMediaTracks();
         setCallStatus('idle');
         setIncomingCall(null);
         toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
       })
       .subscribe((status) => {
-        console.log(`[CallSignaling] User listener channel ${personalChannelName} status:`, status);
+        console.log(`[CallSignaling] Global channel status: ${status}`);
       });
 
     return () => {
@@ -380,13 +428,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const stream = await getMedia(video);
 
     // Setup WebRTC connection
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-      ],
-    });
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pcRef.current = pc;
     pendingCandidatesRef.current = [];
 
@@ -396,7 +438,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     pc.ontrack = (event) => {
       if (event.streams && event.streams[0]) {
-        console.log('[CallSignaling] Received remote stream on caller!');
+        console.log('[CallSignaling] Received remote media stream on caller!');
         setRemoteStream(event.streams[0]);
         setCallStatus('in_call');
         setParticipants([
@@ -420,9 +462,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    pc.oniceconnectionstatechange = () => {
+      console.log('[CallSignaling] Caller ICE State:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        setCallStatus('in_call');
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('[CallSignaling] Caller Peer Connection State:', pc.connectionState);
+      if (pc.connectionState === 'connected') {
+        setCallStatus('in_call');
+      }
+    };
+
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         sendSignal(recipientId, 'ice_candidate', { candidate: event.candidate });
+        if (conversationId) {
+          sendRoomSignal(conversationId, 'ice_candidate', { candidate: event.candidate });
+        }
       }
     };
 
@@ -430,8 +489,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    // Broadcast offer to target user's personal channel
-    await sendSignal(recipientId, 'incoming_call', {
+    // Broadcast offer to target user's personal channel & room channel
+    const callPayload = {
       callerId: user.id,
       callerName: profile?.display_name || profile?.username || 'Squad Member',
       callerAvatar: profile?.avatar_url || null,
@@ -439,6 +498,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       conversationId,
       isVideo: video,
       sdp: offer,
+    };
+
+    await Promise.all([
+      sendSignal(recipientId, 'incoming_call', callPayload),
+      sendRoomSignal(conversationId, 'incoming_call', callPayload),
+    ]);
+
+    // Also listen to room channel for answer fallback
+    const roomChannel = await getOrSubscribeChannel(`call-signaling-${conversationId}`);
+    roomChannel.on('broadcast', { event: 'call_answer' }, async ({ payload }) => {
+      if (payload?.sdp && pcRef.current && callStatus !== 'in_call') {
+        try {
+          await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          setCallStatus('in_call');
+          if (ringtoneRef.current) {
+            ringtoneRef.current.stop();
+            ringtoneRef.current = null;
+          }
+        } catch {}
+      }
     });
 
     setParticipants([
@@ -479,13 +558,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Acquire microphone & camera
     const stream = await getMedia(isVideo);
 
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-      ],
-    });
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pcRef.current = pc;
     pendingCandidatesRef.current = [];
 
@@ -497,19 +570,37 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (event.streams && event.streams[0]) {
         console.log('[CallSignaling] Received remote stream on callee!');
         setRemoteStream(event.streams[0]);
+        setCallStatus('in_call');
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('[CallSignaling] Callee ICE State:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        setCallStatus('in_call');
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('[CallSignaling] Callee Peer Connection State:', pc.connectionState);
+      if (pc.connectionState === 'connected') {
+        setCallStatus('in_call');
       }
     };
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         sendSignal(callerId, 'ice_candidate', { candidate: event.candidate });
+        if (conversationId) {
+          sendRoomSignal(conversationId, 'ice_candidate', { candidate: event.candidate });
+        }
       }
     };
 
     // Set remote description from caller offer
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
 
-    // Drain any queued ICE candidates
+    // Drain queued ICE candidates
     while (pendingCandidatesRef.current.length > 0) {
       const cand = pendingCandidatesRef.current.shift();
       if (cand) {
@@ -521,8 +612,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // Send answer back to caller
-    await sendSignal(callerId, 'call_answer', { sdp: answer });
+    // Send answer back to caller via both personal channel & room channel
+    await Promise.all([
+      sendSignal(callerId, 'call_answer', { sdp: answer, conversationId }),
+      sendRoomSignal(conversationId, 'call_answer', { sdp: answer, conversationId }),
+    ]);
 
     setParticipants([
       {
@@ -551,6 +645,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const rejectCall = () => {
     if (incomingCall) {
       sendSignal(incomingCall.callerId, 'call_rejected', {});
+      if (incomingCall.conversationId) {
+        sendRoomSignal(incomingCall.conversationId, 'call_rejected', {});
+      }
     }
 
     stopMediaTracks();
@@ -563,6 +660,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const target = peerUserId || incomingCall?.callerId;
     if (target) {
       sendSignal(target, 'call_ended', {});
+    }
+    if (activeConversationId) {
+      sendRoomSignal(activeConversationId, 'call_ended', {});
     }
 
     stopMediaTracks();

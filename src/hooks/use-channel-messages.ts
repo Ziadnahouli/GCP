@@ -11,6 +11,7 @@ const STORAGE_KEY_PREFIX = 'nexus_channel_msgs_';
 export function useChannelMessages(channelId: string | null) {
   const { user, profile } = useAuth();
   const [messages, setMessages] = React.useState<ChannelMessage[]>([]);
+  const channelRef = React.useRef<any>(null);
 
   const fetchChannelMessages = React.useCallback(async () => {
     if (!channelId) {
@@ -87,6 +88,8 @@ export function useChannelMessages(channelId: string | null) {
       })
       .subscribe();
 
+    channelRef.current = channel;
+
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchChannelMessages();
@@ -94,6 +97,7 @@ export function useChannelMessages(channelId: string | null) {
 
     return () => {
       clearInterval(autoSyncTimer);
+      channelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [channelId, fetchChannelMessages]);
@@ -159,14 +163,15 @@ export function useChannelMessages(channelId: string | null) {
           if (msgErr) throw msgErr;
 
           // Broadcast to server peers
-          supabase
-            .channel(`chan-room-${channelId}`)
-            .send({
-              type: 'broadcast',
-              event: 'new_channel_msg',
-              payload: { messageId: newMsg.id },
-            })
-            .catch(() => {});
+          if (channelRef.current) {
+            channelRef.current
+              .send({
+                type: 'broadcast',
+                event: 'new_channel_msg',
+                payload: { messageId: newMsg.id },
+              })
+              .catch(() => {});
+          }
         } catch (e) {
           console.error('Supabase channel message insert failed:', e);
         }

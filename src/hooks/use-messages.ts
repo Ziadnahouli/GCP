@@ -17,6 +17,8 @@ export function useMessages(conversationId: string | null) {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showPinnedOnly, setShowPinnedOnly] = React.useState(false);
 
+  const chatChannelRef = React.useRef<any>(null);
+
   // Fetch messages with attachments and reactions
   const fetchMessages = React.useCallback(async () => {
     if (!conversationId) {
@@ -34,88 +36,89 @@ export function useMessages(conversationId: string | null) {
     try {
       setIsLoading(true);
 
-      const [msgsRes, attachmentsRes, reactionsRes] = await Promise.all([
-        supabase
-          .from('messages')
-          .select(`
-            id, conversation_id, sender_id, content, reply_to_id,
-            is_pinned, is_edited, created_at, updated_at,
-            sender:sender_id (
-              id, username, display_name, avatar_url, banner_url, banner_color,
-              bio, custom_status, status, game_activity, created_at, updated_at
-            )
-          `)
-          .eq('conversation_id', conversationId)
-          .order('created_at', { ascending: true }),
+      const { data: msgsData, error: msgsErr } = await supabase
+        .from('messages')
+        .select(`
+          id, conversation_id, sender_id, content, reply_to_id,
+          is_pinned, is_edited, created_at, updated_at,
+          sender:sender_id (
+            id, username, display_name, avatar_url, banner_url, banner_color,
+            bio, custom_status, status, game_activity, created_at, updated_at
+          )
+        `)
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
 
+      if (msgsErr) {
+        console.error('Error fetching messages:', msgsErr);
+        return;
+      }
+
+      if (!msgsData || msgsData.length === 0) {
+        setMessages([]);
+        return;
+      }
+
+      const msgIds = msgsData.map((m) => m.id);
+
+      const [attachmentsRes, reactionsRes] = await Promise.all([
         supabase
           .from('message_attachments')
           .select('*')
           .eq('conversation_id', conversationId),
-
         supabase
           .from('message_reactions')
           .select(`
             id, message_id, user_id, emoji, created_at,
             profile:user_id (display_name, username)
           `)
-          .in(
-            'message_id',
-            (
-              await supabase
-                .from('messages')
-                .select('id')
-                .eq('conversation_id', conversationId)
-            ).data?.map((m) => m.id) || []
-          ),
+          .in('message_id', msgIds),
       ]);
 
-      if (msgsRes.data) {
-        const parsed: Message[] = msgsRes.data.map((m) => {
-          // Attachments
-          const mAttachments: MessageAttachment[] = (attachmentsRes.data || [])
-            .filter((a) => a.message_id === m.id)
-            .map((a) => {
-              const { data: urlData } = supabase.storage
-                .from('attachments')
-                .getPublicUrl(a.storage_path);
-              return {
-                ...a,
-                url: urlData?.publicUrl || undefined,
-              };
-            });
-
-          // Reactions grouped by emoji
-          const rawReactions = (reactionsRes.data || []).filter((r) => r.message_id === m.id);
-          const reactionMap = new Map<string, { count: number; has_reacted: boolean; users: string[] }>();
-
-          rawReactions.forEach((r) => {
-            const existing = reactionMap.get(r.emoji) || { count: 0, has_reacted: false, users: [] };
-            const userName =
-              (r.profile as unknown as { display_name?: string })?.display_name || 'Gamer';
-            existing.count += 1;
-            existing.users.push(userName);
-            if (r.user_id === user.id) existing.has_reacted = true;
-            reactionMap.set(r.emoji, existing);
+      const parsed: Message[] = msgsData.map((m) => {
+        // Attachments
+        const mAttachments: MessageAttachment[] = (attachmentsRes.data || [])
+          .filter((a) => a.message_id === m.id)
+          .map((a) => {
+            const { data: urlData } = supabase.storage
+              .from('attachments')
+              .getPublicUrl(a.storage_path);
+            return {
+              ...a,
+              url: urlData?.publicUrl || undefined,
+            };
           });
 
-          const mReactions: MessageReaction[] = Array.from(reactionMap.entries()).map(
-            ([emoji, data]) => ({
-              emoji,
-              ...data,
-            })
-          );
+        // Reactions grouped by emoji
+        const rawReactions = (reactionsRes.data || []).filter((r) => r.message_id === m.id);
+        const reactionMap = new Map<string, { count: number; has_reacted: boolean; users: string[] }>();
 
-          return {
-            ...m,
-            sender: m.sender as unknown as UserProfile,
-            attachments: mAttachments,
-            reactions: mReactions,
-          };
+        rawReactions.forEach((r) => {
+          const existing = reactionMap.get(r.emoji) || { count: 0, has_reacted: false, users: [] };
+          const userName =
+            (r.profile as unknown as { display_name?: string })?.display_name || 'Gamer';
+          existing.count += 1;
+          existing.users.push(userName);
+          if (r.user_id === user.id) existing.has_reacted = true;
+          reactionMap.set(r.emoji, existing);
         });
 
-        setMessages(parsed);
-      }
+        const mReactions: MessageReaction[] = Array.from(reactionMap.entries()).map(
+          ([emoji, data]) => ({
+            emoji,
+            ...data,
+          })
+        );
+
+        return {
+          ...m,
+          sender: m.sender as unknown as UserProfile,
+          attachments: mAttachments,
+          reactions: mReactions,
+        };
+      });
+
+      setMessages(parsed);
     } catch (err) {
       console.error('Error fetching messages:', err);
     } finally {
@@ -174,13 +177,17 @@ export function useMessages(conversationId: string | null) {
       })
       .subscribe();
 
-    // Auto-sync polling every 3.5s to ensure mobile/poor-connection real-time fidelity
+    chatChannelRef.current = channel;
+
+    // Auto-sync polling every 8s to ensure delivery when tab is active
     const syncInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchMessages();
-    }, 3500);
+    }, 8000);
 
     return () => {
       clearInterval(syncInterval);
+      chatChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [conversationId, fetchMessages, isConfigured, user, profile, supabase]);
@@ -296,21 +303,21 @@ export function useMessages(conversationId: string | null) {
         }
       }
 
-      // 3. Broadcast to peers on channel for instant cross-device delivery
-      supabase
-        .channel(`chat-room-${conversationId}`)
-        .send({
+      // 3. Broadcast to peers on active channel
+      if (chatChannelRef.current) {
+        chatChannelRef.current.send({
           type: 'broadcast',
           event: 'new_msg',
           payload: { messageId: msgData.id },
-        })
-        .catch(() => {});
+        }).catch(() => {});
+      }
 
-      await fetchMessages();
+      fetchMessages().catch(() => {});
       return { error: null };
-    } catch {
+    } catch (err: unknown) {
+      console.error('Send message failed:', err);
       setMessages((prev) => prev.filter((m) => m.id !== optId));
-      return { error: 'Failed to send message' };
+      return { error: err instanceof Error ? err.message : 'Failed to send message' };
     }
   };
 
@@ -390,11 +397,15 @@ export function useMessages(conversationId: string | null) {
   // Broadcast typing
   const sendTyping = () => {
     if (!conversationId || !isConfigured || !profile) return;
-    supabase.channel(`chat-room-${conversationId}`).send({
-      type: 'broadcast',
-      event: 'typing',
-      payload: { username: profile.display_name || profile.username },
-    });
+    if (chatChannelRef.current) {
+      chatChannelRef.current
+        .send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: { username: profile.display_name || profile.username },
+        })
+        .catch(() => {});
+    }
   };
 
   // Edit message

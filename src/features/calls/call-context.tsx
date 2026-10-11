@@ -59,7 +59,7 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.services.mozilla.com' },
 ];
 
-// Procedural Web Audio Ringtone Generator (no assets needed)
+// Procedural Web Audio Ringtone Generator (no external assets needed)
 class RingtonePlayer {
   private ctx: AudioContext | null = null;
   private intervalId: NodeJS.Timeout | null = null;
@@ -73,7 +73,10 @@ class RingtonePlayer {
       this.ctx = new AudioCtx();
 
       const playTone = () => {
-        if (!this.ctx) return;
+        if (!this.ctx || this.ctx.state === 'closed') return;
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = 'sine';
@@ -131,14 +134,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [isCameraOn, setIsCameraOn] = React.useState(false);
   const [isScreenSharing, setIsScreenSharing] = React.useState(false);
 
+  // Stable references
   const pcRef = React.useRef<RTCPeerConnection | null>(null);
   const localStreamRef = React.useRef<MediaStream | null>(null);
   const ringtoneRef = React.useRef<RingtonePlayer | null>(null);
-  const pendingCandidatesRef = React.useRef<RTCIceCandidateInit[]>([]);
+  const ringingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const roomChannelRef = React.useRef<RealtimeChannel | null>(null);
+  const outboundChannelsRef = React.useRef<Map<string, RealtimeChannel>>(new Map());
+  const remoteAudioElementRef = React.useRef<HTMLAudioElement | null>(null);
 
-  // Mutex and sequential send queues for realtime channels
-  const channelPromisesRef = React.useRef<Map<string, Promise<RealtimeChannel>>>(new Map());
-  const sendQueueRef = React.useRef<Map<string, Promise<unknown>>>(new Map());
+  // ICE candidates buffering and deduplication
+  const localIceCandidatesRef = React.useRef<RTCIceCandidateInit[]>([]);
+  const pendingRemoteCandidatesRef = React.useRef<RTCIceCandidateInit[]>([]);
+  const seenCandidatesRef = React.useRef<Set<string>>(new Set());
 
   const [participants, setParticipants] = React.useState<CallParticipant[]>([]);
 
@@ -159,10 +167,61 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     bytesSent: number;
   } | null>(null);
 
+  // Helper to reliably send a signal to a peer's personal channel
+  const sendSignalToUser = React.useCallback(
+    (targetUserId: string, event: string, payload: unknown) => {
+      if (!supabase || !targetUserId) return;
+
+      const existingChannel = outboundChannelsRef.current.get(targetUserId);
+      if (existingChannel) {
+        existingChannel
+          .send({
+            type: 'broadcast',
+            event,
+            payload,
+          })
+          .catch(() => {});
+        return;
+      }
+
+      const ch = supabase.channel(`user-signals-${targetUserId}`);
+      outboundChannelsRef.current.set(targetUserId, ch);
+
+      ch.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          ch.send({
+            type: 'broadcast',
+            event,
+            payload,
+          }).catch(() => {});
+        }
+      });
+    },
+    [supabase]
+  );
+
+  // Helper to broadcast on the active room channel
+  const sendSignalToRoom = React.useCallback((event: string, payload: unknown) => {
+    if (roomChannelRef.current) {
+      roomChannelRef.current
+        .send({
+          type: 'broadcast',
+          event,
+          payload,
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // Centralized call state cleanup
   const stopMediaTracks = React.useCallback(() => {
     if (ringtoneRef.current) {
       ringtoneRef.current.stop();
       ringtoneRef.current = null;
+    }
+    if (ringingTimerRef.current) {
+      clearTimeout(ringingTimerRef.current);
+      ringingTimerRef.current = null;
     }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
@@ -181,7 +240,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       pcRef.current = null;
     }
-    pendingCandidatesRef.current = [];
+
+    if (roomChannelRef.current && supabase) {
+      try {
+        supabase.removeChannel(roomChannelRef.current);
+      } catch {}
+      roomChannelRef.current = null;
+    }
+
+    if (remoteAudioElementRef.current) {
+      remoteAudioElementRef.current.pause();
+      remoteAudioElementRef.current.srcObject = null;
+    }
+
+    localIceCandidatesRef.current = [];
+    pendingRemoteCandidatesRef.current = [];
+    seenCandidatesRef.current.clear();
     setParticipants([]);
     setStats({
       connectionState: 'disconnected',
@@ -194,7 +268,58 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       isZeroTierActive: false,
     });
     prevStatsRef.current = null;
-  }, []);
+  }, [supabase]);
+
+  // Clean up all outbound channels on unmount
+  React.useEffect(() => {
+    const outboundMap = outboundChannelsRef.current;
+    return () => {
+      outboundMap.forEach((ch) => {
+        try {
+          supabase.removeChannel(ch);
+        } catch {}
+      });
+      outboundMap.clear();
+    };
+  }, [supabase]);
+
+  // Handle remote audio playback directly via persistent HTML audio element
+  React.useEffect(() => {
+    const audioEl = remoteAudioElementRef.current;
+    if (!audioEl) return;
+
+    if (remoteStream) {
+      if (audioEl.srcObject !== remoteStream) {
+        audioEl.srcObject = remoteStream;
+      }
+      audioEl.muted = false;
+      audioEl.volume = 1.0;
+
+      remoteStream.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+        track.onunmute = () => {
+          audioEl.play().catch(() => {});
+        };
+      });
+
+      const playPromise = audioEl.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('[CallAudio] Autoplay waiting for user gesture:', err);
+          const unlock = () => {
+            audioEl.play().catch(() => {});
+            window.removeEventListener('click', unlock);
+            window.removeEventListener('keydown', unlock);
+          };
+          window.addEventListener('click', unlock, { once: true });
+          window.addEventListener('keydown', unlock, { once: true });
+        });
+      }
+    } else {
+      audioEl.pause();
+      audioEl.srcObject = null;
+    }
+  }, [remoteStream]);
 
   // Web Audio RMS Speech Activity Monitoring for remote audio
   React.useEffect(() => {
@@ -453,118 +578,136 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
   }, [callStatus]);
 
+  // Acquire local camera and microphone stream with audio-only fallback
   const getMedia = async (video: boolean): Promise<MediaStream | null> => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      return null;
+    }
+
     try {
-      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-          video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
-        });
-        localStreamRef.current = stream;
-        setLocalStream(stream);
-        return stream;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
+      });
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+      });
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      return stream;
+    } catch (videoErr) {
+      // If video access failed (e.g., no webcam attached), gracefully fallback to audio only
+      if (video) {
+        console.warn('Video stream acquisition failed, falling back to audio only:', videoErr);
+        try {
+          const audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+            video: false,
+          });
+          audioStream.getAudioTracks().forEach((track) => {
+            track.enabled = true;
+          });
+          localStreamRef.current = audioStream;
+          setLocalStream(audioStream);
+          setIsCameraOn(false);
+          setIsVideoCall(false);
+          return audioStream;
+        } catch (audioErr) {
+          console.warn('Microphone access not granted:', audioErr);
+        }
+      } else {
+        console.warn('Microphone access not granted:', videoErr);
       }
-    } catch (err) {
-      console.warn('Microphone/Camera access not granted:', err);
+
+      toast({
+        title: 'Microphone Permission Needed',
+        description: 'Please allow microphone access in your browser to talk.',
+        type: 'error',
+      });
     }
     return null;
   };
 
-  // Helper to ensure a channel is subscribed once without duplicate callback overwrites
-  const getOrSubscribeChannel = React.useCallback(
-    async (channelName: string): Promise<RealtimeChannel> => {
-      let channel = supabase
-        .getChannels()
-        .find((c) => c.topic === `realtime:${channelName}` || c.topic === channelName);
+  // Helper to add a remote ICE candidate cleanly with deduplication
+  const applyRemoteCandidate = React.useCallback(async (candidate: RTCIceCandidateInit) => {
+    const pc = pcRef.current;
+    if (!pc || !candidate) return;
 
-      if (channel && channel.state === 'joined') {
-        return channel;
+    const candStr = JSON.stringify(candidate);
+    if (seenCandidatesRef.current.has(candStr)) return;
+    seenCandidatesRef.current.add(candStr);
+
+    try {
+      if (pc.remoteDescription && pc.remoteDescription.type) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } else {
+        pendingRemoteCandidatesRef.current.push(candidate);
+      }
+    } catch (e) {
+      console.warn('[CallSignaling] Error applying candidate:', e);
+    }
+  }, []);
+
+  // Helper to drain pending remote candidates once remote description is set
+  const drainPendingRemoteCandidates = React.useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc) return;
+
+    while (pendingRemoteCandidatesRef.current.length > 0) {
+      const cand = pendingRemoteCandidatesRef.current.shift();
+      if (cand) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch {}
+      }
+    }
+  }, []);
+
+  // Helper to apply incoming answer SDP
+  const applyAnswerSdp = React.useCallback(
+    async (sdp: RTCSessionDescriptionInit) => {
+      const pc = pcRef.current;
+      if (!pc || !sdp) return;
+
+      if (ringtoneRef.current) {
+        ringtoneRef.current.stop();
+        ringtoneRef.current = null;
+      }
+      if (ringingTimerRef.current) {
+        clearTimeout(ringingTimerRef.current);
+        ringingTimerRef.current = null;
       }
 
-      if (channelPromisesRef.current.has(channelName)) {
-        return channelPromisesRef.current.get(channelName)!;
-      }
+      try {
+        if (pc.signalingState === 'have-local-offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+          setCallStatus('in_call');
+          await drainPendingRemoteCandidates();
 
-      if (!channel) {
-        channel = supabase.channel(channelName);
-      }
-
-      const chanInstance = channel;
-      const promise = new Promise<RealtimeChannel>((resolve) => {
-        const timer = setTimeout(() => {
-          channelPromisesRef.current.delete(channelName);
-          resolve(chanInstance);
-        }, 2500);
-
-        chanInstance.subscribe((status) => {
-          if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            clearTimeout(timer);
-            channelPromisesRef.current.delete(channelName);
-            resolve(chanInstance);
-          }
-        });
-      });
-
-      channelPromisesRef.current.set(channelName, promise);
-      return promise;
-    },
-    [supabase]
-  );
-
-  // Helper to send signal sequentially through channel send queue
-  const sendSignal = React.useCallback(
-    async (targetUserId: string, event: string, payload: unknown) => {
-      if (!supabase) return;
-      const channelName = `user-signals-${targetUserId}`;
-
-      const prev = sendQueueRef.current.get(channelName) || Promise.resolve();
-      const current = prev
-        .then(async () => {
-          const channel = await getOrSubscribeChannel(channelName);
-          const res = await channel.send({
-            type: 'broadcast',
-            event,
-            payload,
+          // Flush all gathered local ICE candidates so callee receives any candidates generated before answer
+          localIceCandidatesRef.current.forEach((candidate) => {
+            sendSignalToRoom('ice_candidate', { candidate, senderId: user?.id });
           });
-          console.log(`[CallSignaling] Sent [${event}] to ${channelName}:`, res);
-          return res;
-        })
-        .catch((err) => {
-          console.error(`[CallSignaling] Error sending [${event}] to ${channelName}:`, err);
-        });
 
-      sendQueueRef.current.set(channelName, current);
-      return current;
-    },
-    [supabase, getOrSubscribeChannel]
-  );
-
-  // Helper to send redundant signal through room channel
-  const sendRoomSignal = React.useCallback(
-    async (conversationId: string, event: string, payload: unknown) => {
-      if (!supabase || !conversationId) return;
-      const channelName = `call-signaling-${conversationId}`;
-
-      const prev = sendQueueRef.current.get(channelName) || Promise.resolve();
-      const current = prev
-        .then(async () => {
-          const channel = await getOrSubscribeChannel(channelName);
-          return await channel.send({
-            type: 'broadcast',
-            event,
-            payload,
+          toast({
+            title: 'Call Connected',
+            description: 'Connected via direct P2P WebRTC audio stream.',
+            type: 'success',
           });
-        })
-        .catch(() => {});
-
-      sendQueueRef.current.set(channelName, current);
-      return current;
+        }
+      } catch (e) {
+        console.warn('[CallSignaling] Error applying answer SDP:', e);
+      }
     },
-    [supabase, getOrSubscribeChannel]
+    [drainPendingRemoteCandidates, sendSignalToRoom, toast, user?.id]
   );
 
   // 1. GLOBAL SIGNALING LISTENER: Subscribes on mount for the authenticated user
@@ -572,22 +715,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!user || !supabase) return;
 
     const personalChannelName = `user-signals-${user.id}`;
-    console.log(`[CallSignaling] Registering global listener on: ${personalChannelName}`);
-
-    const existing = supabase
-      .getChannels()
-      .find((c) => c.topic === `realtime:${personalChannelName}` || c.topic === personalChannelName);
-    if (existing) {
-      supabase.removeChannel(existing);
-    }
-
     const myChannel = supabase.channel(personalChannelName);
 
     myChannel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
-        console.log('[CallSignaling] Incoming call payload received:', payload);
         if (!payload || payload.callerId === user.id) return;
-
         setIncomingCall(payload as IncomingCallData);
         setCallStatus('incoming_ringing');
 
@@ -599,44 +731,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         ringtoneRef.current = player;
       })
       .on('broadcast', { event: 'call_answer' }, async ({ payload }) => {
-        console.log('[CallSignaling] Received call_answer payload:', payload);
-        if (ringtoneRef.current) {
-          ringtoneRef.current.stop();
-          ringtoneRef.current = null;
-        }
-
-        if (payload?.sdp && pcRef.current) {
-          try {
-            await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-            setCallStatus('in_call');
-
-            while (pendingCandidatesRef.current.length > 0) {
-              const cand = pendingCandidatesRef.current.shift();
-              if (cand) {
-                await pcRef.current.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-              }
-            }
-
-            toast({
-              title: 'Call Connected',
-              description: 'Connected via direct P2P WebRTC audio stream.',
-              type: 'success',
-            });
-          } catch (e) {
-            console.warn('[CallSignaling] Error setting remote description:', e);
-          }
+        if (payload?.sdp) {
+          await applyAnswerSdp(payload.sdp);
         }
       })
       .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
-        if (!payload?.candidate || !pcRef.current) return;
-        try {
-          if (pcRef.current.remoteDescription && pcRef.current.remoteDescription.type) {
-            await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
-          } else {
-            pendingCandidatesRef.current.push(payload.candidate);
-          }
-        } catch (e) {
-          console.warn('[CallSignaling] Error applying ice candidate:', e);
+        if (payload?.candidate && payload.senderId !== user.id) {
+          await applyRemoteCandidate(payload.candidate);
         }
       })
       .on('broadcast', { event: 'call_rejected' }, () => {
@@ -651,14 +752,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setIncomingCall(null);
         toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
       })
-      .subscribe((status) => {
-        console.log(`[CallSignaling] Global channel status: ${status}`);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(myChannel);
     };
-  }, [user, supabase, stopMediaTracks, toast]);
+  }, [user, supabase, stopMediaTracks, toast, applyAnswerSdp, applyRemoteCandidate]);
 
   // 2. START OUTGOING CALL
   const startCall = async (targetUserId: string, conversationId: string, video = false) => {
@@ -667,7 +766,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Auto-resolve recipient ID if mistakenly passed as conversationId or missing
     let recipientId = targetUserId;
     if (!recipientId || recipientId === conversationId) {
       const { data: members } = await supabase
@@ -689,7 +787,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    console.log(`[CallSignaling] Starting call to recipient: ${recipientId} in conv: ${conversationId}`);
+    // Pre-unlock the persistent audio element under user gesture
+    if (remoteAudioElementRef.current) {
+      remoteAudioElementRef.current.muted = false;
+      remoteAudioElementRef.current.play().catch(() => {});
+    }
 
     stopMediaTracks();
     setActiveConversationId(conversationId);
@@ -702,98 +804,143 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Acquire microphone & camera
     const stream = await getMedia(video);
 
-    // Setup WebRTC connection
+    // Setup WebRTC Peer Connection
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pcRef.current = pc;
-    pendingCandidatesRef.current = [];
+    localIceCandidatesRef.current = [];
+    pendingRemoteCandidatesRef.current = [];
+    seenCandidatesRef.current.clear();
 
     if (stream) {
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      stream.getTracks().forEach((track) => {
+        track.enabled = true;
+        pc.addTrack(track, stream);
+      });
+    }
+
+    // Explicitly guarantee an audio transceiver in the SDP
+    if (pc.getTransceivers().length === 0) {
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      if (video) {
+        pc.addTransceiver('video', { direction: 'sendrecv' });
+      }
     }
 
     pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        console.log('[CallSignaling] Received remote media stream on caller!');
-        setRemoteStream(event.streams[0]);
-        setCallStatus('in_call');
-        setParticipants([
-          {
-            id: user.id,
-            name: profile?.display_name || 'You',
-            isSpeaking: false,
-            isMuted: false,
-            isCameraOn: video,
-            isScreenSharing: false,
-          },
-          {
-            id: recipientId,
-            name: peerName,
-            isSpeaking: false,
-            isMuted: false,
-            isCameraOn: video,
-            isScreenSharing: false,
-          },
-        ]);
+      console.log('[CallSignaling] Received remote media stream on caller:', event.track.kind);
+      let rStream = event.streams && event.streams[0];
+      if (!rStream) {
+        rStream = new MediaStream([event.track]);
       }
+      setRemoteStream(rStream);
+      setCallStatus('in_call');
+
+      if (remoteAudioElementRef.current) {
+        if (remoteAudioElementRef.current.srcObject !== rStream) {
+          remoteAudioElementRef.current.srcObject = rStream;
+        }
+        remoteAudioElementRef.current.muted = false;
+        remoteAudioElementRef.current.play().catch(() => {});
+      }
+
+      setParticipants([
+        {
+          id: user.id,
+          name: profile?.display_name || 'You',
+          isSpeaking: false,
+          isMuted: false,
+          isCameraOn: video,
+          isScreenSharing: false,
+        },
+        {
+          id: recipientId,
+          name: peerName,
+          isSpeaking: false,
+          isMuted: false,
+          isCameraOn: video,
+          isScreenSharing: false,
+        },
+      ]);
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log('[CallSignaling] Caller ICE State:', pc.iceConnectionState);
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         setCallStatus('in_call');
       }
     };
 
     pc.onconnectionstatechange = () => {
-      console.log('[CallSignaling] Caller Peer Connection State:', pc.connectionState);
       if (pc.connectionState === 'connected') {
         setCallStatus('in_call');
       }
     };
 
+    // Buffer and broadcast ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendSignal(recipientId, 'ice_candidate', { candidate: event.candidate });
-        if (conversationId) {
-          sendRoomSignal(conversationId, 'ice_candidate', { candidate: event.candidate });
+        const candJson = event.candidate.toJSON();
+        localIceCandidatesRef.current.push(candJson);
+
+        sendSignalToRoom('ice_candidate', { candidate: candJson, senderId: user.id });
+        sendSignalToUser(recipientId, 'ice_candidate', { candidate: candJson, senderId: user.id });
+      }
+    };
+
+    // Connect to shared room channel for in-call signaling
+    const roomChannel = supabase.channel(`call-room-${conversationId}`);
+    roomChannelRef.current = roomChannel;
+
+    roomChannel
+      .on('broadcast', { event: 'call_answer' }, async ({ payload }) => {
+        if (payload?.sdp) {
+          await applyAnswerSdp(payload.sdp);
         }
-      }
-    };
+      })
+      .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
+        if (payload?.candidate && payload.senderId !== user.id) {
+          await applyRemoteCandidate(payload.candidate);
+        }
+      })
+      .on('broadcast', { event: 'call_rejected' }, () => {
+        toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
+        stopMediaTracks();
+        setCallStatus('idle');
+      })
+      .on('broadcast', { event: 'call_ended' }, () => {
+        stopMediaTracks();
+        setCallStatus('idle');
+        toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
 
-    // Create SDP offer
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+            const callPayload: IncomingCallData = {
+              callerId: user.id,
+              callerName: profile?.display_name || profile?.username || 'Squad Member',
+              callerAvatar: profile?.avatar_url || null,
+              targetUserId: recipientId,
+              conversationId,
+              isVideo: video,
+              sdp: offer,
+            };
 
-    // Broadcast offer to target user's personal channel & room channel
-    const callPayload = {
-      callerId: user.id,
-      callerName: profile?.display_name || profile?.username || 'Squad Member',
-      callerAvatar: profile?.avatar_url || null,
-      targetUserId: recipientId,
-      conversationId,
-      isVideo: video,
-      sdp: offer,
-    };
+            // Notify recipient directly via persistent user mailbox
+            sendSignalToUser(recipientId, 'incoming_call', callPayload);
 
-    await Promise.all([
-      sendSignal(recipientId, 'incoming_call', callPayload),
-      sendRoomSignal(conversationId, 'incoming_call', callPayload),
-    ]);
-
-    // Also listen to room channel for answer fallback
-    const roomChannel = await getOrSubscribeChannel(`call-signaling-${conversationId}`);
-    roomChannel.on('broadcast', { event: 'call_answer' }, async ({ payload }) => {
-      if (payload?.sdp && pcRef.current && callStatus !== 'in_call') {
-        try {
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-          setCallStatus('in_call');
-          if (ringtoneRef.current) {
-            ringtoneRef.current.stop();
-            ringtoneRef.current = null;
+            // Also broadcast on the shared room channel
+            roomChannel.send({
+              type: 'broadcast',
+              event: 'incoming_call',
+              payload: callPayload,
+            }).catch(() => {});
+          } catch (e) {
+            console.warn('[CallSignaling] Error creating offer:', e);
           }
-        } catch {}
-      }
-    });
+        }
+      });
 
     setParticipants([
       {
@@ -806,10 +953,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       },
     ]);
 
-    // Start outgoing ringtone
     const player = new RingtonePlayer();
     player.start();
     ringtoneRef.current = player;
+
+    // Ringing timeout (35s)
+    ringingTimerRef.current = setTimeout(() => {
+      if (callStatus === 'outgoing_ringing') {
+        toast({ title: 'No Answer', description: 'Squadmate did not pick up.', type: 'info' });
+        endCall();
+      }
+    }, 35000);
   };
 
   // 3. ACCEPT INCOMING CALL
@@ -820,8 +974,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       ringtoneRef.current.stop();
       ringtoneRef.current = null;
     }
+    if (ringingTimerRef.current) {
+      clearTimeout(ringingTimerRef.current);
+      ringingTimerRef.current = null;
+    }
 
     const { callerId, callerName, conversationId, isVideo, sdp } = incomingCall;
+
+    // Pre-unlock the audio element under the user click gesture
+    if (remoteAudioElementRef.current) {
+      remoteAudioElementRef.current.muted = false;
+      remoteAudioElementRef.current.play().catch(() => {});
+    }
+
     setActiveConversationId(conversationId);
     setPeerUserId(callerId);
     setPeerName(callerName);
@@ -833,31 +998,52 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Acquire microphone & camera
     const stream = await getMedia(isVideo);
 
+    // Setup WebRTC Peer Connection
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pcRef.current = pc;
-    pendingCandidatesRef.current = [];
+    localIceCandidatesRef.current = [];
+    pendingRemoteCandidatesRef.current = [];
+    seenCandidatesRef.current.clear();
 
     if (stream) {
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      stream.getTracks().forEach((track) => {
+        track.enabled = true;
+        pc.addTrack(track, stream);
+      });
+    }
+
+    if (pc.getTransceivers().length === 0) {
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      if (isVideo) {
+        pc.addTransceiver('video', { direction: 'sendrecv' });
+      }
     }
 
     pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        console.log('[CallSignaling] Received remote stream on callee!');
-        setRemoteStream(event.streams[0]);
-        setCallStatus('in_call');
+      console.log('[CallSignaling] Received remote media stream on callee:', event.track.kind);
+      let rStream = event.streams && event.streams[0];
+      if (!rStream) {
+        rStream = new MediaStream([event.track]);
+      }
+      setRemoteStream(rStream);
+      setCallStatus('in_call');
+
+      if (remoteAudioElementRef.current) {
+        if (remoteAudioElementRef.current.srcObject !== rStream) {
+          remoteAudioElementRef.current.srcObject = rStream;
+        }
+        remoteAudioElementRef.current.muted = false;
+        remoteAudioElementRef.current.play().catch(() => {});
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log('[CallSignaling] Callee ICE State:', pc.iceConnectionState);
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         setCallStatus('in_call');
       }
     };
 
     pc.onconnectionstatechange = () => {
-      console.log('[CallSignaling] Callee Peer Connection State:', pc.connectionState);
       if (pc.connectionState === 'connected') {
         setCallStatus('in_call');
       }
@@ -865,33 +1051,63 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendSignal(callerId, 'ice_candidate', { candidate: event.candidate });
-        if (conversationId) {
-          sendRoomSignal(conversationId, 'ice_candidate', { candidate: event.candidate });
-        }
+        const candJson = event.candidate.toJSON();
+        localIceCandidatesRef.current.push(candJson);
+
+        sendSignalToRoom('ice_candidate', { candidate: candJson, senderId: user.id });
+        sendSignalToUser(callerId, 'ice_candidate', { candidate: candJson, senderId: user.id });
       }
     };
 
-    // Set remote description from caller offer
-    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    // Connect to shared room channel
+    const roomChannel = supabase.channel(`call-room-${conversationId}`);
+    roomChannelRef.current = roomChannel;
 
-    // Drain queued ICE candidates
-    while (pendingCandidatesRef.current.length > 0) {
-      const cand = pendingCandidatesRef.current.shift();
-      if (cand) {
-        await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-      }
-    }
+    roomChannel
+      .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
+        if (payload?.candidate && payload.senderId !== user.id) {
+          await applyRemoteCandidate(payload.candidate);
+        }
+      })
+      .on('broadcast', { event: 'call_ended' }, () => {
+        stopMediaTracks();
+        setCallStatus('idle');
+        toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+            await drainPendingRemoteCandidates();
 
-    // Create SDP answer
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
 
-    // Send answer back to caller via both personal channel & room channel
-    await Promise.all([
-      sendSignal(callerId, 'call_answer', { sdp: answer, conversationId }),
-      sendRoomSignal(conversationId, 'call_answer', { sdp: answer, conversationId }),
-    ]);
+            const answerPayload = {
+              sdp: answer,
+              conversationId,
+              calleeId: user.id,
+            };
+
+            // Broadcast answer on room channel
+            roomChannel.send({
+              type: 'broadcast',
+              event: 'call_answer',
+              payload: answerPayload,
+            }).catch(() => {});
+
+            // Also send directly to caller's mailbox
+            sendSignalToUser(callerId, 'call_answer', answerPayload);
+
+            // Flush all gathered local candidates to room & caller
+            localIceCandidatesRef.current.forEach((candidate) => {
+              sendSignalToRoom('ice_candidate', { candidate, senderId: user.id });
+            });
+          } catch (e) {
+            console.warn('[CallSignaling] Error creating answer:', e);
+          }
+        }
+      });
 
     setParticipants([
       {
@@ -919,10 +1135,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // 4. REJECT INCOMING CALL
   const rejectCall = () => {
     if (incomingCall) {
-      sendSignal(incomingCall.callerId, 'call_rejected', {});
-      if (incomingCall.conversationId) {
-        sendRoomSignal(incomingCall.conversationId, 'call_rejected', {});
-      }
+      sendSignalToUser(incomingCall.callerId, 'call_rejected', {});
+      sendSignalToRoom('call_rejected', {});
     }
 
     stopMediaTracks();
@@ -934,11 +1148,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const endCall = () => {
     const target = peerUserId || incomingCall?.callerId;
     if (target) {
-      sendSignal(target, 'call_ended', {});
+      sendSignalToUser(target, 'call_ended', {});
     }
-    if (activeConversationId) {
-      sendRoomSignal(activeConversationId, 'call_ended', {});
-    }
+    sendSignalToRoom('call_ended', {});
 
     stopMediaTracks();
     setCallStatus('ended');
@@ -967,11 +1179,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     setParticipants((prev) =>
-      prev.map((p) => (p.id === (user?.id || 'me') ? { ...p, isMuted: nextMuted } : p))
+      prev.map((p) => (p.id === user?.id ? { ...p, isMuted: nextMuted } : p))
     );
   };
 
-  const toggleCamera = () => {
+  const toggleCamera = async () => {
     const nextCamera = !isCameraOn;
     setIsCameraOn(nextCamera);
 
@@ -982,30 +1194,39 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     setParticipants((prev) =>
-      prev.map((p) => (p.id === (user?.id || 'me') ? { ...p, isCameraOn: nextCamera } : p))
+      prev.map((p) => (p.id === user?.id ? { ...p, isCameraOn: nextCamera } : p))
     );
   };
 
   const toggleScreenShare = async () => {
-    if (!isScreenSharing) {
-      try {
-        if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getDisplayMedia) {
-          const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-          if (pcRef.current) {
-            const videoSender = pcRef.current.getSenders().find((s) => s.track?.kind === 'video');
-            const screenTrack = screenStream.getVideoTracks()[0];
-            if (videoSender && screenTrack) {
-              videoSender.replaceTrack(screenTrack);
-            }
-          }
-          setIsScreenSharing(true);
-          toast({ title: 'Screen Broadcast', description: 'Sharing screen with squadmate.', type: 'info' });
-          screenStream.getVideoTracks()[0].onended = () => setIsScreenSharing(false);
-        }
-      } catch {
-        setIsScreenSharing(false);
+    if (isScreenSharing) {
+      setIsScreenSharing(false);
+      setParticipants((prev) =>
+        prev.map((p) => (p.id === user?.id ? { ...p, isScreenSharing: false } : p))
+      );
+      return;
+    }
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getDisplayMedia) {
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: true,
+        });
+
+        setIsScreenSharing(true);
+        setParticipants((prev) =>
+          prev.map((p) => (p.id === user?.id ? { ...p, isScreenSharing: true } : p))
+        );
+
+        displayStream.getVideoTracks()[0].onended = () => {
+          setIsScreenSharing(false);
+          setParticipants((prev) =>
+            prev.map((p) => (p.id === user?.id ? { ...p, isScreenSharing: false } : p))
+          );
+        };
       }
-    } else {
+    } catch {
       setIsScreenSharing(false);
     }
   };
@@ -1034,6 +1255,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+      <audio
+        ref={remoteAudioElementRef}
+        autoPlay
+        playsInline
+        aria-hidden="true"
+        className="fixed -top-[9999px] -left-[9999px] w-1 h-1 opacity-0 pointer-events-none"
+      />
     </CallContext.Provider>
   );
 }

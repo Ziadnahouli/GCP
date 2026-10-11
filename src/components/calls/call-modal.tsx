@@ -25,6 +25,8 @@ import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { CallParticipant, CallStatus } from '@/features/calls/call-context';
 import { cn } from '@/lib/utils';
 
+import { useAuth } from '@/features/auth/auth-provider';
+
 interface CallModalProps {
   open: boolean;
   callStatus: CallStatus;
@@ -58,13 +60,13 @@ export function CallModal({
   onToggleCamera,
   onToggleScreenShare,
 }: CallModalProps) {
+  const { user } = useAuth();
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
 
   const localVideoRef = React.useRef<HTMLVideoElement>(null);
   const remoteVideoRef = React.useRef<HTMLVideoElement>(null);
-  const remoteAudioRef = React.useRef<HTMLAudioElement>(null);
 
   // Bind local stream to video element
   React.useEffect(() => {
@@ -73,15 +75,11 @@ export function CallModal({
     }
   }, [localStream, isCameraOn, callStatus]);
 
-  // Bind remote stream to video & audio element
+  // Bind remote stream to video element
   React.useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
       remoteVideoRef.current.play().catch(() => {});
-    }
-    if (remoteAudioRef.current && remoteStream) {
-      remoteAudioRef.current.srcObject = remoteStream;
-      remoteAudioRef.current.play().catch(() => {});
     }
   }, [remoteStream, callStatus]);
 
@@ -216,16 +214,17 @@ export function CallModal({
                     {p.isCameraOn ? (
                       /* Live WebRTC Camera Video Feed */
                       <div className="w-full h-full flex items-center justify-center bg-surface-default relative">
-                        {p.id === 'remote-peer' || p.id === 'squadmate' ? (
+                        {p.id === user?.id ? (
                           <video
-                            ref={remoteVideoRef}
+                            ref={localVideoRef}
                             autoPlay
                             playsInline
+                            muted
                             className="w-full h-full object-cover rounded-xl"
                           />
                         ) : (
                           <video
-                            ref={localVideoRef}
+                            ref={remoteVideoRef}
                             autoPlay
                             playsInline
                             muted
@@ -266,8 +265,7 @@ export function CallModal({
           </div>
         )}
 
-        {/* Hidden Remote Audio Element */}
-        <audio ref={remoteAudioRef} autoPlay className="hidden" />
+
       </div>
 
       {/* Floating Bottom Media Toolbar */}
@@ -340,8 +338,6 @@ export function CallModal({
         isInCall
       />
 
-      {/* Hidden audio element to playback remote participant voice stream */}
-      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
     </div>
   );
 }

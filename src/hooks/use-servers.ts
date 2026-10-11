@@ -99,6 +99,7 @@ export function useServers() {
   const { user, profile } = useAuth();
   const [servers, setServers] = React.useState<Server[]>(DEFAULT_SERVERS);
   const [loading, setLoading] = React.useState(false);
+  const serversChannelRef = React.useRef<any>(null);
 
   const fetchServers = React.useCallback(async () => {
     if (!user || !supabase) return;
@@ -172,6 +173,8 @@ export function useServers() {
       })
       .subscribe();
 
+    serversChannelRef.current = channel;
+
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       fetchServers();
@@ -179,6 +182,7 @@ export function useServers() {
 
     return () => {
       clearInterval(autoSyncTimer);
+      serversChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [fetchServers, user]);
@@ -292,10 +296,11 @@ export function useServers() {
           ]);
           if (chanErr) throw chanErr;
 
-          supabase
-            .channel('servers-realtime')
-            .send({ type: 'broadcast', event: 'servers_update', payload: {} })
-            .catch(() => {});
+          if (serversChannelRef.current) {
+            serversChannelRef.current
+              .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+              .catch(() => {});
+          }
         } catch (e) {
           console.error('Supabase server insert failed:', e);
         }
@@ -348,10 +353,11 @@ export function useServers() {
           });
           if (chanErr) throw chanErr;
 
-          supabase
-            .channel('servers-realtime')
-            .send({ type: 'broadcast', event: 'servers_update', payload: {} })
-            .catch(() => {});
+          if (serversChannelRef.current) {
+            serversChannelRef.current
+              .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+              .catch(() => {});
+          }
         } catch (e) {
           console.error('Supabase channel insert failed:', e);
         }
@@ -379,10 +385,11 @@ export function useServers() {
       if (user && supabase) {
         try {
           await supabase.from('channels').delete().eq('id', channelId);
-          supabase
-            .channel('servers-realtime')
-            .send({ type: 'broadcast', event: 'servers_update', payload: {} })
-            .catch(() => {});
+          if (serversChannelRef.current) {
+            serversChannelRef.current
+              .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+              .catch(() => {});
+          }
         } catch (e) {
           console.warn('Supabase channel delete failed:', e);
         }
@@ -399,10 +406,11 @@ export function useServers() {
       if (user && supabase) {
         try {
           await supabase.from('servers').delete().eq('id', serverId);
-          supabase
-            .channel('servers-realtime')
-            .send({ type: 'broadcast', event: 'servers_update', payload: {} })
-            .catch(() => {});
+          if (serversChannelRef.current) {
+            serversChannelRef.current
+              .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+              .catch(() => {});
+          }
         } catch (e) {
           console.warn('Supabase server delete failed:', e);
         }

@@ -18,6 +18,8 @@ export function useSocial() {
   const [blockedUsers, setBlockedUsers] = React.useState<BlockedUserItem[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
 
+  const socialChannelRef = React.useRef<any>(null);
+
   // Fetch all social data
   const fetchSocialData = React.useCallback(async () => {
     if (!user) {
@@ -159,6 +161,8 @@ export function useSocial() {
       })
       .subscribe();
 
+    socialChannelRef.current = channel;
+
     // Auto-sync polling every 15s to ensure incoming requests & status changes stay fresh, pausing when tab is hidden
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -167,6 +171,7 @@ export function useSocial() {
 
     return () => {
       clearInterval(autoSyncTimer);
+      socialChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [fetchSocialData, isConfigured, user, supabase]);
@@ -242,10 +247,11 @@ export function useSocial() {
         description: `Friend request sent to @${cleanUsername}!`,
         type: 'success',
       });
-      supabase
-        .channel('social-realtime')
-        .send({ type: 'broadcast', event: 'social_update', payload: {} })
-        .catch(() => {});
+      if (socialChannelRef.current) {
+        socialChannelRef.current
+          .send({ type: 'broadcast', event: 'social_update', payload: {} })
+          .catch(() => {});
+      }
       await fetchSocialData();
       return { error: null };
     } catch {
@@ -275,10 +281,11 @@ export function useSocial() {
       }
 
       toast({ title: 'Friend Added', description: 'Friend request accepted!', type: 'success' });
-      supabase
-        .channel('social-realtime')
-        .send({ type: 'broadcast', event: 'social_update', payload: {} })
-        .catch(() => {});
+      if (socialChannelRef.current) {
+        socialChannelRef.current
+          .send({ type: 'broadcast', event: 'social_update', payload: {} })
+          .catch(() => {});
+      }
       await fetchSocialData();
     } catch (err) {
       console.error(err);
@@ -299,10 +306,11 @@ export function useSocial() {
       .update({ status: 'rejected' })
       .eq('id', requestId);
 
-    supabase
-      .channel('social-realtime')
-      .send({ type: 'broadcast', event: 'social_update', payload: {} })
-      .catch(() => {});
+    if (socialChannelRef.current) {
+      socialChannelRef.current
+        .send({ type: 'broadcast', event: 'social_update', payload: {} })
+        .catch(() => {});
+    }
 
     toast({ title: 'Declined', description: 'Friend request ignored', type: 'info' });
     await fetchSocialData();

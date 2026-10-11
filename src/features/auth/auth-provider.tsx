@@ -1,0 +1,355 @@
+'use client';
+
+import * as React from 'react';
+import { User } from '@supabase/supabase-js';
+import { getBrowserClient } from '@/lib/supabase/client';
+import { getSupabaseConfig } from '@/lib/supabase/config';
+import { AuthContextType } from '@/lib/types/auth';
+import { UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
+
+const AuthContext = React.createContext<AuthContextType | null>(null);
+
+const DEFAULT_PROFILE: UserProfile = {
+  id: 'local-user-id',
+  username: 'gamer_one',
+  display_name: 'Apex Striker',
+  avatar_url: null,
+  banner_url: null,
+  banner_color: '#7c3aed',
+  bio: 'Tactical gamer & squad leader. Ready for competitive matches.',
+  custom_status: 'In Lobby • Ready up!',
+  status: 'online',
+  game_activity: 'Valorant',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
+
+const DEFAULT_SETTINGS: UserSettings = {
+  id: 'local-settings-id',
+  user_id: 'local-user-id',
+  theme: 'dark',
+  accent_color: 'violet',
+  sound_effects_enabled: true,
+  push_to_talk_enabled: false,
+  push_to_talk_key: 'KeyV',
+  input_volume: 85,
+  output_volume: 100,
+  allow_direct_messages: 'everyone',
+  allow_friend_requests: 'everyone',
+  email_notifications: true,
+  desktop_notifications: true,
+  updated_at: new Date().toISOString(),
+};
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = React.useState<User | null>(null);
+  const [profile, setProfile] = React.useState<UserProfile | null>(null);
+  const [settings, setSettings] = React.useState<UserSettings | null>(DEFAULT_SETTINGS);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const config = React.useMemo(() => getSupabaseConfig(), []);
+  const supabase = React.useMemo(() => getBrowserClient(), []);
+
+  // Fetch or sync profile & settings
+  const fetchProfileAndSettings = React.useCallback(
+    async (userId: string, currentUser?: User) => {
+      try {
+        const [profileRes, settingsRes] = await Promise.all([
+          supabase.from('profiles').select('*').eq('id', userId).single(),
+          supabase.from('user_settings').select('*').eq('user_id', userId).single(),
+        ]);
+
+        if (profileRes.data) {
+          setProfile(profileRes.data as UserProfile);
+        } else {
+          // If profile row doesn't exist yet, automatically create from auth metadata or email
+          const meta = currentUser?.user_metadata || {};
+          const fallbackUsername = meta.username || currentUser?.email?.split('@')[0]?.replace(/[^a-zA-Z0-9_-]/g, '_') || `gamer_${userId.slice(0, 6)}`;
+          const fallbackDisplayName = meta.display_name || meta.username || fallbackUsername;
+
+          const { data: createdProfile } = await supabase
+            .from('profiles')
+            .upsert({
+              id: userId,
+              username: fallbackUsername,
+              display_name: fallbackDisplayName,
+              status: 'online',
+              banner_color: '#7c3aed',
+            })
+            .select()
+            .single();
+
+          if (createdProfile) {
+            setProfile(createdProfile as UserProfile);
+          }
+        }
+
+        if (settingsRes.data) {
+          setSettings(settingsRes.data as UserSettings);
+          document.documentElement.setAttribute('data-theme', settingsRes.data.accent_color);
+        }
+      } catch (err: unknown) {
+        console.error('Error fetching profile/settings:', err);
+      }
+    },
+    [supabase]
+  );
+
+  // Initialize session
+  React.useEffect(() => {
+    let mounted = true;
+
+    async function init() {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!mounted) return;
+
+        if (session?.user) {
+          setUser(session.user);
+          await fetchProfileAndSettings(session.user.id, session.user);
+        } else {
+          setUser(null);
+          setProfile(null);
+        }
+      } catch (err: unknown) {
+        console.error('Auth initialization error:', err);
+        setError('Failed to initialize session');
+        if (mounted) {
+          setUser(null);
+          setProfile(null);
+        }
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (!mounted) return;
+
+        if (session?.user) {
+          setUser(session.user);
+          await fetchProfileAndSettings(session.user.id, session.user);
+        } else {
+          setUser(null);
+          setProfile(null);
+        }
+        setIsLoading(false);
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+
+    init();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase, fetchProfileAndSettings]);
+
+  // Sign in with password
+  const signInWithPassword = React.useCallback(
+    async (email: string, password: string) => {
+      setError(null);
+      if (!config.isConfigured) {
+        // Local simulation mode
+        const mockUser = {
+          id: 'local-user-id',
+          email,
+          created_at: new Date().toISOString(),
+        } as unknown as User;
+        setUser(mockUser);
+        const currentProfile = profile || {
+          ...DEFAULT_PROFILE,
+          display_name: email.split('@')[0],
+        };
+        setProfile(currentProfile);
+        localStorage.setItem('nexus_local_profile', JSON.stringify(currentProfile));
+        return { error: null };
+      }
+
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInErr) {
+        return { error: signInErr.message };
+      }
+      return { error: null };
+    },
+    [config.isConfigured, supabase, profile]
+  );
+
+  // Sign up with password
+  const signUpWithPassword = React.useCallback(
+    async ({
+      email,
+      password,
+      username,
+      display_name,
+    }: {
+      email: string;
+      password: string;
+      username: string;
+      display_name: string;
+    }) => {
+      setError(null);
+      if (!config.isConfigured) {
+        // Local simulation mode
+        const newProfile: UserProfile = {
+          ...DEFAULT_PROFILE,
+          username,
+          display_name,
+        };
+        setProfile(newProfile);
+        localStorage.setItem('nexus_local_profile', JSON.stringify(newProfile));
+        return { error: null, emailConfirmationRequired: false };
+      }
+
+      const { data, error: signUpErr } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            username,
+            display_name,
+          },
+        },
+      });
+
+      if (signUpErr) {
+        return { error: signUpErr.message };
+      }
+
+      // Check if email confirmation is required
+      const emailConfirmationRequired = !data.session;
+      return { error: null, emailConfirmationRequired };
+    },
+    [config.isConfigured, supabase]
+  );
+
+  // Sign out
+  const signOut = React.useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Sign out error:', e);
+    }
+    setUser(null);
+    setProfile(null);
+    try {
+      localStorage.removeItem('nexus_local_profile');
+      localStorage.removeItem('nexus_local_settings');
+    } catch {}
+  }, [supabase]);
+
+  // Update profile
+  const updateProfile = React.useCallback(
+    async (updates: Partial<UserProfile>) => {
+      if (!config.isConfigured) {
+        setProfile((prev) => {
+          const updated = { ...(prev || DEFAULT_PROFILE), ...updates, updated_at: new Date().toISOString() };
+          localStorage.setItem('nexus_local_profile', JSON.stringify(updated));
+          return updated;
+        });
+        return { error: null };
+      }
+
+      if (!user) return { error: 'Not authenticated' };
+
+      const { error: updateErr } = await supabase
+        .from('profiles')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (updateErr) {
+        return { error: updateErr.message };
+      }
+
+      setProfile((prev) => (prev ? { ...prev, ...updates } : null));
+      return { error: null };
+    },
+    [config.isConfigured, supabase, user]
+  );
+
+  // Update settings
+  const updateSettings = React.useCallback(
+    async (updates: Partial<UserSettings>) => {
+      if (updates.accent_color) {
+        document.documentElement.setAttribute('data-theme', updates.accent_color);
+      }
+
+      if (!config.isConfigured) {
+        setSettings((prev) => {
+          const updated = { ...(prev || DEFAULT_SETTINGS), ...updates, updated_at: new Date().toISOString() };
+          localStorage.setItem('nexus_local_settings', JSON.stringify(updated));
+          return updated;
+        });
+        return { error: null };
+      }
+
+      if (!user) return { error: 'Not authenticated' };
+
+      const { error: updateErr } = await supabase
+        .from('user_settings')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id);
+
+      if (updateErr) {
+        return { error: updateErr.message };
+      }
+
+      setSettings((prev) => (prev ? { ...prev, ...updates } : null));
+      return { error: null };
+    },
+    [config.isConfigured, supabase, user]
+  );
+
+  const refreshProfile = React.useCallback(async () => {
+    if (user) {
+      await fetchProfileAndSettings(user.id);
+    }
+  }, [user, fetchProfileAndSettings]);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        settings,
+        isLoading,
+        isConfigured: config.isConfigured,
+        error,
+        signInWithPassword,
+        signUpWithPassword,
+        signOut,
+        updateProfile,
+        updateSettings,
+        refreshProfile,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = React.useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}

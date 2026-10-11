@@ -1,0 +1,307 @@
+'use client';
+
+import * as React from 'react';
+import { Server, Channel, ChannelType } from '@/lib/types/server';
+import { useAuth } from '@/features/auth/auth-provider';
+import { supabase } from '@/lib/supabase/client';
+
+const STORAGE_KEY = 'nexus_gaming_servers_store';
+
+const DEFAULT_SERVERS: Server[] = [
+  {
+    id: 'server-tsa',
+    name: 'Tactical Squad Alpha',
+    description: 'Competitive tactical FPS squad & scrims headquarters.',
+    icon_url: null,
+    owner_id: 'system',
+    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+    channels: [
+      {
+        id: 'chan-tsa-gen',
+        server_id: 'server-tsa',
+        name: 'general',
+        type: 'text',
+        topic: 'General chatter & gaming discussions.',
+        position: 0,
+        created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+      },
+      {
+        id: 'chan-tsa-strat',
+        server_id: 'server-tsa',
+        name: 'tactics-and-strats',
+        type: 'text',
+        topic: 'Lineups, execute timings, and map callouts.',
+        position: 1,
+        created_at: new Date(Date.now() - 86400000 * 25).toISOString(),
+      },
+      {
+        id: 'chan-tsa-clips',
+        server_id: 'server-tsa',
+        name: 'highlights-and-clips',
+        type: 'text',
+        topic: 'Ace clips, funny moments, and plays of the game.',
+        position: 2,
+        created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
+      },
+      {
+        id: 'chan-tsa-voice1',
+        server_id: 'server-tsa',
+        name: 'Squad Lounge 1',
+        type: 'voice',
+        topic: 'Casual hangout voice room.',
+        position: 3,
+        created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
+      },
+      {
+        id: 'chan-tsa-voice2',
+        server_id: 'server-tsa',
+        name: 'Competitive Scrims',
+        type: 'voice',
+        topic: 'Ranked scrim comms only.',
+        position: 4,
+        created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
+      },
+    ],
+    members: [],
+  },
+  {
+    id: 'server-crg',
+    name: 'Cyber Ranked Grinders',
+    description: 'High-ELO competitive matchmaking and aim lab analysis.',
+    icon_url: null,
+    owner_id: 'system',
+    created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
+    channels: [
+      {
+        id: 'chan-crg-gen',
+        server_id: 'server-crg',
+        name: 'lobby-chat',
+        type: 'text',
+        topic: 'LFG and rank announcements.',
+        position: 0,
+        created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
+      },
+      {
+        id: 'chan-crg-voice1',
+        server_id: 'server-crg',
+        name: 'Duo Queue Voice',
+        type: 'voice',
+        topic: 'Duo ranked voice comms.',
+        position: 1,
+        created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
+      },
+    ],
+    members: [],
+  },
+];
+
+export function useServers() {
+  const { user, profile } = useAuth();
+  const [servers, setServers] = React.useState<Server[]>(DEFAULT_SERVERS);
+  const [loading, setLoading] = React.useState(false);
+
+  // Initialize and load persisted servers
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        setServers(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.warn('Failed to parse cached servers:', e);
+    }
+  }, []);
+
+  const saveServers = (updated: Server[]) => {
+    setServers(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Failed to cache servers:', e);
+    }
+  };
+
+  const createServer = React.useCallback(
+    async (name: string, description?: string, iconUrl?: string) => {
+      const serverId = `server-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const newServer: Server = {
+        id: serverId,
+        name: name.trim(),
+        description: description?.trim() || null,
+        icon_url: iconUrl || null,
+        owner_id: user?.id || 'current-user',
+        created_at: new Date().toISOString(),
+        channels: [
+          {
+            id: `chan-${serverId}-gen`,
+            server_id: serverId,
+            name: 'general',
+            type: 'text',
+            topic: 'Welcome to your new server general chat!',
+            position: 0,
+            created_at: new Date().toISOString(),
+          },
+          {
+            id: `chan-${serverId}-voice`,
+            server_id: serverId,
+            name: 'Voice Lounge',
+            type: 'voice',
+            topic: 'General voice channel',
+            position: 1,
+            created_at: new Date().toISOString(),
+          },
+        ],
+        members: [
+          {
+            id: `mem-${Date.now()}`,
+            server_id: serverId,
+            user_id: user?.id || 'current-user',
+            role: 'owner',
+            joined_at: new Date().toISOString(),
+            profile: profile || undefined,
+          },
+        ],
+      };
+
+      const updated = [...servers, newServer];
+      saveServers(updated);
+
+      // Attempt Supabase insert if logged in
+      if (user && supabase) {
+        try {
+          await supabase.from('servers').insert({
+            id: newServer.id,
+            name: newServer.name,
+            description: newServer.description,
+            icon_url: newServer.icon_url,
+            owner_id: user.id,
+          });
+          await supabase.from('server_members').insert({
+            server_id: newServer.id,
+            user_id: user.id,
+            role: 'owner',
+          });
+          await supabase.from('channels').insert([
+            {
+              id: newServer.channels[0].id,
+              server_id: newServer.id,
+              name: 'general',
+              type: 'text',
+              topic: 'Welcome to your new server general chat!',
+              position: 0,
+            },
+            {
+              id: newServer.channels[1].id,
+              server_id: newServer.id,
+              name: 'Voice Lounge',
+              type: 'voice',
+              position: 1,
+            },
+          ]);
+        } catch (e) {
+          console.warn('Supabase server insert failed, local cached:', e);
+        }
+      }
+
+      return newServer;
+    },
+    [servers, user, profile]
+  );
+
+  const createChannel = React.useCallback(
+    async (serverId: string, name: string, type: ChannelType = 'text', topic?: string) => {
+      const channelId = `chan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const cleanName = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
+
+      const newChannel: Channel = {
+        id: channelId,
+        server_id: serverId,
+        name: cleanName || 'new-channel',
+        type,
+        topic: topic || null,
+        position: 99,
+        created_at: new Date().toISOString(),
+      };
+
+      const updated = servers.map((srv) => {
+        if (srv.id === serverId) {
+          return {
+            ...srv,
+            channels: [...srv.channels, newChannel],
+          };
+        }
+        return srv;
+      });
+
+      saveServers(updated);
+
+      if (user && supabase) {
+        try {
+          await supabase.from('channels').insert({
+            id: newChannel.id,
+            server_id: serverId,
+            name: newChannel.name,
+            type: newChannel.type,
+            topic: newChannel.topic,
+            position: newChannel.position,
+          });
+        } catch (e) {
+          console.warn('Supabase channel insert failed:', e);
+        }
+      }
+
+      return newChannel;
+    },
+    [servers, user]
+  );
+
+  const deleteChannel = React.useCallback(
+    async (serverId: string, channelId: string) => {
+      const updated = servers.map((srv) => {
+        if (srv.id === serverId) {
+          return {
+            ...srv,
+            channels: srv.channels.filter((c) => c.id !== channelId),
+          };
+        }
+        return srv;
+      });
+
+      saveServers(updated);
+
+      if (user && supabase) {
+        try {
+          await supabase.from('channels').delete().eq('id', channelId);
+        } catch (e) {
+          console.warn('Supabase channel delete failed:', e);
+        }
+      }
+    },
+    [servers, user]
+  );
+
+  const deleteServer = React.useCallback(
+    async (serverId: string) => {
+      const updated = servers.filter((s) => s.id !== serverId);
+      saveServers(updated);
+
+      if (user && supabase) {
+        try {
+          await supabase.from('servers').delete().eq('id', serverId);
+        } catch (e) {
+          console.warn('Supabase server delete failed:', e);
+        }
+      }
+    },
+    [servers, user]
+  );
+
+  return {
+    servers,
+    loading,
+    createServer,
+    createChannel,
+    deleteChannel,
+    deleteServer,
+  };
+}

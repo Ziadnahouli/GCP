@@ -4,6 +4,7 @@ import * as React from 'react';
 import { ChannelMessage } from '@/lib/types/server';
 import { useAuth } from '@/features/auth/auth-provider';
 import { supabase } from '@/lib/supabase/client';
+import { UserProfile } from '@/lib/types/profile';
 
 const STORAGE_KEY_PREFIX = 'nexus_channel_msgs_';
 
@@ -11,25 +12,90 @@ export function useChannelMessages(channelId: string | null) {
   const { user, profile } = useAuth();
   const [messages, setMessages] = React.useState<ChannelMessage[]>([]);
 
-  // Load from cache or Supabase
-  React.useEffect(() => {
+  const fetchChannelMessages = React.useCallback(async () => {
     if (!channelId) {
       setMessages([]);
       return;
     }
 
     try {
+      // 1. Try fetching from Supabase
+      if (user && supabase) {
+        const { data, error } = await supabase
+          .from('channel_messages')
+          .select(`
+            id, channel_id, user_id, content, created_at, updated_at,
+            profile:user_id (
+              id, username, display_name, avatar_url, banner_url, banner_color,
+              bio, custom_status, status, game_activity, created_at, updated_at
+            )
+          `)
+          .eq('channel_id', channelId)
+          .order('created_at', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          const parsed: ChannelMessage[] = data.map((m) => ({
+            id: m.id,
+            channel_id: m.channel_id,
+            user_id: m.user_id,
+            content: m.content,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+            profile: (m.profile as unknown as UserProfile) || undefined,
+          }));
+
+          setMessages(parsed);
+          try {
+            localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(parsed));
+          } catch {}
+          return;
+        }
+      }
+
+      // Fallback to cached messages
       const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}${channelId}`);
       if (stored) {
         setMessages(JSON.parse(stored));
-        return;
+      } else {
+        setMessages([]);
       }
     } catch (e) {
-      console.warn('Failed to parse cached channel messages:', e);
+      console.warn('Failed to fetch channel messages:', e);
     }
+  }, [channelId, user]);
 
-    setMessages([]);
-  }, [channelId]);
+  React.useEffect(() => {
+    fetchChannelMessages();
+
+    if (!channelId || !supabase) return;
+
+    // Realtime postgres changes + broadcast channel
+    const channel = supabase
+      .channel(`chan-room-${channelId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'channel_messages',
+          filter: `channel_id=eq.${channelId}`,
+        },
+        () => fetchChannelMessages()
+      )
+      .on('broadcast', { event: 'new_channel_msg' }, () => {
+        fetchChannelMessages();
+      })
+      .subscribe();
+
+    const autoSyncTimer = setInterval(() => {
+      fetchChannelMessages();
+    }, 4000);
+
+    return () => {
+      clearInterval(autoSyncTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [channelId, fetchChannelMessages]);
 
   const saveMessages = React.useCallback(
     (msgs: ChannelMessage[]) => {
@@ -48,11 +114,12 @@ export function useChannelMessages(channelId: string | null) {
     async (content: string) => {
       if (!channelId || !content.trim()) return;
 
+      const trimmed = content.trim();
       const newMsg: ChannelMessage = {
         id: `cmsg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         channel_id: channelId,
         user_id: user?.id || 'current-user',
-        content: content.trim(),
+        content: trimmed,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         profile: profile || {
@@ -71,6 +138,7 @@ export function useChannelMessages(channelId: string | null) {
         },
       };
 
+      // Optimistic instant append (0ms latency)
       const updated = [...messages, newMsg];
       saveMessages(updated);
 
@@ -82,6 +150,16 @@ export function useChannelMessages(channelId: string | null) {
             user_id: user.id,
             content: newMsg.content,
           });
+
+          // Broadcast to server peers
+          supabase
+            .channel(`chan-room-${channelId}`)
+            .send({
+              type: 'broadcast',
+              event: 'new_channel_msg',
+              payload: { messageId: newMsg.id },
+            })
+            .catch(() => {});
         } catch (e) {
           console.warn('Supabase channel message insert failed:', e);
         }

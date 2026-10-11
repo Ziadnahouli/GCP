@@ -812,6 +812,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         isScreenSharing={call.isScreenSharing}
         participants={call.participants}
         stats={call.stats}
+        localStream={call.localStream}
+        remoteStream={call.remoteStream}
         onEndCall={call.endCall}
         onToggleMic={call.toggleMic}
         onToggleCamera={call.toggleCamera}

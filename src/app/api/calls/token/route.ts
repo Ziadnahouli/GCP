@@ -59,10 +59,11 @@ export async function POST(request: Request) {
     if (!apiKey || !apiSecret || !wsUrl || wsUrl.includes('your-project')) {
       return NextResponse.json(
         {
-          error: 'LiveKit credentials not configured in .env.local',
+          message: 'LiveKit credentials not configured. Native WebRTC P2P mesh active.',
           isConfigured: false,
+          mode: 'p2p',
         },
-        { status: 503 }
+        { status: 200 }
       );
     }
 

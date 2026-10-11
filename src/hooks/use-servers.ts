@@ -100,7 +100,48 @@ export function useServers() {
   const [servers, setServers] = React.useState<Server[]>(DEFAULT_SERVERS);
   const [loading, setLoading] = React.useState(false);
 
-  // Initialize and load persisted servers
+  const fetchServers = React.useCallback(async () => {
+    if (!user || !supabase) return;
+    try {
+      const { data: srvData, error } = await supabase
+        .from('servers')
+        .select(`
+          id, name, description, icon_url, owner_id, created_at,
+          channels ( id, server_id, name, type, topic, position, created_at ),
+          server_members ( id, server_id, user_id, role, joined_at )
+        `);
+
+      if (!error && srvData && srvData.length > 0) {
+        const parsed: Server[] = srvData.map((s) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          icon_url: s.icon_url,
+          owner_id: s.owner_id,
+          created_at: s.created_at,
+          channels: (s.channels || []).sort(
+            (a: Channel, b: Channel) => a.position - b.position
+          ),
+          members: (s.server_members || []).map((m: { id: string; server_id: string; user_id: string; role: 'owner' | 'admin' | 'moderator' | 'member'; joined_at: string }) => ({
+            id: m.id,
+            server_id: m.server_id,
+            user_id: m.user_id,
+            role: m.role,
+            joined_at: m.joined_at,
+          })),
+        }));
+
+        setServers(parsed);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+        } catch {}
+      }
+    } catch (e) {
+      console.warn('Failed to fetch servers from Supabase:', e);
+    }
+  }, [user]);
+
+  // Initialize and load persisted servers + Realtime subscription
   React.useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -110,7 +151,36 @@ export function useServers() {
     } catch (e) {
       console.warn('Failed to parse cached servers:', e);
     }
-  }, []);
+
+    fetchServers();
+
+    if (!user || !supabase) return;
+
+    const channel = supabase
+      .channel('servers-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'servers' }, () => {
+        fetchServers();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'channels' }, () => {
+        fetchServers();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'server_members' }, () => {
+        fetchServers();
+      })
+      .on('broadcast', { event: 'servers_update' }, () => {
+        fetchServers();
+      })
+      .subscribe();
+
+    const autoSyncTimer = setInterval(() => {
+      fetchServers();
+    }, 5000);
+
+    return () => {
+      clearInterval(autoSyncTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [fetchServers, user]);
 
   const saveServers = (updated: Server[]) => {
     setServers(updated);
@@ -198,6 +268,10 @@ export function useServers() {
               position: 1,
             },
           ]);
+          supabase
+            .channel('servers-realtime')
+            .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+            .catch(() => {});
         } catch (e) {
           console.warn('Supabase server insert failed, local cached:', e);
         }
@@ -245,6 +319,10 @@ export function useServers() {
             topic: newChannel.topic,
             position: newChannel.position,
           });
+          supabase
+            .channel('servers-realtime')
+            .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+            .catch(() => {});
         } catch (e) {
           console.warn('Supabase channel insert failed:', e);
         }
@@ -272,6 +350,10 @@ export function useServers() {
       if (user && supabase) {
         try {
           await supabase.from('channels').delete().eq('id', channelId);
+          supabase
+            .channel('servers-realtime')
+            .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+            .catch(() => {});
         } catch (e) {
           console.warn('Supabase channel delete failed:', e);
         }
@@ -288,6 +370,10 @@ export function useServers() {
       if (user && supabase) {
         try {
           await supabase.from('servers').delete().eq('id', serverId);
+          supabase
+            .channel('servers-realtime')
+            .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+            .catch(() => {});
         } catch (e) {
           console.warn('Supabase server delete failed:', e);
         }

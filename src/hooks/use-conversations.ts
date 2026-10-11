@@ -120,9 +120,18 @@ export function useConversations() {
         { event: 'INSERT', schema: 'public', table: 'messages' },
         () => fetchConversations()
       )
+      .on('broadcast', { event: 'conv_update' }, () => {
+        fetchConversations();
+      })
       .subscribe();
 
+    // Auto-sync polling every 4.5s so conversations list stays live across devices
+    const autoSyncTimer = setInterval(() => {
+      fetchConversations();
+    }, 4500);
+
     return () => {
+      clearInterval(autoSyncTimer);
       supabase.removeChannel(channel);
     };
   }, [fetchConversations, isConfigured, user, supabase]);

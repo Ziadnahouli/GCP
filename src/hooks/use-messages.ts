@@ -160,6 +160,9 @@ export function useMessages(conversationId: string | null) {
         },
         () => fetchMessages()
       )
+      .on('broadcast', { event: 'new_msg' }, () => {
+        fetchMessages();
+      })
       .on('broadcast', { event: 'typing' }, (payload) => {
         const { username } = payload.payload;
         if (username && username !== profile?.username) {
@@ -171,7 +174,13 @@ export function useMessages(conversationId: string | null) {
       })
       .subscribe();
 
+    // Auto-sync polling every 3.5s to ensure mobile/poor-connection real-time fidelity
+    const syncInterval = setInterval(() => {
+      fetchMessages();
+    }, 3500);
+
     return () => {
+      clearInterval(syncInterval);
       supabase.removeChannel(channel);
     };
   }, [conversationId, fetchMessages, isConfigured, user, profile, supabase]);
@@ -218,6 +227,34 @@ export function useMessages(conversationId: string | null) {
       return { error: null };
     }
 
+    // Optimistic local update for instantaneous message display (0ms lag)
+    const optId = `opt-${Date.now()}`;
+    const optMsg: Message = {
+      id: optId,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      content: trimmed,
+      reply_to_id: replyToId,
+      is_pinned: false,
+      is_edited: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      sender: profile || undefined,
+      attachments: files.map((f, i) => ({
+        id: `att-opt-${Date.now()}-${i}`,
+        message_id: optId,
+        conversation_id: conversationId,
+        file_name: f.name,
+        file_type: f.type,
+        file_size: f.size,
+        storage_path: '',
+        url: URL.createObjectURL(f),
+        created_at: new Date().toISOString(),
+      })),
+      reactions: [],
+    };
+    setMessages((prev) => [...prev, optMsg]);
+
     try {
       // 1. Insert message
       const { data: msgData, error: msgErr } = await supabase
@@ -232,6 +269,8 @@ export function useMessages(conversationId: string | null) {
         .single();
 
       if (msgErr || !msgData) {
+        // Rollback optimistic message on error
+        setMessages((prev) => prev.filter((m) => m.id !== optId));
         return { error: msgErr?.message || 'Failed to send message' };
       }
 
@@ -257,9 +296,20 @@ export function useMessages(conversationId: string | null) {
         }
       }
 
+      // 3. Broadcast to peers on channel for instant cross-device delivery
+      supabase
+        .channel(`chat-room-${conversationId}`)
+        .send({
+          type: 'broadcast',
+          event: 'new_msg',
+          payload: { messageId: msgData.id },
+        })
+        .catch(() => {});
+
       await fetchMessages();
       return { error: null };
     } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== optId));
       return { error: 'Failed to send message' };
     }
   };

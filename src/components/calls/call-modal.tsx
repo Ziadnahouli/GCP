@@ -34,6 +34,8 @@ interface CallModalProps {
   isScreenSharing: boolean;
   participants: CallParticipant[];
   stats: DiagnosticsStats;
+  localStream?: MediaStream | null;
+  remoteStream?: MediaStream | null;
   onEndCall: () => void;
   onToggleMic: () => void;
   onToggleCamera: () => void;
@@ -49,6 +51,8 @@ export function CallModal({
   isScreenSharing,
   participants,
   stats,
+  localStream,
+  remoteStream,
   onEndCall,
   onToggleMic,
   onToggleCamera,
@@ -57,6 +61,27 @@ export function CallModal({
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
+
+  const localVideoRef = React.useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = React.useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = React.useRef<HTMLAudioElement>(null);
+
+  // Bind local stream to video element
+  React.useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream, isCameraOn, callStatus]);
+
+  // Bind remote stream to video & audio element
+  React.useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+    if (remoteAudioRef.current && remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream, callStatus]);
 
   if (!open || callStatus === 'idle') return null;
 
@@ -187,14 +212,24 @@ export function CallModal({
                     )}
                   >
                     {p.isCameraOn ? (
-                      /* Live simulated webcam feed */
+                      /* Live WebRTC Camera Video Feed */
                       <div className="w-full h-full flex items-center justify-center bg-surface-default relative">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src="https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=600&auto=format&fit=crop&q=80"
-                          alt="Webcam"
-                          className="w-full h-full object-cover rounded-xl"
-                        />
+                        {p.id === 'remote-peer' || p.id === 'squadmate' ? (
+                          <video
+                            ref={remoteVideoRef}
+                            autoPlay
+                            playsInline
+                            className="w-full h-full object-cover rounded-xl"
+                          />
+                        ) : (
+                          <video
+                            ref={localVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full h-full object-cover rounded-xl"
+                          />
+                        )}
                       </div>
                     ) : (
                       /* Avatar with speaking ring */
@@ -228,6 +263,9 @@ export function CallModal({
             <NetworkDiagnostics stats={stats} onClose={() => setShowDiagnostics(false)} />
           </div>
         )}
+
+        {/* Hidden Remote Audio Element */}
+        <audio ref={remoteAudioRef} autoPlay className="hidden" />
       </div>
 
       {/* Floating Bottom Media Toolbar */}

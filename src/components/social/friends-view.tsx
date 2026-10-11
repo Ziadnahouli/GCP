@@ -504,16 +504,10 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
                         {/* Call button */}
                         <button
-                          onClick={() => {
-                            toast({
-                              title: 'Voice Call',
-                              description: `Signaling call to ${item.friend.display_name} (Phase 5 LiveKit integration).`,
-                              type: 'info',
-                            });
-                          }}
+                          onClick={() => handleStartChat(item.friend.id)}
                           className="w-9 h-9 rounded-xl bg-surface-default hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border flex items-center justify-center transition-colors"
-                          title="Start Voice Call"
-                          aria-label="Start Voice Call"
+                          title="Call Friend"
+                          aria-label="Call Friend"
                         >
                           <Phone className="w-4 h-4" />
                         </button>

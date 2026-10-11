@@ -154,14 +154,18 @@ export function useSocial() {
         { event: '*', schema: 'public', table: 'blocks' },
         () => fetchSocialData()
       )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        () => fetchSocialData()
-      )
+      .on('broadcast', { event: 'social_update' }, () => {
+        fetchSocialData();
+      })
       .subscribe();
 
+    // Auto-sync polling every 4s to ensure incoming requests & status changes appear without manual page refresh
+    const autoSyncTimer = setInterval(() => {
+      fetchSocialData();
+    }, 4000);
+
     return () => {
+      clearInterval(autoSyncTimer);
       supabase.removeChannel(channel);
     };
   }, [fetchSocialData, isConfigured, user, supabase]);
@@ -237,6 +241,10 @@ export function useSocial() {
         description: `Friend request sent to @${cleanUsername}!`,
         type: 'success',
       });
+      supabase
+        .channel('social-realtime')
+        .send({ type: 'broadcast', event: 'social_update', payload: {} })
+        .catch(() => {});
       await fetchSocialData();
       return { error: null };
     } catch {
@@ -266,6 +274,10 @@ export function useSocial() {
       }
 
       toast({ title: 'Friend Added', description: 'Friend request accepted!', type: 'success' });
+      supabase
+        .channel('social-realtime')
+        .send({ type: 'broadcast', event: 'social_update', payload: {} })
+        .catch(() => {});
       await fetchSocialData();
     } catch (err) {
       console.error(err);
@@ -285,6 +297,11 @@ export function useSocial() {
       .from('friend_requests')
       .update({ status: 'rejected' })
       .eq('id', requestId);
+
+    supabase
+      .channel('social-realtime')
+      .send({ type: 'broadcast', event: 'social_update', payload: {} })
+      .catch(() => {});
 
     toast({ title: 'Declined', description: 'Friend request ignored', type: 'info' });
     await fetchSocialData();

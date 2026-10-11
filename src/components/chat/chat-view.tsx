@@ -200,19 +200,24 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputContent.trim() && selectedFiles.length === 0) return;
+    const content = inputContent.trim();
+    if (!content && selectedFiles.length === 0) return;
 
-    setIsSending(true);
     const replyId = replyingTo ? replyingTo.id : null;
     const filesToSend = [...selectedFiles];
 
-    await sendMessage(inputContent, replyId, filesToSend);
-
+    // Instantly reset input controls for snappy, zero-latency user feedback
     setInputContent('');
     setSelectedFiles([]);
     setReplyingTo(null);
-    setIsSending(false);
     inputRef.current?.focus();
+
+    setIsSending(true);
+    try {
+      await sendMessage(content, replyId, filesToSend);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

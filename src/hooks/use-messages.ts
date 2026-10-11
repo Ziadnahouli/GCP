@@ -20,7 +20,7 @@ export function useMessages(conversationId: string | null) {
   const chatChannelRef = React.useRef<any>(null);
 
   // Fetch messages with attachments and reactions
-  const fetchMessages = React.useCallback(async () => {
+  const fetchMessages = React.useCallback(async (isInitial = false) => {
     if (!conversationId) {
       setMessages([]);
       setIsLoading(false);
@@ -34,7 +34,9 @@ export function useMessages(conversationId: string | null) {
     }
 
     try {
-      setIsLoading(true);
+      if (isInitial) {
+        setIsLoading(true);
+      }
 
       const { data: msgsData, error: msgsErr } = await supabase
         .from('messages')
@@ -163,7 +165,14 @@ export function useMessages(conversationId: string | null) {
         },
         () => fetchMessages()
       )
-      .on('broadcast', { event: 'new_msg' }, () => {
+      .on('broadcast', { event: 'new_msg' }, ({ payload }) => {
+        if (payload?.message) {
+          const incomingMsg = payload.message as Message;
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+            return [...prev, incomingMsg];
+          });
+        }
         fetchMessages();
       })
       .on('broadcast', { event: 'typing' }, (payload) => {
@@ -303,13 +312,23 @@ export function useMessages(conversationId: string | null) {
         }
       }
 
-      // 3. Broadcast to peers on active channel
+      const confirmedMsg: Message = {
+        ...optMsg,
+        id: msgData.id,
+      };
+
+      // Update optimistic message with confirmed ID
+      setMessages((prev) => prev.map((m) => (m.id === optId ? confirmedMsg : m)));
+
+      // 3. Broadcast to peers on active channel for instantaneous cross-device delivery
       if (chatChannelRef.current) {
-        chatChannelRef.current.send({
-          type: 'broadcast',
-          event: 'new_msg',
-          payload: { messageId: msgData.id },
-        }).catch(() => {});
+        chatChannelRef.current
+          .send({
+            type: 'broadcast',
+            event: 'new_msg',
+            payload: { message: confirmedMsg },
+          })
+          .catch(() => {});
       }
 
       fetchMessages().catch(() => {});

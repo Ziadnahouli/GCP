@@ -304,6 +304,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         stats={call.stats}
         localStream={call.localStream}
         remoteStream={call.remoteStream}
+        screenStream={call.screenStream}
         onEndCall={call.endCall}
         onToggleMic={call.toggleMic}
         onToggleCamera={call.toggleCamera}

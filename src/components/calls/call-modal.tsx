@@ -24,7 +24,6 @@ import { NetworkDiagnostics, DiagnosticsStats } from './network-diagnostics';
 import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { CallParticipant, CallStatus } from '@/features/calls/call-context';
 import { cn } from '@/lib/utils';
-
 import { useAuth } from '@/features/auth/auth-provider';
 
 interface CallModalProps {
@@ -38,6 +37,7 @@ interface CallModalProps {
   stats: DiagnosticsStats;
   localStream?: MediaStream | null;
   remoteStream?: MediaStream | null;
+  screenStream?: MediaStream | null;
   onEndCall: () => void;
   onToggleMic: () => void;
   onToggleCamera: () => void;
@@ -55,6 +55,7 @@ export function CallModal({
   stats,
   localStream,
   remoteStream,
+  screenStream,
   onEndCall,
   onToggleMic,
   onToggleCamera,
@@ -67,21 +68,57 @@ export function CallModal({
 
   const localVideoRef = React.useRef<HTMLVideoElement>(null);
   const remoteVideoRef = React.useRef<HTMLVideoElement>(null);
+  const localScreenVideoRef = React.useRef<HTMLVideoElement>(null);
+  const remoteScreenVideoRef = React.useRef<HTMLVideoElement>(null);
 
-  // Bind local stream to video element
+  // Identify who is actively broadcasting their screen
+  const screenSharer = React.useMemo(() => {
+    const found = participants.find((p) => p.isScreenSharing);
+    if (found) return found;
+    if (isScreenSharing) {
+      return {
+        id: user?.id || 'me',
+        name: 'You',
+        isSpeaking: false,
+        isMuted: isMicMuted,
+        isCameraOn,
+        isScreenSharing: true,
+      };
+    }
+    return null;
+  }, [participants, isScreenSharing, user?.id, isMicMuted, isCameraOn]);
+
+  // Bind local camera stream to local video element
   React.useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(() => {});
     }
-  }, [localStream, isCameraOn, callStatus]);
+  }, [localStream, isCameraOn, callStatus, participants]);
 
-  // Bind remote stream to video element
+  // Bind remote camera stream to remote video element
   React.useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
       remoteVideoRef.current.play().catch(() => {});
     }
-  }, [remoteStream, callStatus]);
+  }, [remoteStream, callStatus, participants]);
+
+  // Bind local screen share stream to display video element
+  React.useEffect(() => {
+    if (localScreenVideoRef.current && screenStream) {
+      localScreenVideoRef.current.srcObject = screenStream;
+      localScreenVideoRef.current.play().catch(() => {});
+    }
+  }, [screenStream, screenSharer]);
+
+  // Bind remote screen share stream to display video element
+  React.useEffect(() => {
+    if (remoteScreenVideoRef.current && remoteStream) {
+      remoteScreenVideoRef.current.srcObject = remoteStream;
+      remoteScreenVideoRef.current.play().catch(() => {});
+    }
+  }, [remoteStream, screenSharer]);
 
   if (!open || callStatus === 'idle') return null;
 
@@ -101,7 +138,11 @@ export function CallModal({
             {callStatus === 'outgoing_ringing' ? 'Calling...' : 'Live Call'}
           </Badge>
           <span className="text-xs font-bold text-foreground">
-            {isVideo ? 'Tactical Video Stream' : 'Encrypted Voice Room'}
+            {screenSharer
+              ? 'Tactical Display Broadcast'
+              : isCameraOn || participants.some((p) => p.isCameraOn)
+              ? 'Tactical Video Stream'
+              : 'Encrypted Voice Room'}
           </span>
         </div>
 
@@ -118,7 +159,7 @@ export function CallModal({
             title="Network Diagnostics Telemetry"
           >
             <Activity className="w-3.5 h-3.5" />
-            <span className="font-mono text-[10px]">{stats.rttMs}ms</span>
+            <span className="font-mono text-[10px]">{stats.rttMs ?? 0}ms</span>
           </button>
 
           {/* Fullscreen Toggle */}
@@ -146,7 +187,7 @@ export function CallModal({
             <div>
               <h3 className="text-base font-bold text-foreground">Connecting Media Stream</h3>
               <p className="text-xs text-muted-foreground mt-1 font-mono">
-                ICE Candidate gathering & LiveKit WebRTC handshake...
+                ICE Candidate gathering & WebRTC handshake...
               </p>
             </div>
           </div>
@@ -154,34 +195,45 @@ export function CallModal({
           /* Active Call Participants Grid */
           <div className="w-full h-full flex flex-col justify-center">
             {/* Screen sharing spotlight mode */}
-            {isScreenSharing ? (
+            {screenSharer ? (
               <div className="w-full h-full flex flex-col gap-3">
-                <div className="flex-1 rounded-xl bg-surface-default border border-border/80 flex flex-col items-center justify-center relative overflow-hidden group">
-                  <div className="absolute top-3 left-3 flex items-center gap-2 bg-card/80 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-semibold text-foreground">
+                <div className="flex-1 rounded-xl bg-black border border-border/80 flex items-center justify-center relative overflow-hidden group">
+                  <div className="absolute top-3 left-3 flex items-center gap-2 bg-card/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-semibold text-foreground z-10 shadow-sm border border-border/60">
                     <Monitor className="w-3.5 h-3.5 text-primary" />
-                    <span>Your Gaming Display Broadcast (1080p 60FPS)</span>
+                    <span>
+                      {screenSharer.id === user?.id
+                        ? 'Your Display Broadcast (Live)'
+                        : `${screenSharer.name}'s Display Broadcast`}
+                    </span>
                   </div>
-                  {/* Screen stream visualization */}
-                  <div className="w-full h-full flex items-center justify-center p-6 text-center text-muted-foreground text-xs">
-                    <div className="space-y-2">
-                      <Monitor className="w-12 h-12 text-primary mx-auto animate-pulse" />
-                      <div className="font-semibold text-foreground">
-                        Display Broadcast Active with System Audio
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        Low-latency screen sharing stream active for all squad participants.
-                      </div>
-                    </div>
-                  </div>
+
+                  {/* Real Live Video Display for Screen Share */}
+                  {screenSharer.id === user?.id ? (
+                    <video
+                      ref={localScreenVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-contain rounded-xl bg-black"
+                    />
+                  ) : (
+                    <video
+                      ref={remoteScreenVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-contain rounded-xl bg-black"
+                    />
+                  )}
                 </div>
 
                 {/* Participant thumbnails underneath screen share */}
-                <div className="h-20 flex items-center gap-2 justify-center">
+                <div className="h-16 flex items-center gap-2 justify-center">
                   {participants.map((p) => (
                     <div
                       key={p.id}
                       className={cn(
-                        'h-full w-28 rounded-xl bg-card border flex items-center justify-center relative p-2',
+                        'h-full w-24 rounded-xl bg-card border flex items-center justify-center relative p-2',
                         p.isSpeaking ? 'border-primary shadow-glow-sm' : 'border-border'
                       )}
                     >
@@ -201,58 +253,63 @@ export function CallModal({
                   participants.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'
                 )}
               >
-                {participants.map((p) => (
-                  <div
-                    key={p.id}
-                    className={cn(
-                      'relative rounded-xl overflow-hidden bg-card border flex flex-col items-center justify-center h-full min-h-[160px] p-4 transition-all',
-                      p.isSpeaking
-                        ? 'border-primary ring-2 ring-primary/40 shadow-glow-sm'
-                        : 'border-border/80'
-                    )}
-                  >
-                    {p.isCameraOn ? (
-                      /* Live WebRTC Camera Video Feed */
-                      <div className="w-full h-full flex items-center justify-center bg-surface-default relative">
-                        {p.id === user?.id ? (
-                          <video
-                            ref={localVideoRef}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="w-full h-full object-cover rounded-xl"
-                          />
-                        ) : (
-                          <video
-                            ref={remoteVideoRef}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="w-full h-full object-cover rounded-xl"
-                          />
-                        )}
-                      </div>
-                    ) : (
-                      /* Avatar with speaking ring */
-                      <div className="flex flex-col items-center justify-center space-y-2">
-                        <Avatar
-                          name={p.name}
-                          size="lg"
-                          className={cn(
-                            'transition-transform',
-                            p.isSpeaking && 'scale-105 ring-4 ring-primary'
-                          )}
-                        />
-                      </div>
-                    )}
+                {participants.map((p) => {
+                  const isLocalUser = p.id === user?.id;
+                  const isCameraActive = isLocalUser ? isCameraOn : p.isCameraOn;
 
-                    {/* Participant Name Badge */}
-                    <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-white flex items-center gap-1.5">
-                      <span>{p.name}</span>
-                      {p.isMuted && <MicOff className="w-3 h-3 text-rose-400" />}
+                  return (
+                    <div
+                      key={p.id}
+                      className={cn(
+                        'relative rounded-xl overflow-hidden bg-card border flex flex-col items-center justify-center h-full min-h-[160px] p-4 transition-all',
+                        p.isSpeaking
+                          ? 'border-primary ring-2 ring-primary/40 shadow-glow-sm'
+                          : 'border-border/80'
+                      )}
+                    >
+                      {isCameraActive ? (
+                        /* Live WebRTC Camera Video Feed */
+                        <div className="w-full h-full flex items-center justify-center bg-black relative rounded-xl overflow-hidden">
+                          {isLocalUser ? (
+                            <video
+                              ref={localVideoRef}
+                              autoPlay
+                              playsInline
+                              muted
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <video
+                              ref={remoteVideoRef}
+                              autoPlay
+                              playsInline
+                              muted
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        /* Avatar with speaking ring */
+                        <div className="flex flex-col items-center justify-center space-y-2">
+                          <Avatar
+                            name={p.name}
+                            size="lg"
+                            className={cn(
+                              'transition-transform',
+                              p.isSpeaking && 'scale-105 ring-4 ring-primary'
+                            )}
+                          />
+                        </div>
+                      )}
+
+                      {/* Participant Name Badge */}
+                      <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-white flex items-center gap-1.5 z-10">
+                        <span>{p.name}</span>
+                        {p.isMuted && <MicOff className="w-3 h-3 text-rose-400" />}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -260,84 +317,84 @@ export function CallModal({
 
         {/* Telemetry diagnostics popup panel */}
         {showDiagnostics && (
-          <div className="absolute top-4 right-4 z-20">
-            <NetworkDiagnostics stats={stats} onClose={() => setShowDiagnostics(false)} />
+          <div className="absolute top-4 right-4 z-20 w-80 max-w-[calc(100%-2rem)]">
+            <NetworkDiagnostics stats={stats} />
           </div>
         )}
-
-
       </div>
 
-      {/* Floating Bottom Media Toolbar */}
-      <div className="h-16 border-t border-border/80 bg-surface-header/90 backdrop-blur-md px-3 sm:px-6 flex items-center justify-center gap-2 sm:gap-3 select-none shrink-0">
-        {/* Mic Toggle */}
-        <button
-          onClick={onToggleMic}
-          className={cn(
-            'p-2.5 sm:p-3 rounded-xl sm:rounded-2xl transition-all shadow-md',
-            isMicMuted
-              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 hover:bg-rose-500/30'
-              : 'bg-surface-default text-foreground hover:bg-surface-hover border border-border'
-          )}
-          title={isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
-        >
-          {isMicMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-        </button>
+      {/* Control Bar Footer */}
+      <div className="h-16 border-t border-border/80 px-4 flex items-center justify-between shrink-0 bg-surface-header/80 backdrop-blur-md">
+        <div className="flex items-center gap-2">
+          {/* Soundboard Button */}
+          <button
+            onClick={() => setShowSoundboard(true)}
+            className="p-2.5 rounded-xl bg-surface-default hover:bg-surface-hover text-muted-foreground hover:text-foreground border border-border/60 transition-colors"
+            title="Open Soundboard"
+          >
+            <Sparkles className="w-4 h-4" />
+          </button>
+        </div>
 
-        {/* Camera Toggle */}
-        <button
-          onClick={onToggleCamera}
-          className={cn(
-            'p-3 rounded-2xl transition-all shadow-md',
-            !isCameraOn
-              ? 'bg-surface-default text-muted-foreground hover:text-foreground hover:bg-surface-hover border border-border'
-              : 'bg-primary/20 text-primary border border-primary/40 shadow-glow-sm'
-          )}
-          title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
-        >
-          {isCameraOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-        </button>
+        {/* Media Call Controls */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Mic Toggle */}
+          <button
+            onClick={onToggleMic}
+            className={cn(
+              'p-3 rounded-xl border transition-all',
+              isMicMuted
+                ? 'bg-rose-500/10 border-rose-500/40 text-rose-400 hover:bg-rose-500/20'
+                : 'bg-surface-default border-border/80 text-foreground hover:bg-surface-hover'
+            )}
+            title={isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
+          >
+            {isMicMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+          </button>
 
-        {/* Screen Share Toggle */}
-        <button
-          onClick={onToggleScreenShare}
-          className={cn(
-            'p-3 rounded-2xl transition-all shadow-md',
-            isScreenSharing
-              ? 'bg-primary text-primary-foreground shadow-glow'
-              : 'bg-surface-default text-foreground hover:bg-surface-hover border border-border'
-          )}
-          title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
-        >
-          <Monitor className="w-5 h-5" />
-        </button>
+          {/* Camera Toggle */}
+          <button
+            onClick={onToggleCamera}
+            className={cn(
+              'p-3 rounded-xl border transition-all',
+              !isCameraOn
+                ? 'bg-rose-500/10 border-rose-500/40 text-rose-400 hover:bg-rose-500/20'
+                : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20'
+            )}
+            title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
+          >
+            {isCameraOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+          </button>
 
-        {/* Soundboard Button */}
-        <button
-          onClick={() => setShowSoundboard(true)}
-          className="p-3 rounded-2xl bg-surface-default text-foreground hover:bg-surface-hover hover:text-amber-400 border border-border transition-all shadow-md"
-          title="Open Gaming Soundboard (1-9)"
-        >
-          <Sparkles className="w-5 h-5 text-amber-400" />
-        </button>
+          {/* Screen Share Toggle */}
+          <button
+            onClick={onToggleScreenShare}
+            className={cn(
+              'p-3 rounded-xl border transition-all',
+              isScreenSharing
+                ? 'bg-primary/20 border-primary text-primary hover:bg-primary/30'
+                : 'bg-surface-default border-border/80 text-foreground hover:bg-surface-hover'
+            )}
+            title={isScreenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
+          >
+            <Monitor className="w-4 h-4" />
+          </button>
 
-        {/* End Call Button (Red Hangup) */}
-        <button
-          onClick={onEndCall}
-          className="p-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white shadow-lg hover:shadow-rose-500/30 transition-all font-bold"
-          title="Disconnect from Call"
-        >
-          <PhoneOff className="w-5 h-5" />
-        </button>
+          {/* End Call Button */}
+          <button
+            onClick={onEndCall}
+            className="p-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all shadow-lg hover:shadow-rose-500/30 ml-2"
+            title="Disconnect Call"
+          >
+            <PhoneOff className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="w-10" />
       </div>
 
-      {/* Soundboard Modal Overlay during Call */}
-      <SoundboardModal
-        open={showSoundboard}
-        onOpenChange={setShowSoundboard}
-        isInCall
-      />
-
+      {/* Soundboard Modal */}
+      <SoundboardModal open={showSoundboard} onOpenChange={setShowSoundboard} />
     </div>
   );
 }

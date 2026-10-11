@@ -180,13 +180,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       const existingChannel = outboundChannelsRef.current.get(targetUserId);
       if (existingChannel) {
-        existingChannel
-          .send({
-            type: 'broadcast',
-            event,
-            payload,
-          })
-          .catch(() => {});
+        if (existingChannel.state === 'joined') {
+          existingChannel
+            .send({
+              type: 'broadcast',
+              event,
+              payload,
+            })
+            .catch(() => {});
+        } else if (typeof (existingChannel as any).httpSend === 'function') {
+          (existingChannel as any)
+            .httpSend({
+              type: 'broadcast',
+              event,
+              payload,
+            })
+            .catch(() => {});
+        }
         return;
       }
 
@@ -209,13 +219,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Helper to broadcast on the active room channel
   const sendSignalToRoom = React.useCallback((event: string, payload: unknown) => {
     if (roomChannelRef.current) {
-      roomChannelRef.current
-        .send({
-          type: 'broadcast',
-          event,
-          payload,
-        })
-        .catch(() => {});
+      if (roomChannelRef.current.state === 'joined') {
+        roomChannelRef.current
+          .send({
+            type: 'broadcast',
+            event,
+            payload,
+          })
+          .catch(() => {});
+      } else if (typeof (roomChannelRef.current as any).httpSend === 'function') {
+        (roomChannelRef.current as any)
+          .httpSend({
+            type: 'broadcast',
+            event,
+            payload,
+          })
+          .catch(() => {});
+      }
     }
   }, []);
 

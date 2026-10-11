@@ -297,9 +297,15 @@ export function useServers() {
           if (chanErr) throw chanErr;
 
           if (serversChannelRef.current) {
-            serversChannelRef.current
-              .send({ type: 'broadcast', event: 'servers_update', payload: {} })
-              .catch(() => {});
+            if (serversChannelRef.current.state === 'joined') {
+              serversChannelRef.current
+                .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+                .catch(() => {});
+            } else if (typeof (serversChannelRef.current as any).httpSend === 'function') {
+              (serversChannelRef.current as any)
+                .httpSend({ type: 'broadcast', event: 'servers_update', payload: {} })
+                .catch(() => {});
+            }
           }
         } catch (e) {
           console.error('Supabase server insert failed:', e);
@@ -354,9 +360,15 @@ export function useServers() {
           if (chanErr) throw chanErr;
 
           if (serversChannelRef.current) {
-            serversChannelRef.current
-              .send({ type: 'broadcast', event: 'servers_update', payload: {} })
-              .catch(() => {});
+            if (serversChannelRef.current.state === 'joined') {
+              serversChannelRef.current
+                .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+                .catch(() => {});
+            } else if (typeof (serversChannelRef.current as any).httpSend === 'function') {
+              (serversChannelRef.current as any)
+                .httpSend({ type: 'broadcast', event: 'servers_update', payload: {} })
+                .catch(() => {});
+            }
           }
         } catch (e) {
           console.error('Supabase channel insert failed:', e);
@@ -386,9 +398,15 @@ export function useServers() {
         try {
           await supabase.from('channels').delete().eq('id', channelId);
           if (serversChannelRef.current) {
-            serversChannelRef.current
-              .send({ type: 'broadcast', event: 'servers_update', payload: {} })
-              .catch(() => {});
+            if (serversChannelRef.current.state === 'joined') {
+              serversChannelRef.current
+                .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+                .catch(() => {});
+            } else if (typeof (serversChannelRef.current as any).httpSend === 'function') {
+              (serversChannelRef.current as any)
+                .httpSend({ type: 'broadcast', event: 'servers_update', payload: {} })
+                .catch(() => {});
+            }
           }
         } catch (e) {
           console.warn('Supabase channel delete failed:', e);
@@ -407,9 +425,15 @@ export function useServers() {
         try {
           await supabase.from('servers').delete().eq('id', serverId);
           if (serversChannelRef.current) {
-            serversChannelRef.current
-              .send({ type: 'broadcast', event: 'servers_update', payload: {} })
-              .catch(() => {});
+            if (serversChannelRef.current.state === 'joined') {
+              serversChannelRef.current
+                .send({ type: 'broadcast', event: 'servers_update', payload: {} })
+                .catch(() => {});
+            } else if (typeof (serversChannelRef.current as any).httpSend === 'function') {
+              (serversChannelRef.current as any)
+                .httpSend({ type: 'broadcast', event: 'servers_update', payload: {} })
+                .catch(() => {});
+            }
           }
         } catch (e) {
           console.warn('Supabase server delete failed:', e);

@@ -323,15 +323,25 @@ export function useChannelMessages(channelId: string | null) {
 
         // 4. Broadcast to peers ONLY AFTER successful database persistence
         if (channelRef.current) {
-          channelRef.current
-            .send({
-              type: 'broadcast',
-              event: 'new_channel_msg',
-              payload: { message: sentMsg },
-            })
-            .catch((bcErr: unknown) => {
-              console.warn('Realtime channel broadcast warning:', bcErr);
-            });
+          if (channelRef.current.state === 'joined') {
+            channelRef.current
+              .send({
+                type: 'broadcast',
+                event: 'new_channel_msg',
+                payload: { message: sentMsg },
+              })
+              .catch((bcErr: unknown) => {
+                console.warn('Realtime channel broadcast warning:', bcErr);
+              });
+          } else if (typeof channelRef.current.httpSend === 'function') {
+            channelRef.current
+              .httpSend({
+                type: 'broadcast',
+                event: 'new_channel_msg',
+                payload: { message: sentMsg },
+              })
+              .catch(() => {});
+          }
         }
 
         // Fast authoritative follow-up reconciliations

@@ -547,28 +547,55 @@ export function useMessages(conversationId: string | null) {
       });
 
       // 4. Broadcast to peers ONLY AFTER successful database persistence
+      // 4. Broadcast to peers ONLY AFTER successful database persistence
       if (chatChannelRef.current) {
-        chatChannelRef.current
-          .send({
-            type: 'broadcast',
-            event: 'new_msg',
-            payload: { message: confirmedMsg },
-          })
-          .catch((bcErr: unknown) => {
-            console.warn('Realtime broadcast warning:', bcErr);
-          });
+        if (chatChannelRef.current.state === 'joined') {
+          chatChannelRef.current
+            .send({
+              type: 'broadcast',
+              event: 'new_msg',
+              payload: { message: confirmedMsg },
+            })
+            .catch((bcErr: unknown) => {
+              console.warn('Realtime broadcast warning:', bcErr);
+            });
+        } else if (typeof chatChannelRef.current.httpSend === 'function') {
+          chatChannelRef.current
+            .httpSend({
+              type: 'broadcast',
+              event: 'new_msg',
+              payload: { message: confirmedMsg },
+            })
+            .catch(() => {});
+        }
       }
 
       // 5. Broadcast conversation update so sidebar updates immediately
       try {
-        const convListChannel = supabase.channel('conversations-realtime');
-        convListChannel
-          .send({
-            type: 'broadcast',
-            event: 'conv_update',
-            payload: { conversationId, lastMessage: confirmedMsg },
-          })
-          .catch(() => {});
+        const existingChannel = supabase
+          .getChannels()
+          .find((c) => c.topic === 'realtime:conversations-realtime');
+
+        if (existingChannel && existingChannel.state === 'joined') {
+          existingChannel
+            .send({
+              type: 'broadcast',
+              event: 'conv_update',
+              payload: { conversationId, lastMessage: confirmedMsg },
+            })
+            .catch(() => {});
+        } else {
+          const convListChannel = existingChannel || supabase.channel('conversations-realtime');
+          if (typeof (convListChannel as any).httpSend === 'function') {
+            (convListChannel as any)
+              .httpSend({
+                type: 'broadcast',
+                event: 'conv_update',
+                payload: { conversationId, lastMessage: confirmedMsg },
+              })
+              .catch(() => {});
+          }
+        }
       } catch {}
 
       // Update conversation updated_at timestamp
@@ -711,7 +738,7 @@ export function useMessages(conversationId: string | null) {
   // Broadcast typing
   const sendTyping = () => {
     if (!conversationId || !isConfigured || !profile) return;
-    if (chatChannelRef.current) {
+    if (chatChannelRef.current && chatChannelRef.current.state === 'joined') {
       chatChannelRef.current
         .send({
           type: 'broadcast',

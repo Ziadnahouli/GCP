@@ -288,9 +288,15 @@ export function useSocial() {
         type: 'success',
       });
       if (socialChannelRef.current) {
-        socialChannelRef.current
-          .send({ type: 'broadcast', event: 'social_update', payload: {} })
-          .catch(() => {});
+        if (socialChannelRef.current.state === 'joined') {
+          socialChannelRef.current
+            .send({ type: 'broadcast', event: 'social_update', payload: {} })
+            .catch(() => {});
+        } else if (typeof (socialChannelRef.current as any).httpSend === 'function') {
+          (socialChannelRef.current as any)
+            .httpSend({ type: 'broadcast', event: 'social_update', payload: {} })
+            .catch(() => {});
+        }
       }
       await fetchSocialData();
       return { error: null };
@@ -339,9 +345,15 @@ export function useSocial() {
 
       toast({ title: 'Friend Added', description: 'Friend request accepted!', type: 'success' });
       if (socialChannelRef.current) {
-        socialChannelRef.current
-          .send({ type: 'broadcast', event: 'social_update', payload: {} })
-          .catch(() => {});
+        if (socialChannelRef.current.state === 'joined') {
+          socialChannelRef.current
+            .send({ type: 'broadcast', event: 'social_update', payload: {} })
+            .catch(() => {});
+        } else if (typeof (socialChannelRef.current as any).httpSend === 'function') {
+          (socialChannelRef.current as any)
+            .httpSend({ type: 'broadcast', event: 'social_update', payload: {} })
+            .catch(() => {});
+        }
       }
       await fetchSocialData();
     } catch (err) {
@@ -364,9 +376,15 @@ export function useSocial() {
       .eq('id', requestId);
 
     if (socialChannelRef.current) {
-      socialChannelRef.current
-        .send({ type: 'broadcast', event: 'social_update', payload: {} })
-        .catch(() => {});
+      if (socialChannelRef.current.state === 'joined') {
+        socialChannelRef.current
+          .send({ type: 'broadcast', event: 'social_update', payload: {} })
+          .catch(() => {});
+      } else if (typeof (socialChannelRef.current as any).httpSend === 'function') {
+        (socialChannelRef.current as any)
+          .httpSend({ type: 'broadcast', event: 'social_update', payload: {} })
+          .catch(() => {});
+      }
     }
 
     toast({ title: 'Declined', description: 'Friend request ignored', type: 'info' });

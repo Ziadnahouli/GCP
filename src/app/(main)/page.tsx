@@ -78,19 +78,20 @@ function HomePageContent() {
     return activeServer.channels[0] || null;
   }, [activeServer, channelId]);
 
-  // If a server is active, render the ChannelView
-  if (activeServer && activeChannel) {
-    return <ChannelView server={activeServer} channel={activeChannel} />;
-  }
-
-  // If a direct message conversation is active, render the real-time ChatView
+  // 1. Direct message conversation takes priority so private chats are ALWAYS accessible
   if (conversationId) {
     return (
       <ChatView
+        key={conversationId}
         conversationId={conversationId}
-        onBack={() => router.push('/')}
+        onBack={() => router.push(serverId ? `/?s=${serverId}&ch=${channelId || ''}` : '/')}
       />
     );
+  }
+
+  // 2. If a server is active, render the ChannelView with unique key per channel
+  if (activeServer && activeChannel) {
+    return <ChannelView key={activeChannel.id} server={activeServer} channel={activeChannel} />;
   }
 
   // Otherwise render the full Gaming Social Hub

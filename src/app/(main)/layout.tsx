@@ -118,7 +118,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
         <div className="flex flex-col shrink-0 h-full">
           <div className="flex-1 overflow-hidden">
-            {activeServer ? (
+            {activeServer && !selectedConversationId ? (
               <ServerSidebar
                 server={activeServer}
                 activeChannelId={selectedChannelId || activeServer.channels[0]?.id || null}
@@ -171,7 +171,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
             <div className="flex flex-col w-[calc(92vw-72px)] sm:w-64 max-w-[280px] h-full bg-surface-sidebar border-r border-border">
               <div className="flex-1 overflow-hidden">
-                {activeServer ? (
+                {activeServer && !selectedConversationId ? (
                   <ServerSidebar
                     server={activeServer}
                     activeChannelId={selectedChannelId || activeServer.channels[0]?.id || null}

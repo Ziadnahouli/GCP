@@ -9,10 +9,11 @@ import {
   Settings,
   Trash2,
   UserPlus,
-  Radio,
   Sparkles,
   Users,
+  MessageSquare,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Server, Channel, ChannelType } from '@/lib/types/server';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -38,6 +39,7 @@ export function ServerSidebar({
   onDeleteChannel,
   onConnectVoiceChannel,
 }: ServerSidebarProps) {
+  const router = useRouter();
   const { toast } = useToast();
   const [showMenu, setShowMenu] = React.useState(false);
   const [showAddChannel, setShowAddChannel] = React.useState(false);
@@ -128,6 +130,23 @@ export function ServerSidebar({
               </button>
             </div>
           )}
+        </div>
+
+        {/* Quick Switch to Direct Messages & Friends */}
+        <div className="p-2 border-b border-border/60 bg-surface-header/30">
+          <button
+            onClick={() => router.push('/')}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs transition-all border border-primary/20 group shadow-sm text-left"
+            title="Switch to Direct Messages & Friends Hub"
+          >
+            <MessageSquare className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate">Direct Messages</div>
+              <div className="text-[10px] text-muted-foreground font-normal truncate">
+                Private chats & friends
+              </div>
+            </div>
+          </button>
         </div>
 
         {/* Text Channels Category */}

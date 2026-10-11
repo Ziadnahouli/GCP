@@ -125,12 +125,31 @@ export function Sidebar({
           {!collapsed && (
             <div className="flex items-center justify-between px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
               <span>Direct Messages</span>
-              <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
+              <button
+                onClick={() => router.push('/')}
+                className="text-muted-foreground hover:text-primary transition-colors p-0.5 rounded"
+                title="Start a Direct Message"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
           <div className="space-y-1 mt-1.5">
-            {conversations.map((conv) => {
+            {conversations.length === 0 ? (
+              !collapsed && (
+                <div className="p-3 text-center rounded-xl border border-dashed border-border/80 bg-surface-default/40 space-y-2 mt-1">
+                  <p className="text-[11px] text-muted-foreground">No active direct chats</p>
+                  <button
+                    onClick={() => router.push('/')}
+                    className="w-full py-1.5 px-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold transition-colors"
+                  >
+                    Start a Chat
+                  </button>
+                </div>
+              )
+            ) : (
+              conversations.map((conv) => {
               const otherMember =
                 conv.members.find((m) => m.user_id !== user?.id)?.profile || null;
               const isSelected = selectedConversationId === conv.id;
@@ -175,7 +194,7 @@ export function Sidebar({
                   )}
                 </div>
               );
-            })}
+            }))}
           </div>
         </div>
 

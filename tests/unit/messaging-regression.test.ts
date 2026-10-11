@@ -64,22 +64,21 @@ vi.mock('@/lib/supabase/client', () => {
           if (custom) return custom;
         }
 
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockImplementation(() => {
-                if (table === 'messages' || table === 'channel_messages') {
-                  return Promise.resolve(mockState.selectResult);
-                }
-                return Promise.resolve({ data: [], error: null });
-              }),
-              in: vi.fn().mockResolvedValue(mockState.selectResult),
-            }),
-            in: vi.fn().mockImplementation(() => {
-              if (table === 'message_reactions') return Promise.resolve(mockState.reactionsResult);
+        const queryBuilder: any = {
+          order: vi.fn().mockImplementation(() => {
+            if (table === 'messages' || table === 'channel_messages') {
               return Promise.resolve(mockState.selectResult);
-            }),
+            }
+            return Promise.resolve({ data: [], error: null });
           }),
+          in: vi.fn().mockResolvedValue(mockState.selectResult),
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          single: vi.fn().mockResolvedValue({ data: null, error: null }),
+        };
+        queryBuilder.eq = vi.fn().mockReturnValue(queryBuilder);
+
+        return {
+          select: vi.fn().mockReturnValue(queryBuilder),
           insert: vi.fn().mockReturnValue({
             select: vi.fn().mockImplementation(() => Promise.resolve(mockState.insertResult)),
             then: vi.fn().mockImplementation((onResolve) => Promise.resolve(mockState.insertResult).then(onResolve)),

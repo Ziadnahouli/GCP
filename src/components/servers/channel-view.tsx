@@ -18,10 +18,14 @@ import {
   Loader2,
   RefreshCw,
   AlertCircle,
+  MessageSquare,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Server, Channel } from '@/lib/types/server';
 import { useChannelMessages } from '@/hooks/use-channel-messages';
+import { useAuth } from '@/features/auth/auth-provider';
+import { useSocial } from '@/hooks/use-social';
+import { useConversations } from '@/hooks/use-conversations';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,8 +38,17 @@ interface ChannelViewProps {
   channel: Channel;
 }
 
+const DEFAULT_COMMUNITY_MEMBERS = [
+  { id: '51a183ab-d80e-4db2-b29f-57203aca3ea0', display_name: 'Commander Rex', username: 'commander_rex', role: 'admin', status: 'online' as const },
+  { id: '8cab3f6c-1712-4a01-9b98-1f41676ef501', display_name: 'zorkos', username: 'zzorkoss', role: 'member', status: 'online' as const },
+  { id: '3b4668f6-f241-4a90-9c98-3aba096e9705', display_name: 'Test1', username: 'test', role: 'member', status: 'idle' as const },
+];
+
 export function ChannelView({ server, channel }: ChannelViewProps) {
   const router = useRouter();
+  const { user } = useAuth();
+  const { friends } = useSocial();
+  const { getOrCreateDirectConversation } = useConversations();
   const { messages, sendMessage, retryMessage } = useChannelMessages(channel.id);
   const { toast } = useToast();
   const [inputText, setInputText] = React.useState('');
@@ -49,6 +62,26 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  const handleStartDirectChat = async (targetUserId: string, targetName: string) => {
+    if (!targetUserId || targetUserId === user?.id) {
+      toast({ title: 'You', description: 'This is your own profile.', type: 'info' });
+      return;
+    }
+
+    const { conversationId, error } = await getOrCreateDirectConversation(targetUserId);
+    if (error) {
+      toast({ title: 'Could not open private chat', description: error, type: 'error' });
+    } else if (conversationId) {
+      toast({
+        title: 'Opening Private Chat',
+        description: `Chatting with ${targetName}`,
+        type: 'success',
+        duration: 1500,
+      });
+      router.push(`/?c=${conversationId}`);
+    }
+  };
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -92,6 +125,73 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
       )
     : messages;
 
+  // Build real squad members list
+  const squadList = React.useMemo(() => {
+    const list: Array<{
+      id: string;
+      display_name: string;
+      username: string;
+      avatar_url?: string | null;
+      role: string;
+      status: 'online' | 'idle' | 'dnd' | 'offline';
+      game_activity?: string | null;
+    }> = [];
+
+    const seenIds = new Set<string>();
+
+    // 1. Server members
+    if (server.members && server.members.length > 0) {
+      for (const m of server.members) {
+        if (!seenIds.has(m.user_id)) {
+          seenIds.add(m.user_id);
+          list.push({
+            id: m.user_id,
+            display_name: m.profile?.display_name || 'Squad Member',
+            username: m.profile?.username || 'member',
+            avatar_url: m.profile?.avatar_url || null,
+            role: m.role || 'member',
+            status: (m.profile?.status as any) || 'online',
+            game_activity: m.profile?.game_activity || null,
+          });
+        }
+      }
+    }
+
+    // 2. Add friends
+    for (const f of friends) {
+      if (!seenIds.has(f.friend.id)) {
+        seenIds.add(f.friend.id);
+        list.push({
+          id: f.friend.id,
+          display_name: f.friend.display_name,
+          username: f.friend.username,
+          avatar_url: f.friend.avatar_url || null,
+          role: 'friend',
+          status: (f.friend.status as any) || 'online',
+          game_activity: f.friend.game_activity || null,
+        });
+      }
+    }
+
+    // 3. Fallback community profiles
+    for (const cm of DEFAULT_COMMUNITY_MEMBERS) {
+      if (!seenIds.has(cm.id)) {
+        seenIds.add(cm.id);
+        list.push({
+          id: cm.id,
+          display_name: cm.display_name,
+          username: cm.username,
+          avatar_url: null,
+          role: cm.role,
+          status: cm.status,
+          game_activity: null,
+        });
+      }
+    }
+
+    return list;
+  }, [server.members, friends]);
+
   return (
     <div className="flex-1 flex h-full overflow-hidden bg-background">
       {/* Center Stage: Channel Chat Feed */}
@@ -101,9 +201,9 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => router.push('/')}
-              className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground rounded-lg transition-colors"
-              title="Back to Servers & Friends"
-              aria-label="Back"
+              className="p-1.5 -ml-1 text-muted-foreground hover:text-foreground rounded-lg transition-colors flex items-center gap-1"
+              title="Back to Direct Messages & Friends"
+              aria-label="Back to Direct Messages"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -125,6 +225,18 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Direct Messages Shortcut Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/')}
+              className="h-8 text-xs gap-1.5 border-border/80 text-muted-foreground hover:text-foreground hover:bg-surface-hover"
+              title="Switch to Direct Messages & Friends"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-primary" />
+              <span className="hidden sm:inline">Direct Messages</span>
+            </Button>
+
             {/* Search Toggle */}
             <div className="relative">
               {showSearch ? (
@@ -207,16 +319,26 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 key={msg.id}
                 className="flex items-start gap-3.5 group rounded-xl hover:bg-surface-hover/40 p-2 -mx-2 transition-colors"
               >
-                <Avatar
-                  src={msg.profile?.avatar_url}
-                  name={msg.profile?.display_name || 'Gamer'}
-                  size="md"
-                  className="mt-0.5 shrink-0"
-                />
+                <div
+                  className="cursor-pointer"
+                  onClick={() => handleStartDirectChat(msg.user_id, msg.profile?.display_name || 'Member')}
+                  title="Click to direct message"
+                >
+                  <Avatar
+                    src={msg.profile?.avatar_url}
+                    name={msg.profile?.display_name || 'Gamer'}
+                    size="md"
+                    className="mt-0.5 shrink-0 hover:ring-2 hover:ring-primary transition-all"
+                  />
+                </div>
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-xs text-foreground hover:underline cursor-pointer">
+                    <span
+                      onClick={() => handleStartDirectChat(msg.user_id, msg.profile?.display_name || 'Member')}
+                      className="font-bold text-xs text-foreground hover:underline hover:text-primary cursor-pointer transition-colors"
+                      title="Send direct message"
+                    >
                       {msg.profile?.display_name || 'Squad Member'}
                     </span>
 
@@ -319,81 +441,82 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
       {/* Right Squad Members Panel */}
       {showMembers && (
-        <aside className="w-60 border-l border-border bg-surface-sidebar hidden lg:flex flex-col p-4 shrink-0 overflow-y-auto select-none">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
-            <Crown className="w-3.5 h-3.5 text-amber-400" />
-            <span>Server Leadership (1)</span>
+        <aside className="w-64 border-l border-border bg-surface-sidebar hidden lg:flex flex-col p-4 shrink-0 overflow-y-auto select-none">
+          {/* Direct Messages Quick Action */}
+          <div className="mb-4 pb-3 border-b border-border/60">
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => router.push('/')}
+              className="w-full text-xs font-bold gap-2 shadow-sm"
+              title="Exit server to direct messages"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Direct Messages & Friends</span>
+            </Button>
           </div>
 
-          <div className="space-y-1 mb-6">
-            <div className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-surface-hover transition-colors cursor-pointer group">
-              <Avatar
-                name={server.members[0]?.profile?.display_name || 'Viper Leader'}
-                status="online"
-                showStatus
-                size="sm"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
-                  {server.members[0]?.profile?.display_name || 'Viper Leader'}
-                </div>
-                <div className="text-[10px] text-amber-400 font-mono truncate">
-                  👑 Clan Leader
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
-            <Shield className="w-3.5 h-3.5 text-primary" />
-            <span>Squad Officers (2)</span>
-          </div>
-
-          <div className="space-y-1 mb-6">
-            {[
-              { name: 'Ronin', game: 'Counter-Strike 2', status: 'online' as const },
-              { name: 'Valkyrie', game: 'Apex Legends', status: 'idle' as const },
-            ].map((member, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-surface-hover transition-colors cursor-pointer group"
-              >
-                <Avatar name={member.name} status={member.status} showStatus size="sm" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
-                    {member.name}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground truncate">
-                    🎮 {member.game}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
-            <Gamepad2 className="w-3.5 h-3.5 text-muted-foreground" />
-            <span>Squadmates Online (4)</span>
+          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-primary" />
+              <span>Squad ({squadList.length})</span>
+            </span>
+            <span className="text-[10px] text-muted-foreground font-normal">Click to chat</span>
           </div>
 
           <div className="space-y-1">
-            {[
-              { name: 'GhostSniper', status: 'online' as const },
-              { name: 'EchoOperator', status: 'dnd' as const },
-              { name: 'NexusPilot', status: 'online' as const },
-            ].map((m, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-surface-hover transition-colors cursor-pointer group"
-              >
-                <Avatar name={m.name} status={m.status} showStatus size="sm" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                    {m.name}
+            {squadList.map((m) => {
+              const isMe = m.id === user?.id;
+
+              return (
+                <div
+                  key={m.id}
+                  onClick={() => !isMe && handleStartDirectChat(m.id, m.display_name)}
+                  className={cn(
+                    'flex items-center justify-between p-2 rounded-xl transition-all group',
+                    isMe
+                      ? 'bg-surface-default/40 opacity-80 cursor-default'
+                      : 'hover:bg-surface-hover cursor-pointer border border-transparent hover:border-border/60'
+                  )}
+                  title={isMe ? 'You' : `Send private message to ${m.display_name}`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <Avatar
+                      src={m.avatar_url || null}
+                      name={m.display_name}
+                      status={m.status}
+                      showStatus
+                      size="sm"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors flex items-center gap-1">
+                        <span className="truncate">{m.display_name}</span>
+                        {isMe && (
+                          <span className="text-[9px] text-primary font-mono">(You)</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground font-mono truncate">
+                        @{m.username}
+                      </div>
+                    </div>
                   </div>
+
+                  {!isMe && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartDirectChat(m.id, m.display_name);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-primary/15 text-primary hover:bg-primary/25 transition-all shrink-0"
+                      title="Direct Message"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </aside>
       )}

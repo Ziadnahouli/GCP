@@ -67,7 +67,9 @@ export function useChannelMessages(channelId: string | null) {
           }));
 
           setMessages((prev) => {
-            const pending = prev.filter((m) => m.status === 'sending' || m.status === 'failed');
+            const pending = prev.filter(
+              (m) => (m.status === 'sending' || m.status === 'failed') && m.channel_id === channelId
+            );
             const combined = [...parsed];
             for (const p of pending) {
               if (!combined.some((c) => c.id === p.id)) {
@@ -104,6 +106,7 @@ export function useChannelMessages(channelId: string | null) {
   }, [channelId, user, isConfigured, isUUID, supabase]);
 
   React.useEffect(() => {
+    setMessages([]);
     fetchChannelMessages(true);
 
     if (!channelId || !isConfigured || !user) return;
@@ -116,6 +119,8 @@ export function useChannelMessages(channelId: string | null) {
       .on('broadcast', { event: 'new_channel_msg' }, ({ payload }) => {
         if (payload?.message) {
           const incoming = payload.message as ChannelMessage;
+          // Filter strictly by current channelId to prevent cross-channel message bleeding
+          if (incoming.channel_id !== channelId) return;
           setMessages((prev) => {
             if (prev.some((m) => m.id === incoming.id)) return prev;
             return [...prev, incoming];
@@ -234,6 +239,34 @@ export function useChannelMessages(channelId: string | null) {
 
       // 2. Persist to Supabase BEFORE considering delivered
       try {
+        // Ensure user is in server_members to satisfy RLS
+        try {
+          const { data: chanData } = await supabase
+            .from('channels')
+            .select('server_id')
+            .eq('id', channelId)
+            .maybeSingle();
+
+          if (chanData?.server_id) {
+            const { data: existing } = await supabase
+              .from('server_members')
+              .select('id')
+              .eq('server_id', chanData.server_id)
+              .eq('user_id', user.id)
+              .maybeSingle();
+
+            if (!existing) {
+              await supabase.from('server_members').insert({
+                server_id: chanData.server_id,
+                user_id: user.id,
+                role: 'member',
+              });
+            }
+          }
+        } catch (smErr) {
+          console.warn('server_members ensure notice:', smErr);
+        }
+
         const { error: insertErr } = await supabase.from('channel_messages').insert({
           id: messageId,
           channel_id: channelId,

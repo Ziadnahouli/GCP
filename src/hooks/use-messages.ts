@@ -95,7 +95,13 @@ export function useMessages(conversationId: string | null) {
 
         // Database is authoritative: an empty successful query must render an empty conversation
         if (!msgsData || msgsData.length === 0) {
-          setMessages((prev) => prev.filter((m) => m.status === 'sending' || m.status === 'failed'));
+          setMessages((prev) =>
+            prev.filter(
+              (m) =>
+                (m.status === 'sending' || m.status === 'failed') &&
+                m.conversation_id === conversationId
+            )
+          );
           try {
             if (cacheKey) localStorage.removeItem(cacheKey);
           } catch {}
@@ -167,7 +173,11 @@ export function useMessages(conversationId: string | null) {
 
         setMessages((prev) => {
           // Preserve any currently pending/sending messages while updating historical messages
-          const pending = prev.filter((m) => m.status === 'sending' || m.status === 'failed');
+          const pending = prev.filter(
+            (m) =>
+              (m.status === 'sending' || m.status === 'failed') &&
+              m.conversation_id === conversationId
+          );
           const combined = [...parsed];
           for (const p of pending) {
             if (!combined.some((c) => c.id === p.id)) {
@@ -273,6 +283,7 @@ export function useMessages(conversationId: string | null) {
       .on('broadcast', { event: 'new_msg' }, ({ payload }) => {
         if (payload?.message) {
           const incomingMsg = payload.message as Message;
+          if (incomingMsg.conversation_id !== conversationId) return;
           setMessages((prev) => {
             if (prev.some((m) => m.id === incomingMsg.id)) return prev;
             return [...prev, incomingMsg];

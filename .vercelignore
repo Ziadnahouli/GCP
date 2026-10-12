@@ -1,4 +1,4 @@
 # Ignored files for Vercel cloud deployments
-desktop/src-tauri/target/
+desktop/
 tests/
 *.log

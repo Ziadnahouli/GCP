@@ -6,6 +6,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { Message, MessageAttachment, MessageReaction } from '@/lib/types/messaging';
 import { UserProfile } from '@/lib/types/profile';
 import { uploadAttachmentFile } from '@/lib/storage/upload';
+import { debugLogger } from '@/lib/logger/debug-logger';
 
 export function useMessages(conversationId: string | null) {
   const { user, profile, isConfigured } = useAuth();
@@ -94,6 +95,7 @@ export function useMessages(conversationId: string | null) {
         if (activeConversationIdRef.current !== conversationId) return;
 
         if (msgsErr) {
+          debugLogger.error('messaging', `Error fetching messages from database: ${msgsErr.message}`, msgsErr);
           console.warn('Error fetching messages from database:', msgsErr);
           setIsLoading(false);
           return;
@@ -307,6 +309,7 @@ export function useMessages(conversationId: string | null) {
         }
       })
     channel.subscribe((status) => {
+      debugLogger.info('realtime', `Chat channel [chat:${conversationId}] status: ${status}`);
       if (status === 'SUBSCRIBED') {
         fetchMessages();
       }
@@ -477,17 +480,26 @@ export function useMessages(conversationId: string | null) {
         }
       }
 
+      debugLogger.info('messaging', `Initiating DM send (${trimmed.length} chars) to conv ${conversationId}`, {
+        optId,
+        cleanReplyId,
+        filesCount: files.length,
+      });
+
       // 1. Insert message to database with auto-recovery on token expiry/RLS
+      const insertStartTime = performance.now();
       let insertRes = await supabase
         .from('messages')
         .insert(insertPayload)
         .select('id, created_at');
 
+      const insertDurationMs = Math.round(performance.now() - insertStartTime);
       let msgRows = insertRes.data;
       let msgErr = insertRes.error;
 
       // Auto-recovery: If rejected due to RLS/auth/JWT expiration or PGRST301, refresh session and retry once
       if (msgErr) {
+        debugLogger.warn('messaging', `Initial message insert failed (${insertDurationMs}ms): [${(msgErr as any).code}] ${msgErr.message}`, msgErr);
         const errLower = (msgErr.message || '').toLowerCase();
         const isAuthOrRls =
           errLower.includes('jwt') ||
@@ -500,9 +512,14 @@ export function useMessages(conversationId: string | null) {
 
         if (isAuthOrRls && supabase.auth?.refreshSession) {
           try {
+            debugLogger.info('auth', 'Auth issue detected during send. Refreshing auth session and retrying...');
             console.warn('Potential token expiry detected, refreshing auth session and retrying message insert...');
-            const { data: refreshed } = await supabase.auth.refreshSession();
+            const { data: refreshed, error: refErr } = await supabase.auth.refreshSession();
+            if (refErr) {
+              debugLogger.error('auth', `Token auto-refresh failed: ${refErr.message}`, refErr);
+            }
             if (refreshed?.session?.user) {
+              debugLogger.success('auth', 'Token auto-refreshed successfully. Retrying message insert...');
               const retryRes = await supabase
                 .from('messages')
                 .insert(insertPayload)
@@ -510,9 +527,13 @@ export function useMessages(conversationId: string | null) {
               if (!retryRes.error && retryRes.data?.[0]?.id) {
                 msgRows = retryRes.data;
                 msgErr = null;
+                debugLogger.success('messaging', 'Message insert retry succeeded after token renewal.');
+              } else if (retryRes.error) {
+                debugLogger.error('messaging', `Message insert retry also failed: ${retryRes.error.message}`, retryRes.error);
               }
             }
           } catch (refreshErr) {
+            debugLogger.error('auth', 'Exception during auto-session refresh:', refreshErr);
             console.warn('Auto session refresh retry failed:', refreshErr);
           }
         }
@@ -520,6 +541,11 @@ export function useMessages(conversationId: string | null) {
 
       if (msgErr || !msgRows?.[0]?.id) {
         const errorMsg = msgErr?.message || 'Database rejected message insert';
+        debugLogger.error('messaging', `Final message delivery failure: ${errorMsg}`, {
+          error: msgErr,
+          conversationId,
+          userId: user.id,
+        });
         console.error('Database message insert failure:', errorMsg);
         // Mark optimistic message as failed
         setMessages((prev) =>
@@ -530,6 +556,7 @@ export function useMessages(conversationId: string | null) {
 
       const confirmedId = msgRows[0].id;
       const confirmedCreatedAt = msgRows[0].created_at;
+      debugLogger.success('messaging', `Message persisted to database (${insertDurationMs}ms): id=${confirmedId}`);
 
       // 2. Upload any attachments and persist to message_attachments
       const uploadedAttachments: MessageAttachment[] = [];

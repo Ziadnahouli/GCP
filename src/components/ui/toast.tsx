@@ -12,6 +12,10 @@ export interface ToastItem {
   description: string;
   type?: ToastType;
   duration?: number;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 interface ToastContextType {
@@ -67,6 +71,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <div className="flex-1">
               {item.title && <h5 className="font-semibold text-sm leading-tight mb-1">{item.title}</h5>}
               <p className="text-xs text-muted-foreground leading-relaxed">{item.description}</p>
+              {item.action && (
+                <button
+                  onClick={() => {
+                    item.action?.onClick();
+                    removeToast(item.id);
+                  }}
+                  className="mt-2 text-xs font-semibold px-2.5 py-1 rounded-md bg-foreground/10 hover:bg-foreground/20 text-foreground transition-colors inline-flex items-center gap-1 cursor-pointer"
+                >
+                  {item.action.label}
+                </button>
+              )}
             </div>
 
             <button

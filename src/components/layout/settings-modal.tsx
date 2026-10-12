@@ -16,6 +16,10 @@ import {
   Check,
   AlertTriangle,
   ShieldCheck,
+  Terminal,
+  Activity,
+  Radio,
+  Database,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { AccentTheme, UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
@@ -23,6 +27,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
 import { Avatar } from '@/components/ui/avatar';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
@@ -218,6 +223,19 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             >
               <Bell className="w-4 h-4 shrink-0" />
               <span>Notifs</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('diagnostics')}
+              className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
+                activeTab === 'diagnostics'
+                  ? 'bg-primary/15 text-primary font-semibold'
+                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+              )}
+            >
+              <Terminal className="w-4 h-4 shrink-0" />
+              <span>Logs & Telemetry</span>
             </button>
           </div>
 
@@ -591,6 +609,39 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     className="accent-primary w-4 h-4 rounded cursor-pointer"
                   />
                 </label>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'diagnostics' && (
+            <div className="space-y-6 max-w-xl">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">System Diagnostics & Logs</h3>
+                <p className="text-xs text-muted-foreground">
+                  Inspect messaging pipeline, Supabase WebSocket connections, session expirations, and network latency.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-primary/30 bg-primary/10 space-y-3">
+                <div className="flex items-center gap-2 text-primary font-bold text-sm">
+                  <Terminal className="w-4 h-4" />
+                  <span>Interactive Real-Time Diagnostics Console</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  The logs console captures all message send attempts, database queries, and WebSocket states. You can also toggle it at any time with <kbd className="px-1.5 py-0.5 rounded bg-surface-sidebar border border-border text-[11px] font-mono">Ctrl + ~</kbd>.
+                </p>
+                <div className="pt-1 flex gap-2">
+                  <Button
+                    onClick={() => {
+                      onOpenChange(false);
+                      triggerOpenLogsWindow();
+                    }}
+                    className="font-bold gap-2 text-xs"
+                  >
+                    <Terminal className="w-4 h-4" />
+                    Open Diagnostics Window
+                  </Button>
+                </div>
               </div>
             </div>
           )}

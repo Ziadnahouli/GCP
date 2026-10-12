@@ -5,6 +5,7 @@ import { ChannelMessage } from '@/lib/types/server';
 import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
+import { debugLogger } from '@/lib/logger/debug-logger';
 
 const STORAGE_KEY_PREFIX = 'nexus_channel_msgs_';
 
@@ -170,6 +171,7 @@ export function useChannelMessages(channelId: string | null) {
     }
 
     channel.subscribe((status) => {
+      debugLogger.info('realtime', `Server channel [channel:${channelId}] status: ${status}`);
       if (status === 'SUBSCRIBED' && isUUID) {
         fetchChannelMessages();
       }
@@ -301,15 +303,23 @@ export function useChannelMessages(channelId: string | null) {
           }
         }
 
+        debugLogger.info('channel_messaging', `Initiating channel message send (${trimmed.length} chars) to channel ${channelId}`, {
+          messageId,
+          userId: user.id,
+        });
+
+        const insertStartTime = performance.now();
         let { error: insertErr } = await supabase.from('channel_messages').insert({
           id: messageId,
           channel_id: channelId,
           user_id: user.id,
           content: trimmed,
         });
+        const insertDurationMs = Math.round(performance.now() - insertStartTime);
 
         // Auto-recovery: If rejected due to RLS/auth/JWT expiration or PGRST301, refresh session and retry once
         if (insertErr) {
+          debugLogger.warn('channel_messaging', `Channel message insert failed (${insertDurationMs}ms): [${(insertErr as any).code}] ${insertErr.message}`, insertErr);
           const errLower = (insertErr.message || '').toLowerCase();
           const isAuthOrRls =
             errLower.includes('jwt') ||
@@ -322,9 +332,14 @@ export function useChannelMessages(channelId: string | null) {
 
           if (isAuthOrRls && supabase.auth?.refreshSession) {
             try {
+              debugLogger.info('auth', 'Channel message insert rejected by auth/RLS. Refreshing session...');
               console.warn('Channel message insert auth issue detected, refreshing session and retrying...');
-              const { data: refreshed } = await supabase.auth.refreshSession();
+              const { data: refreshed, error: refErr } = await supabase.auth.refreshSession();
+              if (refErr) {
+                debugLogger.error('auth', `Token auto-refresh failed: ${refErr.message}`, refErr);
+              }
               if (refreshed?.session?.user) {
+                debugLogger.success('auth', 'Token renewed. Retrying channel message insert...');
                 const retryRes = await supabase.from('channel_messages').insert({
                   id: messageId,
                   channel_id: channelId,
@@ -333,15 +348,24 @@ export function useChannelMessages(channelId: string | null) {
                 });
                 if (!retryRes.error) {
                   insertErr = null;
+                  debugLogger.success('channel_messaging', 'Channel message insert retry succeeded.');
+                } else {
+                  debugLogger.error('channel_messaging', `Retry insert failed: ${retryRes.error.message}`, retryRes.error);
                 }
               }
             } catch (refreshErr) {
+              debugLogger.error('auth', 'Exception during auto session refresh:', refreshErr);
               console.warn('Auto session refresh retry failed:', refreshErr);
             }
           }
         }
 
         if (insertErr) {
+          debugLogger.error('channel_messaging', `Failed to persist channel message: ${insertErr.message}`, {
+            error: insertErr,
+            channelId,
+            userId: user.id,
+          });
           console.error('Failed to persist channel message:', insertErr);
           // Mark optimistic message as failed
           setMessages((prev) =>
@@ -351,6 +375,8 @@ export function useChannelMessages(channelId: string | null) {
           );
           return { error: insertErr.message || 'Failed to send message to database' };
         }
+
+        debugLogger.success('channel_messaging', `Channel message saved to database (${insertDurationMs}ms): id=${messageId}`);
 
         // 3. Mark message as sent
         const sentMsg: ChannelMessage = {

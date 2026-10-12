@@ -37,6 +37,7 @@ import { useToast } from '@/components/ui/toast';
 import { useCallContext } from '@/features/calls/call-context';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
+import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
 
 interface ChatViewProps {
   conversationId: string;
@@ -229,8 +230,12 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       if (res?.error) {
         toast({
           title: 'Message Not Delivered',
-          description: res.error,
+          description: `${res.error}`,
           type: 'error',
+          action: {
+            label: 'Open Logs',
+            onClick: () => triggerOpenLogsWindow(),
+          },
         });
         // Preserves user's draft in inputContent & selectedFiles
       } else {
@@ -246,6 +251,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         title: 'Error Sending Message',
         description: err instanceof Error ? err.message : 'Failed to send message',
         type: 'error',
+        action: {
+          label: 'Open Logs',
+          onClick: () => triggerOpenLogsWindow(),
+        },
       });
     } finally {
       setIsSending(false);

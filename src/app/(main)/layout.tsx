@@ -14,6 +14,7 @@ import { CallProvider, useCallContext } from '@/features/calls/call-context';
 import { IncomingCallModal } from '@/components/calls/incoming-call-modal';
 import { CallModal } from '@/components/calls/call-modal';
 import { PermissionsModal } from '@/components/layout/permissions-modal';
+import { LogsWindow } from '@/components/diagnostics/logs-window';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers } from '@/hooks/use-servers';
 import { Gamepad2, MessageSquare, Users, X } from 'lucide-react';
@@ -317,6 +318,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         onToggleNoiseSuppression={call.toggleNoiseSuppression}
         onRestartConnection={call.restartConnection}
       />
+
+      {/* Global Diagnostics & Live Telemetry Logs Console */}
+      <LogsWindow />
     </div>
   );
 }

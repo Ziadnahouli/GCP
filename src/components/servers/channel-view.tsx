@@ -34,6 +34,7 @@ import { Button } from '@/components/ui/button';
 import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
+import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
 
 interface ChannelViewProps {
   server: Server;
@@ -129,8 +130,12 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
       if (res?.error) {
         toast({
           title: 'Channel Message Failed',
-          description: res.error,
+          description: `${res.error}`,
           type: 'error',
+          action: {
+            label: 'Open Logs',
+            onClick: () => triggerOpenLogsWindow(),
+          },
         });
         // Preserves the draft in inputText
       } else {
@@ -141,6 +146,10 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
         title: 'Error Sending',
         description: err instanceof Error ? err.message : 'Failed to send message',
         type: 'error',
+        action: {
+          label: 'Open Logs',
+          onClick: () => triggerOpenLogsWindow(),
+        },
       });
     } finally {
       setIsSending(false);

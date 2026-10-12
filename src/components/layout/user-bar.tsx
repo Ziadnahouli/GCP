@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Mic, MicOff, Headphones, Settings, ChevronUp, Sparkles, LogOut } from 'lucide-react';
+import { Mic, MicOff, Headphones, Settings, ChevronUp, Sparkles, LogOut, Terminal } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { Avatar } from '@/components/ui/avatar';
 import { StatusSelector } from './status-selector';
@@ -10,6 +10,8 @@ import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { UserStatus } from '@/lib/types/profile';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
+import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
+import { debugLogger } from '@/lib/logger/debug-logger';
 
 export function UserBar() {
   const { profile, updateProfile, signOut } = useAuth();
@@ -20,6 +22,15 @@ export function UserBar() {
   const [showStatusPicker, setShowStatusPicker] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
+  const [hasErrors, setHasErrors] = React.useState(false);
+
+  React.useEffect(() => {
+    setHasErrors(debugLogger.getLogs().some((l) => l.level === 'error'));
+    const unsub = debugLogger.subscribe((entry) => {
+      if (entry.level === 'error') setHasErrors(true);
+    });
+    return () => unsub();
+  }, []);
 
   const toggleMic = () => {
     setIsMuted((prev) => {
@@ -133,6 +144,19 @@ export function UserBar() {
             aria-label="Soundboard"
           >
             <Sparkles className="w-4 h-4" />
+          </button>
+
+          {/* Diagnostics & Live Logs Console */}
+          <button
+            onClick={() => triggerOpenLogsWindow()}
+            className="relative p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+            title="Diagnostics & Live Logs (Ctrl + ~)"
+            aria-label="System Diagnostics & Logs"
+          >
+            <Terminal className="w-4 h-4" />
+            {hasErrors && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-surface-sidebar animate-pulse" />
+            )}
           </button>
 
           {/* Settings */}

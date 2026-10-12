@@ -77,7 +77,17 @@ export function useChannelMessages(channelId: string | null) {
             const combined = [...parsed];
             for (const p of prev) {
               if (p.channel_id === channelId && !combined.some((c) => c.id === p.id)) {
-                combined.push(p);
+                // Deduplicate optimistic messages already confirmed in parsed database messages within 30s
+                const alreadyPersisted =
+                  combined.some(
+                    (c) =>
+                      c.user_id === p.user_id &&
+                      c.content.trim() === p.content.trim() &&
+                      Math.abs(new Date(c.created_at).getTime() - new Date(p.created_at).getTime()) < 30000
+                  );
+                if (!alreadyPersisted) {
+                  combined.push(p);
+                }
               }
             }
             combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
@@ -170,21 +180,62 @@ export function useChannelMessages(channelId: string | null) {
       );
     }
 
-    channel.subscribe((status) => {
-      debugLogger.info('realtime', `Server channel [channel:${channelId}] status: ${status}`);
-      if (status === 'SUBSCRIBED' && isUUID) {
-        fetchChannelMessages();
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let heartbeatTimer: NodeJS.Timeout | null = null;
+
+    channel.subscribe((status, err) => {
+      debugLogger.info('realtime', `Server channel [channel-chat-${channelId}] status: ${status}`, err);
+      if (status === 'SUBSCRIBED') {
+        debugLogger.success('realtime', `Connected to channel chat for channel ${channelId}`);
+        if (isUUID) fetchChannelMessages();
+      } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+        debugLogger.warn('realtime', `Server channel disconnected (${status}). Fast-polling active; auto-reconnecting in 2.5s...`);
+        if (isUUID) fetchChannelMessages();
+        if (!reconnectTimeout) {
+          reconnectTimeout = setTimeout(() => {
+            reconnectTimeout = null;
+            try {
+              if (channelRef.current) {
+                supabase.removeChannel(channelRef.current);
+              }
+              const reconnected = supabase.channel(`channel-chat-${channelId}`, {
+                config: { broadcast: { self: false } },
+              });
+              reconnected.subscribe((reStatus) => {
+                if (reStatus === 'SUBSCRIBED') {
+                  debugLogger.success('realtime', `Reconnected server channel [channel-chat-${channelId}]`);
+                  if (isUUID) fetchChannelMessages();
+                }
+              });
+              channelRef.current = reconnected;
+            } catch (reErr) {
+              console.warn('Realtime channel auto-reconnect error:', reErr);
+            }
+          }, 2500);
+        }
       }
     });
     channelRef.current = channel;
 
-    // Live-sync fallback poll (12s when visible)
+    // Fast-adaptive background poll (3.5s when active tab):
+    // Guarantees real-time delivery without requiring page refresh
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       if (isUUID) {
         fetchChannelMessages();
       }
-    }, 12000);
+    }, 3500);
+
+    // Heartbeat ping every 25 seconds to keep channel socket active
+    heartbeatTimer = setInterval(() => {
+      if (channelRef.current && channelRef.current.state === 'joined') {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'heartbeat',
+          payload: { timestamp: Date.now() },
+        }).catch(() => {});
+      }
+    }, 25000);
 
     // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {
@@ -202,6 +253,8 @@ export function useChannelMessages(channelId: string | null) {
 
     return () => {
       clearInterval(autoSyncTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', handleFocus);
         document.removeEventListener('visibilitychange', handleVisibility);

@@ -184,14 +184,13 @@ export function useMessages(conversationId: string | null) {
           const combined = [...parsed];
           for (const p of prev) {
             if (p.conversation_id === conversationId && !combined.some((c) => c.id === p.id)) {
-              // Deduplicate: If p is an optimistic message whose content was already saved and returned in parsed messages within 30s, drop it
+              // Deduplicate: If p is an optimistic message whose content was already saved and returned in parsed messages, drop it
               const alreadyPersisted =
                 p.id.startsWith('opt-') &&
                 combined.some(
                   (c) =>
                     c.sender_id === p.sender_id &&
-                    c.content.trim() === p.content.trim() &&
-                    Math.abs(new Date(c.created_at).getTime() - new Date(p.created_at).getTime()) < 30000
+                    c.content.trim() === p.content.trim()
                 );
               if (!alreadyPersisted) {
                 combined.push(p);
@@ -558,12 +557,23 @@ export function useMessages(conversationId: string | null) {
         filesCount: files.length,
       });
 
-      // 1. Insert message to database with auto-recovery on token expiry/RLS
+      // 1. Insert message to database with bounded timeout to prevent hanging on dropped connections
       const insertStartTime = performance.now();
-      let insertRes = await supabase
+      const insertPromise = supabase
         .from('messages')
         .insert(insertPayload)
         .select('id, created_at');
+
+      const timeoutPromise = new Promise<any>((_, reject) =>
+        setTimeout(() => reject(new Error('Network request timed out after 8s')), 8000)
+      );
+
+      let insertRes: any;
+      try {
+        insertRes = await Promise.race([insertPromise, timeoutPromise]);
+      } catch (raceErr: any) {
+        insertRes = { data: null, error: raceErr };
+      }
 
       const insertDurationMs = Math.round(performance.now() - insertStartTime);
       let msgRows = insertRes.data;

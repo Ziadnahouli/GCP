@@ -222,11 +222,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
     setIsSending(true);
     try {
-      const sendPromise = sendMessage(content, replyId, filesToSend);
-      const timeoutPromise = new Promise<{ error: string }>((resolve) =>
-        setTimeout(() => resolve({ error: 'Network timeout: message send took too long' }), 12000)
-      );
-      const res = await Promise.race([sendPromise, timeoutPromise]);
+      const res = await sendMessage(content, replyId, filesToSend);
       if (res?.error) {
         toast({
           title: 'Message Not Delivered',

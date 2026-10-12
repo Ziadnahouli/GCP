@@ -79,13 +79,12 @@ export function useChannelMessages(channelId: string | null) {
             const combined = [...parsed];
             for (const p of prev) {
               if (p.channel_id === channelId && !combined.some((c) => c.id === p.id)) {
-                // Deduplicate optimistic messages already confirmed in parsed database messages within 30s
+                // Deduplicate: If p is an optimistic message whose content was already saved in parsed messages, drop it
                 const alreadyPersisted =
                   combined.some(
                     (c) =>
                       c.user_id === p.user_id &&
-                      c.content.trim() === p.content.trim() &&
-                      Math.abs(new Date(c.created_at).getTime() - new Date(p.created_at).getTime()) < 30000
+                      c.content.trim() === p.content.trim()
                   );
                 if (!alreadyPersisted) {
                   combined.push(p);
@@ -378,12 +377,25 @@ export function useChannelMessages(channelId: string | null) {
         });
 
         const insertStartTime = performance.now();
-        let { error: insertErr } = await supabase.from('channel_messages').insert({
+        const insertPromise = supabase.from('channel_messages').insert({
           id: messageId,
           channel_id: channelId,
           user_id: user.id,
           content: trimmed,
         });
+
+        const timeoutPromise = new Promise<any>((_, reject) =>
+          setTimeout(() => reject(new Error('Network request timed out after 8s')), 8000)
+        );
+
+        let insertErr: any = null;
+        try {
+          const insertRes = await Promise.race([insertPromise, timeoutPromise]);
+          insertErr = insertRes?.error || null;
+        } catch (raceErr: any) {
+          insertErr = raceErr;
+        }
+
         const insertDurationMs = Math.round(performance.now() - insertStartTime);
 
         // Auto-recovery: If rejected due to RLS/auth/JWT expiration or PGRST301, refresh session and retry once

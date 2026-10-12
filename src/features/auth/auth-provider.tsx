@@ -147,12 +147,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const {
         data: { subscription },
-      } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      } = supabase.auth.onAuthStateChange((_event, session) => {
         if (!mounted) return;
 
         if (session?.user) {
           setUser(session.user);
-          await fetchProfileAndSettings(session.user.id, session.user);
+          // Decouple from Supabase auth internal lock: execute outside onAuthStateChange to prevent deadlock
+          setTimeout(() => {
+            if (mounted) {
+              fetchProfileAndSettings(session.user.id, session.user);
+            }
+          }, 0);
         } else {
           setUser(null);
           setProfile(null);
@@ -165,6 +170,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (typeof document !== 'undefined' && document.hidden) return;
         ensureValidSession();
       }, 180000);
+
+      // Keepalive HTTP REST connection every 25 seconds to prevent proxy socket timeout
+      const restKeepaliveTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        supabase.from('profiles').select('id').limit(1).then(() => {}, () => {});
+      }, 25000);
 
       // Revalidate/refresh immediately when tab becomes active or focused
       const handleResume = () => {
@@ -181,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return () => {
         subscription.unsubscribe();
         clearInterval(keepaliveTimer);
+        clearInterval(restKeepaliveTimer);
         if (typeof window !== 'undefined') {
           window.removeEventListener('focus', handleResume);
           document.removeEventListener('visibilitychange', handleResume);

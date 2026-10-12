@@ -28,6 +28,8 @@ export function useChannelMessages(channelId: string | null) {
     return channelId ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(channelId) : false;
   }, [channelId]);
 
+  const userId = user?.id;
+
   const fetchChannelMessages = React.useCallback(async (isInitial = false) => {
     if (!channelId) {
       setMessages([]);
@@ -45,7 +47,7 @@ export function useChannelMessages(channelId: string | null) {
     }
 
     try {
-      if (user && isConfigured && isUUID) {
+      if (userId && isConfigured && isUUID) {
         const { data, error } = await supabase
           .from('channel_messages')
           .select(`
@@ -103,7 +105,7 @@ export function useChannelMessages(channelId: string | null) {
       }
 
       // Demo/unconfigured fallback
-      if (!isConfigured || !user) {
+      if (!isConfigured || !userId) {
         const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}${channelId}`);
         if (stored) {
           setMessages(JSON.parse(stored));
@@ -119,7 +121,7 @@ export function useChannelMessages(channelId: string | null) {
         setIsLoading(false);
       }
     }
-  }, [channelId, user, isConfigured, isUUID, supabase]);
+  }, [channelId, userId, isConfigured, isUUID, supabase]);
 
   React.useEffect(() => {
     if (prevChannelIdRef.current !== channelId) {
@@ -128,7 +130,7 @@ export function useChannelMessages(channelId: string | null) {
     }
     fetchChannelMessages(true);
 
-    if (!channelId || !isConfigured || !user) return;
+    if (!channelId || !isConfigured || !userId) return;
 
     let reconnectTimeout: NodeJS.Timeout | null = null;
     let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -262,7 +264,7 @@ export function useChannelMessages(channelId: string | null) {
         channelRef.current = null;
       }
     };
-  }, [channelId, fetchChannelMessages, isConfigured, user, isUUID, supabase]);
+  }, [channelId, fetchChannelMessages, isConfigured, userId, isUUID, supabase]);
 
   const sendMessage = React.useCallback(
     async (content: string): Promise<{ error: string | null }> => {

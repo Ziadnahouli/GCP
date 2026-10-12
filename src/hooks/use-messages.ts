@@ -10,6 +10,8 @@ import { debugLogger } from '@/lib/logger/debug-logger';
 
 export function useMessages(conversationId: string | null) {
   const { user, profile, isConfigured } = useAuth();
+  const userId = user?.id;
+  const currentUsername = profile?.username;
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
   const [messages, setMessages] = React.useState<Message[]>([]);
@@ -36,8 +38,8 @@ export function useMessages(conversationId: string | null) {
 
   const cacheKey = React.useMemo(() => {
     if (!conversationId) return '';
-    return user ? `nexus_dm_msgs_${user.id}_${conversationId}` : `nexus_dm_msgs_guest_${conversationId}`;
-  }, [conversationId, user]);
+    return userId ? `nexus_dm_msgs_${userId}_${conversationId}` : `nexus_dm_msgs_guest_${conversationId}`;
+  }, [conversationId, userId]);
 
   // Fetch messages with attachments and reactions
   const fetchMessages = React.useCallback(
@@ -48,7 +50,7 @@ export function useMessages(conversationId: string | null) {
         return;
       }
 
-      if (!user) {
+      if (!userId) {
         setMessages([]);
         setIsLoading(false);
         return;
@@ -212,7 +214,7 @@ export function useMessages(conversationId: string | null) {
         }
       }
     },
-    [conversationId, user, supabase, isUUID, isConfigured, cacheKey]
+    [conversationId, userId, supabase, isUUID, isConfigured, cacheKey]
   );
 
   // Realtime channel subscriptions
@@ -223,7 +225,7 @@ export function useMessages(conversationId: string | null) {
     }
     fetchMessages(true);
 
-    if (!conversationId || !isConfigured || !user || !isUUID) return;
+    if (!conversationId || !isConfigured || !userId || !isUUID) return;
 
     let reconnectTimeout: NodeJS.Timeout | null = null;
     let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -402,7 +404,7 @@ export function useMessages(conversationId: string | null) {
         chatChannelRef.current = null;
       }
     };
-  }, [conversationId, fetchMessages, isConfigured, user, profile, supabase, isUUID]);
+  }, [conversationId, fetchMessages, isConfigured, userId, currentUsername, supabase, isUUID]);
 
   // Send message with optional file uploads
   const sendMessage = async (

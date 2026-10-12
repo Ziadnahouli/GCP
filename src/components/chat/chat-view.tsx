@@ -297,7 +297,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       )}
 
       {/* Chat Top Header */}
-      <div className="h-14 border-b border-border/80 px-4 flex items-center justify-between shrink-0 select-none bg-surface-header/60 backdrop-blur-md">
+      <div className="h-13 border-b border-subtle px-4 flex items-center justify-between shrink-0 select-none bg-surface-header/60 backdrop-blur-xl">
         <div className="flex items-center gap-3 min-w-0">
           {onBack && (
             <button
@@ -319,17 +319,17 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-foreground truncate">
+              <h2 className="text-xs font-semibold text-foreground truncate">
                 {targetMember?.display_name || currentConversation?.name || 'Squad Chat'}
               </h2>
               {targetMember && (
-                <span className="text-xs text-muted-foreground font-mono truncate">
+                <span className="text-[11px] text-muted-foreground/60 font-mono truncate">
                   @{targetMember.username}
                 </span>
               )}
             </div>
 
-            <div className="text-[11px] text-muted-foreground truncate">
+            <div className="text-[10px] text-muted-foreground/60 truncate">
               {targetMember?.game_activity ? (
                 <span className="text-primary font-medium flex items-center gap-1">
                   <Gamepad2 className="w-3 h-3" /> Playing {targetMember.game_activity}
@@ -349,10 +349,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <button
             onClick={() => setShowSearchInput((prev) => !prev)}
             className={cn(
-              'p-2 rounded-xl transition-colors',
+              'p-1.5 rounded-lg transition-colors',
               showSearchInput || searchQuery
                 ? 'bg-primary/20 text-primary'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
             )}
             title="Search Messages"
           >
@@ -363,16 +363,16 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <button
             onClick={() => setShowPinnedOnly((prev) => !prev)}
             className={cn(
-              'p-2 rounded-xl transition-colors relative',
+              'p-1.5 rounded-lg transition-colors relative',
               showPinnedOnly
                 ? 'bg-primary/20 text-primary'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
             )}
             title="Pinned Messages"
           >
             <Pin className="w-4 h-4" />
             {pinnedCount > 0 && (
-              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-primary" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-primary" />
             )}
           </button>
 
@@ -382,7 +382,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               const peerId = targetUserId || conversationId;
               call.startCall(peerId, conversationId, false);
             }}
-            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
             title="Start Voice Call"
           >
             <Phone className="w-4 h-4" />
@@ -393,7 +393,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               const peerId = targetUserId || conversationId;
               call.startCall(peerId, conversationId, true);
             }}
-            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
             title="Start Video Call"
           >
             <Video className="w-4 h-4" />
@@ -551,7 +551,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                       type="text"
                       value={editContent}
                       onChange={(e) => setEditContent(e.target.value)}
-                      className="flex-1 h-9 rounded-lg border border-border bg-surface-default px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="flex-1 h-9 rounded-lg border border-subtle bg-surface-default px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     <button
                       onClick={() => handleSaveEdit(msg.id)}
@@ -572,10 +572,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                   msg.content && (
                     <div
                       className={cn(
-                        'rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed shadow-sm break-words',
+                        'rounded-2xl px-3.5 py-2 text-xs sm:text-sm leading-relaxed break-words transition-all font-normal',
                         isMe
-                          ? 'bg-primary text-primary-foreground font-medium rounded-tr-sm'
-                          : 'bg-card border border-border text-foreground rounded-tl-sm'
+                          ? 'bg-primary text-primary-foreground rounded-tr-sm shadow-sm'
+                          : 'bg-surface-elevated/80 border border-subtle text-foreground rounded-tl-sm'
                       )}
                     >
                       <span>{msg.content}</span>
@@ -701,7 +701,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               {/* Hover Quick Action Toolbar */}
               <div
                 className={cn(
-                  'absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-border rounded-lg shadow-lg flex items-center p-0.5 gap-0.5 z-10',
+                  'absolute -top-3 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-elevated/95 backdrop-blur-xl border border-subtle rounded-full shadow-lg flex items-center px-1.5 py-0.5 gap-0.5 z-10',
                   isMe ? 'left-4' : 'right-4'
                 )}
               >
@@ -710,7 +710,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                   <button
                     key={emoji}
                     onClick={() => addReaction(msg.id, emoji)}
-                    className="p-1.5 rounded hover:bg-surface-hover text-xs"
+                    className="p-1 rounded-full hover:bg-white/[0.08] text-xs transition-colors"
                     title={`React ${emoji}`}
                   >
                     {emoji}
@@ -719,21 +719,21 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
                 <button
                   onClick={() => setReplyingTo(msg)}
-                  className="p-1.5 rounded hover:bg-surface-hover text-muted-foreground hover:text-foreground"
+                  className="p-1 rounded-full hover:bg-white/[0.08] text-muted-foreground hover:text-foreground transition-colors"
                   title="Reply"
                 >
-                  <Reply className="w-3.5 h-3.5" />
+                  <Reply className="w-3 h-3" />
                 </button>
 
                 <button
                   onClick={() => togglePinMessage(msg.id, msg.is_pinned)}
                   className={cn(
-                    'p-1.5 rounded hover:bg-surface-hover transition-colors',
+                    'p-1 rounded-full hover:bg-white/[0.08] transition-colors',
                     msg.is_pinned ? 'text-amber-400' : 'text-muted-foreground hover:text-foreground'
                   )}
                   title={msg.is_pinned ? 'Unpin Message' : 'Pin Message'}
                 >
-                  <Pin className="w-3.5 h-3.5" />
+                  <Pin className="w-3 h-3" />
                 </button>
 
                 {isMe && (
@@ -820,7 +820,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       )}
 
       {/* Chat Input Bar */}
-      <div className="p-3 sm:p-4 border-t border-border/80 bg-surface-header/40 backdrop-blur-md">
+      <div className="p-3 sm:p-4 border-t border-subtle bg-surface-header/40 backdrop-blur-xl">
         <form onSubmit={handleSend} className="relative flex items-center gap-2">
           {/* Hidden File Input */}
           <input
@@ -835,7 +835,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="p-2.5 rounded-xl bg-surface-default hover:bg-surface-hover text-muted-foreground hover:text-foreground border border-border/80 transition-colors shrink-0"
+            className="p-2 rounded-lg hover:bg-white/[0.04] text-muted-foreground hover:text-foreground transition-colors shrink-0"
             title="Attach Media or File (Max 25MB)"
           >
             <Paperclip className="w-4 h-4" />
@@ -845,7 +845,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <button
             type="button"
             onClick={() => setShowSoundboard(true)}
-            className="p-2.5 rounded-xl bg-surface-default hover:bg-surface-hover text-muted-foreground hover:text-amber-400 border border-border/80 transition-colors shrink-0"
+            className="p-2 rounded-lg hover:bg-white/[0.04] text-muted-foreground hover:text-amber-400 transition-colors shrink-0"
             title="Soundboard Meme Effects"
           >
             <Sparkles className="w-4 h-4" />
@@ -856,11 +856,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             <input
               ref={inputRef}
               type="text"
-              placeholder={`Message @${targetMember?.username || 'squad'}... (Drag & drop files supported)`}
+              placeholder={`Message @${targetMember?.username || 'squad'}...`}
               value={inputContent}
               onChange={(e) => setInputContent(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="w-full h-11 pl-4 pr-10 rounded-xl bg-surface-default border border-border text-xs sm:text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
+              className="w-full h-10 pl-3.5 pr-10 rounded-xl bg-surface-default/70 border border-subtle text-xs sm:text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all font-normal"
             />
 
             {/* Quick Emoji Trigger */}
@@ -878,7 +878,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <Button
             type="submit"
             size="default"
-            className="h-11 px-4 gap-1.5 shrink-0 shadow-glow-sm"
+            className="h-10 px-3.5 gap-1.5 shrink-0 rounded-xl font-medium"
             disabled={isSending || (!inputContent.trim() && selectedFiles.length === 0)}
           >
             {isSending ? (

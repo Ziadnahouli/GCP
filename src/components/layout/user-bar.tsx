@@ -79,11 +79,11 @@ export function UserBar() {
 
   return (
     <>
-      <div className="relative h-14 bg-surface-sidebar border-t border-border/80 px-2 flex items-center justify-between select-none">
+      <div className="relative h-13 bg-surface-sidebar/95 backdrop-blur-md border-t border-subtle px-2 py-1.5 flex items-center justify-between select-none transition-colors">
         {/* User Info & Avatar Button */}
         <div
           onClick={() => setShowStatusPicker((prev) => !prev)}
-          className="flex items-center gap-2.5 p-1 rounded-lg hover:bg-surface-hover/80 transition-colors cursor-pointer min-w-0 max-w-[150px] sm:max-w-[170px]"
+          className="flex items-center gap-2 p-1 rounded-lg hover:bg-white/[0.04] transition-colors cursor-pointer min-w-0 max-w-[105px] sm:max-w-[120px]"
           title="Click to change status"
         >
           <Avatar
@@ -94,79 +94,78 @@ export function UserBar() {
             size="sm"
           />
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-foreground truncate leading-tight">
-              {profile?.display_name || 'Connecting...'}
+            <div className="text-xs font-medium text-foreground truncate leading-tight">
+              {profile?.display_name || 'User'}
             </div>
-            <div className="text-[10px] text-muted-foreground truncate leading-tight flex items-center gap-1 font-mono">
-              @{profile?.username || 'user'}
-              <ChevronUp className="w-2.5 h-2.5 opacity-50 shrink-0" />
+            <div className="text-[10px] text-muted-foreground/60 truncate leading-tight flex items-center gap-0.5">
+              <span>@{profile?.username || 'user'}</span>
             </div>
           </div>
         </div>
 
-        {/* Action Controls: Mic, Deafen, Settings */}
+        {/* Action Controls: Mic, Deafen, Soundboard, Settings, Logs, Sign Out */}
         <div className="flex items-center gap-0.5">
           {/* Mic */}
           <button
             onClick={toggleMic}
             className={cn(
-              'p-2 rounded-lg transition-colors',
+              'p-1.5 rounded-md transition-colors',
               isMuted
                 ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
             )}
             title={isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
             aria-label="Microphone Toggle"
           >
-            {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            {isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
           </button>
 
           {/* Deafen */}
           <button
             onClick={toggleDeafen}
             className={cn(
-              'p-2 rounded-lg transition-colors',
+              'p-1.5 rounded-md transition-colors',
               isDeafened
                 ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
             )}
             title={isDeafened ? 'Undeafen' : 'Deafen'}
             aria-label="Deafen Toggle"
           >
-            <Headphones className="w-4 h-4" />
+            <Headphones className="w-3.5 h-3.5" />
           </button>
 
           {/* Soundboard */}
           <button
             onClick={() => setShowSoundboard(true)}
-            className="p-2 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
-            title="Gaming Soundboard (Hotkeys 1-9)"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
+            title="Gaming Soundboard"
             aria-label="Soundboard"
           >
-            <Sparkles className="w-4 h-4" />
+            <Sparkles className="w-3.5 h-3.5" />
           </button>
 
           {/* Diagnostics & Live Logs Console */}
           <button
             onClick={() => triggerOpenLogsWindow()}
-            className="relative p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+            className="relative p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
             title="Diagnostics & Live Logs (Ctrl + ~)"
             aria-label="System Diagnostics & Logs"
           >
-            <Terminal className="w-4 h-4" />
+            <Terminal className="w-3.5 h-3.5" />
             {hasErrors && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-surface-sidebar animate-pulse" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
             )}
           </button>
 
           {/* Settings */}
           <button
             onClick={() => setShowSettings(true)}
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
             title="User Settings"
             aria-label="User Settings"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-3.5 h-3.5" />
           </button>
 
           {/* Sign Out */}
@@ -179,11 +178,11 @@ export function UserBar() {
                 type: 'info',
               });
             }}
-            className="p-2 rounded-lg text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
             title="Sign Out"
             aria-label="Sign Out"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-3.5 h-3.5" />
           </button>
         </div>
 

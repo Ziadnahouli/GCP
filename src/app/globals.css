@@ -4,14 +4,14 @@
 
 @layer base {
   :root {
-    /* Base dark gaming charcoal palette */
-    --background: 224 25% 7%; /* #0d0f15 */
+    /* Base dark Zen Obsidian palette */
+    --background: 224 30% 5%; /* #07080c deep obsidian */
     --foreground: 210 20% 98%;
 
-    --card: 224 22% 10%; /* #11141c */
+    --card: 224 24% 8%; /* #0c0f15 */
     --card-foreground: 210 20% 98%;
 
-    --popover: 224 24% 9%; /* #0f121a */
+    --popover: 224 24% 8%;
     --popover-foreground: 210 20% 98%;
 
     /* Default Accent: Violet */
@@ -19,31 +19,31 @@
     --primary-foreground: 210 40% 98%;
     --primary-hover: 263 70% 50%;
 
-    --secondary: 224 18% 15%;
+    --secondary: 224 18% 12%;
     --secondary-foreground: 210 20% 95%;
 
-    --muted: 224 16% 18%;
+    --muted: 224 16% 14%;
     --muted-foreground: 215 15% 65%;
 
-    --accent: 224 20% 16%;
+    --accent: 224 20% 13%;
     --accent-foreground: 210 20% 98%;
 
     --destructive: 350 80% 55%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 224 15% 18%;
-    --input: 224 15% 18%;
+    --border: 224 16% 14%;
+    --input: 224 16% 14%;
     --ring: 263 70% 58%;
 
     /* Gaming Surface Hierarchy */
-    --surface-default: 224 22% 10%;
-    --surface-hover: 224 20% 15%;
-    --surface-active: 224 20% 18%;
-    --surface-header: 224 25% 8%;
-    --surface-sidebar: 224 28% 6%; /* #090b10 deepest */
-    --surface-panel: 224 22% 12%;
+    --surface-default: 224 22% 8.5%;
+    --surface-hover: 224 20% 13%;
+    --surface-active: 224 20% 16%;
+    --surface-header: 224 25% 6.5%;
+    --surface-sidebar: 224 30% 5%; /* Deepest shell */
+    --surface-panel: 224 22% 9.5%;
 
-    --radius: 0.625rem;
+    --radius: 0.75rem;
   }
 
   /* Accent theme variations */
@@ -130,6 +130,25 @@ input:-webkit-autofill:active {
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(224 15% 32%);
+}
+
+/* Glassmorphism & Minimal Obsidian Utilities */
+.glass-panel {
+  background: hsla(224, 24%, 8%, 0.78);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid hsla(210, 20%, 98%, 0.06);
+}
+
+.glass-dock {
+  background: hsla(224, 26%, 6%, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid hsla(210, 20%, 98%, 0.08);
+}
+
+.border-subtle {
+  border-color: hsla(210, 20%, 98%, 0.06);
 }
 
 /* Custom glow utility */

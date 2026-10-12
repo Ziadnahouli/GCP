@@ -114,9 +114,9 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
   return (
     <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
       {/* Social Tab Navigation Bar */}
-      <div className="h-14 border-b border-border/80 px-4 flex items-center justify-between shrink-0 select-none bg-surface-header/60 backdrop-blur-md">
-        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto py-1 no-scrollbar">
-          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground mr-3 shrink-0">
+      <div className="h-12 border-b border-subtle px-4 flex items-center justify-between shrink-0 select-none bg-surface-header/80 backdrop-blur-xl">
+        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto py-1 no-scrollbar">
+          <div className="flex items-center gap-1.5 text-xs font-semibold tracking-tight text-foreground mr-3 shrink-0">
             <Users className="w-4 h-4 text-primary" />
             <span className="hidden sm:inline">Friends</span>
           </div>
@@ -124,10 +124,10 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
           <button
             onClick={() => setActiveTab('online')}
             className={cn(
-              'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0',
+              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0',
               activeTab === 'online'
-                ? 'bg-primary/20 text-primary border border-primary/30 shadow-glow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                ? 'bg-white/[0.08] text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
             )}
           >
             Online ({onlineCount})
@@ -136,10 +136,10 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
           <button
             onClick={() => setActiveTab('all')}
             className={cn(
-              'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0',
+              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0',
               activeTab === 'all'
-                ? 'bg-primary/20 text-primary border border-primary/30 shadow-glow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                ? 'bg-white/[0.08] text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
             )}
           >
             All ({friends.length})
@@ -148,10 +148,10 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
           <button
             onClick={() => setActiveTab('pending')}
             className={cn(
-              'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 relative',
+              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0 relative',
               activeTab === 'pending'
-                ? 'bg-primary/20 text-primary border border-primary/30 shadow-glow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                ? 'bg-white/[0.08] text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
             )}
           >
             Pending
@@ -169,10 +169,10 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
           <button
             onClick={() => setActiveTab('blocked')}
             className={cn(
-              'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0',
+              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0',
               activeTab === 'blocked'
-                ? 'bg-primary/20 text-primary border border-primary/30 shadow-glow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                ? 'bg-white/[0.08] text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
             )}
           >
             Blocked ({blockedUsers.length})
@@ -181,10 +181,10 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
           <button
             onClick={() => setActiveTab('add')}
             className={cn(
-              'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 ml-2',
+              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0 flex items-center gap-1.5 ml-1.5',
               activeTab === 'add'
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-glow-sm'
-                : 'bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600/20'
+                ? 'bg-emerald-500/20 text-emerald-400 font-semibold'
+                : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
             )}
           >
             <UserPlus className="w-3.5 h-3.5" />
@@ -471,11 +471,11 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                   return (
                     <div
                       key={item.id}
-                      className="group flex items-center justify-between p-3 rounded-xl border border-border/50 bg-card hover:bg-surface-hover hover:border-border transition-all cursor-pointer relative"
+                      className="group flex items-center justify-between p-2.5 rounded-xl border border-subtle bg-surface-default/40 hover:bg-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer relative"
                       onClick={() => handleStartChat(item.friend.id)}
                     >
                       {/* Left: Avatar & Info */}
-                      <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0">
                         <Avatar
                           src={item.friend.avatar_url}
                           name={item.friend.display_name}
@@ -485,18 +485,18 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-foreground truncate group-hover:text-primary transition-colors">
+                            <span className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
                               {item.friend.display_name}
                             </span>
-                            <span className="text-xs text-muted-foreground font-mono truncate">
+                            <span className="text-[11px] text-muted-foreground/60 font-mono truncate">
                               @{item.friend.username}
                             </span>
                           </div>
 
-                          <div className="text-xs text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
+                          <div className="text-[11px] text-muted-foreground/60 truncate flex items-center gap-1.5 mt-0.5 font-normal">
                             {item.friend.game_activity ? (
                               <span className="text-primary font-medium flex items-center gap-1">
-                                <Gamepad2 className="w-3.5 h-3.5" /> Playing {item.friend.game_activity}
+                                <Gamepad2 className="w-3 h-3" /> Playing {item.friend.game_activity}
                               </span>
                             ) : item.friend.custom_status ? (
                               <span>{item.friend.custom_status}</span>
@@ -515,21 +515,21 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         {/* Direct Message button */}
                         <button
                           onClick={() => handleStartChat(item.friend.id)}
-                          className="w-9 h-9 rounded-xl bg-surface-default hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border flex items-center justify-center transition-colors"
+                          className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:text-foreground text-muted-foreground flex items-center justify-center transition-colors"
                           title="Direct Message"
                           aria-label="Direct Message"
                         >
-                          <MessageSquare className="w-4 h-4" />
+                          <MessageSquare className="w-3.5 h-3.5" />
                         </button>
 
                         {/* Call button */}
                         <button
                           onClick={() => handleCallFriend(item.friend.id, false)}
-                          className="w-9 h-9 rounded-xl bg-surface-default hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border flex items-center justify-center transition-colors"
+                          className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] hover:text-foreground text-muted-foreground flex items-center justify-center transition-colors"
                           title="Voice Call Friend"
                           aria-label="Voice Call Friend"
                         >
-                          <Phone className="w-4 h-4" />
+                          <Phone className="w-3.5 h-3.5" />
                         </button>
 
                         {/* More menu trigger */}

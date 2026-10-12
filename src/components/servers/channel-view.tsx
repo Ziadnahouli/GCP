@@ -255,51 +255,51 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
       {/* Center Stage: Channel Chat Feed */}
       <div className="flex-1 flex flex-col h-full min-w-0">
         {/* Top Channel Header */}
-        <div className="h-14 border-b border-border/80 px-3 sm:px-4 flex items-center justify-between shrink-0 bg-surface-header/60 select-none">
+        <div className="h-12 border-b border-subtle px-3 sm:px-4 flex items-center justify-between shrink-0 bg-surface-header/80 backdrop-blur-xl select-none">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => router.push('/')}
-              className="p-1.5 -ml-1 text-muted-foreground hover:text-foreground rounded-lg transition-colors flex items-center gap-1"
+              className="p-1 -ml-1 text-muted-foreground hover:text-foreground hover:bg-white/[0.04] rounded-lg transition-colors flex items-center gap-1"
               title="Back to Direct Messages & Friends"
               aria-label="Back to Direct Messages"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4" />
             </button>
-            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-              <Hash className="w-5 h-5 text-muted-foreground shrink-0" />
-              <h3 className="font-extrabold text-sm text-foreground truncate">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Hash className="w-4 h-4 text-muted-foreground/60 shrink-0" />
+              <h3 className="font-semibold text-xs text-foreground truncate">
                 {channel.name}
               </h3>
             </div>
 
             {channel.topic && (
               <>
-                <span className="w-1 h-1 rounded-full bg-border shrink-0 hidden sm:inline-block" />
-                <span className="text-xs text-muted-foreground truncate hidden sm:inline-block max-w-sm">
+                <span className="w-1 h-1 rounded-full bg-muted-foreground/30 shrink-0 hidden sm:inline-block" />
+                <span className="text-[11px] text-muted-foreground/60 truncate hidden sm:inline-block max-w-sm font-normal">
                   {channel.topic}
                 </span>
               </>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-1.5">
             {/* Direct Messages Shortcut Button */}
             <Button
               variant="outline"
               size="sm"
               onClick={() => router.push('/')}
-              className="h-8 text-xs gap-1.5 border-border/80 text-muted-foreground hover:text-foreground hover:bg-surface-hover"
+              className="h-7 text-xs px-2.5 gap-1.5 border-subtle bg-white/[0.02] text-muted-foreground hover:text-foreground hover:bg-white/[0.06] rounded-lg"
               title="Switch to Direct Messages & Friends"
             >
               <MessageSquare className="w-3.5 h-3.5 text-primary" />
-              <span className="hidden sm:inline">Direct Messages</span>
+              <span className="hidden sm:inline font-normal">Direct Chats</span>
             </Button>
 
             {/* Search Toggle */}
             <div className="relative">
               {showSearch ? (
-                <div className="flex items-center gap-1 bg-surface-sidebar rounded-xl px-2 py-1 border border-border">
-                  <Search className="w-3.5 h-3.5 text-muted-foreground" />
+                <div className="flex items-center gap-1 bg-surface-sidebar rounded-lg px-2 py-0.5 border border-subtle">
+                  <Search className="w-3.5 h-3.5 text-muted-foreground/60" />
                   <input
                     type="text"
                     value={searchQuery}
@@ -321,7 +321,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
               ) : (
                 <button
                   onClick={() => setShowSearch(true)}
-                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
                   title="Search Messages"
                 >
                   <Search className="w-4 h-4" />
@@ -332,7 +332,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             {/* Soundboard Trigger */}
             <button
               onClick={() => setShowSoundboard(true)}
-              className="p-2 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
               title="Soundboard"
             >
               <Sparkles className="w-4 h-4" />
@@ -342,10 +342,10 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             <button
               onClick={() => setShowMembers((prev) => !prev)}
               className={cn(
-                'p-2 rounded-lg transition-colors',
+                'p-1.5 rounded-lg transition-colors',
                 showMembers
-                  ? 'bg-primary/15 text-primary'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+                  ? 'bg-primary/20 text-primary'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
               )}
               title="Toggle Squad Member List"
             >
@@ -458,10 +458,10 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
         </div>
 
         {/* Input Bar */}
-        <div className="p-4 pt-1 shrink-0">
+        <div className="p-3 border-t border-subtle bg-surface-header/40 backdrop-blur-xl shrink-0">
           <form
             onSubmit={handleSend}
-            className="flex items-center gap-2 bg-surface-sidebar border border-border/80 rounded-2xl p-2 px-3 focus-within:ring-2 focus-within:ring-primary shadow-md"
+            className="flex items-center gap-2 bg-surface-default/70 border border-subtle rounded-xl p-1.5 px-3 focus-within:border-primary/50 transition-all"
           >
             <button
               type="button"
@@ -478,14 +478,14 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={`Message #${channel.name}...`}
-              className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none resize-none max-h-28 py-1"
+              className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none resize-none max-h-28 py-1 font-normal"
             />
 
             <Button
               type="submit"
               size="sm"
               disabled={!inputText.trim() || isSending}
-              className="h-8 w-8 p-0 rounded-xl shrink-0"
+              className="h-8 w-8 p-0 rounded-lg shrink-0 font-medium"
             >
               {isSending ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />

@@ -178,7 +178,9 @@ export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
           </div>
 
           <button
+            type="button"
             onClick={() => onOpenChange(false)}
+            aria-label="Close ZeroTier modal"
             className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-surface-hover transition-colors"
           >
             <X className="w-5 h-5" />
@@ -217,6 +219,7 @@ export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
                   value={virtualIp}
                   onChange={(e) => setVirtualIp(e.target.value)}
                   placeholder="e.g. 10.147.19.42"
+                  aria-label="Your ZeroTier IP"
                   className="flex-1 min-w-0 px-2 py-1 rounded-md border border-border bg-surface-sidebar text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <Button type="submit" size="sm" variant="ghost" className="h-7 px-2 text-xs font-semibold text-primary">
@@ -234,6 +237,7 @@ export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
                   value={peerVirtualIp}
                   onChange={(e) => setPeerVirtualIp(e.target.value)}
                   placeholder="e.g. 10.147.19.78"
+                  aria-label="Squadmate's ZeroTier IP"
                   className="flex-1 min-w-0 px-2 py-1 rounded-md border border-border bg-surface-sidebar text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <Button type="submit" size="sm" variant="ghost" className="h-7 px-2 text-xs font-semibold text-primary">
@@ -283,16 +287,18 @@ export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
 
         {/* Join Network Form */}
         <form onSubmit={handleJoinNetwork} className="space-y-2">
-          <label className="text-xs font-bold text-foreground block">
+          <label htmlFor="zt-network-id" className="text-xs font-bold text-foreground block">
             ZeroTier 16-Digit Network ID
           </label>
           <div className="flex gap-2">
             <input
+              id="zt-network-id"
               type="text"
               value={networkId}
               onChange={(e) => setNetworkId(e.target.value.toLowerCase().replace(/[^a-f0-9]/g, ''))}
               maxLength={16}
               placeholder="e.g. 8056c2e21c000001"
+              aria-label="ZeroTier 16-Digit Network ID"
               className="flex-1 px-3.5 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-primary"
             />
             <Button type="submit" size="sm" className="font-bold px-4">
@@ -314,6 +320,10 @@ export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
           </div>
 
           <button
+            type="button"
+            role="switch"
+            aria-checked={directLanMode}
+            aria-label="Prioritize Direct P2P Subnet Traffic"
             onClick={() => {
               setDirectLanMode(!directLanMode);
               toast({

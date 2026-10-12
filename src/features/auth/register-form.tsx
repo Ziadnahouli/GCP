@@ -125,10 +125,11 @@ export function RegisterForm() {
 
       <form onSubmit={handleSubmit} className="space-y-3.5">
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-displayName" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Display Name
           </label>
           <Input
+            id="reg-displayName"
             type="text"
             placeholder="GhostRider"
             value={formData.displayName}
@@ -140,10 +141,11 @@ export function RegisterForm() {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-username" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Unique Username (@)
           </label>
           <Input
+            id="reg-username"
             type="text"
             placeholder="ghost_rider"
             value={formData.username}
@@ -155,10 +157,11 @@ export function RegisterForm() {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-email" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Email Address
           </label>
           <Input
+            id="reg-email"
             type="email"
             placeholder="rider@nexus.gg"
             value={formData.email}
@@ -170,10 +173,11 @@ export function RegisterForm() {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-password" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Password (Min 8 chars, 1 uppercase, 1 number)
           </label>
           <Input
+            id="reg-password"
             type="password"
             placeholder="••••••••••••"
             value={formData.password}
@@ -185,10 +189,11 @@ export function RegisterForm() {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-confirmPassword" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Confirm Password
           </label>
           <Input
+            id="reg-confirmPassword"
             type="password"
             placeholder="••••••••••••"
             value={formData.confirmPassword}

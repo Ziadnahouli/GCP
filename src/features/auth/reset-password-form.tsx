@@ -89,10 +89,11 @@ export function ResetPasswordForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+          <label htmlFor="reset-password" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
             New Password
           </label>
           <Input
+            id="reset-password"
             type="password"
             placeholder="••••••••••••"
             value={formData.password}
@@ -104,10 +105,11 @@ export function ResetPasswordForm() {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+          <label htmlFor="reset-confirmPassword" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
             Confirm New Password
           </label>
           <Input
+            id="reset-confirmPassword"
             type="password"
             placeholder="••••••••••••"
             value={formData.confirmPassword}

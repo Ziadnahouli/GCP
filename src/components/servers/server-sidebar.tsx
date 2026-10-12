@@ -162,6 +162,7 @@ export function ServerSidebar({
               }}
               className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
               title="Add Text Channel"
+              aria-label="Add Text Channel"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
@@ -216,6 +217,7 @@ export function ServerSidebar({
               }}
               className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
               title="Add Voice Channel"
+              aria-label="Add Voice Channel"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
@@ -304,10 +306,11 @@ export function ServerSidebar({
             </div>
 
             <div>
-              <label className="text-xs font-medium text-foreground block mb-1">
+              <label htmlFor="new-channel-name-input" className="text-xs font-medium text-foreground block mb-1">
                 Channel Name
               </label>
               <input
+                id="new-channel-name-input"
                 type="text"
                 value={newChannelName}
                 onChange={(e) => setNewChannelName(e.target.value)}

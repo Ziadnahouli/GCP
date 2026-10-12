@@ -307,10 +307,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    <label htmlFor="settings-displayName" className="block text-xs font-medium text-muted-foreground mb-1">
                       Display Name
                     </label>
                     <Input
+                      id="settings-displayName"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       placeholder="GhostRider"
@@ -318,10 +319,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    <label htmlFor="settings-username" className="block text-xs font-medium text-muted-foreground mb-1">
                       Unique Username
                     </label>
                     <Input
+                      id="settings-username"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       placeholder="ghost_rider"
@@ -331,10 +333,14 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                  <div id="presence-status-heading" className="block text-xs font-medium text-muted-foreground mb-1.5">
                     Presence Status
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  </div>
+                  <div
+                    role="radiogroup"
+                    aria-labelledby="presence-status-heading"
+                    className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+                  >
                     {[
                       { value: 'online' as UserStatus, label: 'Online', color: 'bg-emerald-500' },
                       { value: 'idle' as UserStatus, label: 'Idle', color: 'bg-amber-500' },
@@ -360,10 +366,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  <label htmlFor="settings-customStatus" className="block text-xs font-medium text-muted-foreground mb-1">
                     Custom Status Message
                   </label>
                   <Input
+                    id="settings-customStatus"
                     value={customStatus}
                     onChange={(e) => setCustomStatus(e.target.value)}
                     placeholder="In match • Ranking up"
@@ -372,10 +379,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  <label htmlFor="settings-avatarUrl" className="block text-xs font-medium text-muted-foreground mb-1">
                     Avatar Image URL (Optional)
                   </label>
                   <Input
+                    id="settings-avatarUrl"
                     value={avatarUrl}
                     onChange={(e) => setAvatarUrl(e.target.value)}
                     placeholder="https://..."
@@ -383,34 +391,40 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  <label htmlFor="settings-bannerColor" className="block text-xs font-medium text-muted-foreground mb-1">
                     Banner Color
                   </label>
                   <div className="flex items-center gap-2">
                     <input
+                      id="settings-bannerColorPicker"
                       type="color"
+                      aria-label="Banner Color Picker"
                       value={bannerColor}
                       onChange={(e) => setBannerColor(e.target.value)}
                       className="w-10 h-10 rounded-lg border border-border bg-transparent cursor-pointer p-0.5"
                     />
                     <Input
+                      id="settings-bannerColor"
                       value={bannerColor}
                       onChange={(e) => setBannerColor(e.target.value)}
                       placeholder="#7c3aed"
+                      aria-label="Banner Color Hex"
                       className="max-w-[140px] font-mono text-xs uppercase"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  <label htmlFor="settings-bio" className="block text-xs font-medium text-muted-foreground mb-1">
                     About Me / Bio
                   </label>
                   <textarea
+                    id="settings-bio"
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
                     rows={3}
                     maxLength={200}
+                    aria-label="About Me / Bio"
                     placeholder="Tell your squad what games you play..."
                     className="w-full rounded-lg border border-border bg-surface-default p-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-transparent transition-all resize-none"
                   />
@@ -504,6 +518,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     type="range"
                     min="0"
                     max="100"
+                    aria-label="Input Volume (Microphone)"
                     value={inputVol}
                     onChange={(e) => setInputVol(Number(e.target.value))}
                     className="w-full accent-primary h-2 bg-surface-panel rounded-lg cursor-pointer"
@@ -521,6 +536,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     type="range"
                     min="0"
                     max="100"
+                    aria-label="Output Volume (Headset)"
                     value={outputVol}
                     onChange={(e) => setOutputVol(Number(e.target.value))}
                     className="w-full accent-primary h-2 bg-surface-panel rounded-lg cursor-pointer"

@@ -308,6 +308,7 @@ export function LogsWindow({ open: controlledOpen, onOpenChange }: LogsWindowPro
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
+              aria-label="Filter logs by category"
               className="px-2 py-1 rounded-lg text-xs font-mono bg-surface-sidebar border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-primary ml-1"
             >
               <option value="all">All Categories</option>
@@ -330,6 +331,7 @@ export function LogsWindow({ open: controlledOpen, onOpenChange }: LogsWindowPro
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Filter logs by keyword"
                 placeholder="Filter logs by keyword..."
                 className="w-full pl-8 pr-3 py-1 text-xs rounded-lg border border-border bg-surface-sidebar text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary"
               />

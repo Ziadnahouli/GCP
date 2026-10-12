@@ -56,12 +56,9 @@ export function StatusSelector({ currentStatus, onSelect, onClose, className }: 
         onClose();
       }
     };
-    const timer = setTimeout(() => {
-      window.addEventListener('click', handleOutsideClick);
-    }, 50);
+    document.addEventListener('mousedown', handleOutsideClick);
     return () => {
-      clearTimeout(timer);
-      window.removeEventListener('click', handleOutsideClick);
+      document.removeEventListener('mousedown', handleOutsideClick);
     };
   }, [onClose]);
 

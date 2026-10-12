@@ -103,7 +103,9 @@ export function CreateServerModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={() => onOpenChange(false)}
+            aria-label="Close dialog"
             className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-surface-hover"
           >
             <X className="w-4 h-4" />
@@ -112,20 +114,21 @@ export function CreateServerModal({
 
         {/* Template Selectors */}
         <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             Start from a Template
-          </label>
+          </div>
           <div className="grid gap-2">
             {templates.map((tmpl) => {
               const Icon = tmpl.icon;
               const isSelected = selectedTemplate === tmpl.id;
 
               return (
-                <div
+                <button
+                  type="button"
                   key={tmpl.id}
                   onClick={() => handleSelectTemplate(tmpl)}
                   className={cn(
-                    'flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer',
+                    'w-full text-left flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer',
                     isSelected
                       ? 'border-primary bg-primary/10 shadow-glow-sm'
                       : 'border-border/60 bg-surface-sidebar/60 hover:bg-surface-hover'
@@ -147,7 +150,7 @@ export function CreateServerModal({
                   </div>
 
                   {isSelected && <Check className="w-4 h-4 text-primary shrink-0" />}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -156,28 +159,32 @@ export function CreateServerModal({
         {/* Form Inputs */}
         <form onSubmit={handleSubmit} className="space-y-3 pt-1">
           <div>
-            <label className="text-xs font-bold text-foreground block mb-1">
+            <label htmlFor="create-server-name" className="text-xs font-bold text-foreground block mb-1">
               Server Name
             </label>
             <input
+              id="create-server-name"
               type="text"
               required
               value={serverName}
               onChange={(e) => setServerName(e.target.value)}
               placeholder="e.g. Tactical Squad Alpha"
+              aria-label="Server Name"
               className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary shadow-inner"
             />
           </div>
 
           <div>
-            <label className="text-xs font-bold text-foreground block mb-1">
+            <label htmlFor="create-server-desc" className="text-xs font-bold text-foreground block mb-1">
               Server Description (Optional)
             </label>
             <textarea
+              id="create-server-desc"
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What games does your squad play?"
+              aria-label="Server Description (Optional)"
               className="w-full px-3.5 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary resize-none shadow-inner"
             />
           </div>

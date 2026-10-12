@@ -111,10 +111,11 @@ export function ForgotPasswordForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+          <label htmlFor="forgot-email" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
             Account Email
           </label>
           <Input
+            id="forgot-email"
             type="email"
             placeholder="player@nexus.gg"
             value={email}

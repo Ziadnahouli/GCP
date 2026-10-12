@@ -127,9 +127,12 @@ export function useChannelMessages(channelId: string | null) {
       prevChannelIdRef.current = channelId;
       setMessages([]);
     }
-    fetchChannelMessages(true);
 
-    if (!channelId || !isConfigured || !userId) return;
+    if (!channelId || !isConfigured || !userId) {
+      return () => {};
+    }
+
+    fetchChannelMessages(true);
 
     let reconnectTimeout: NodeJS.Timeout | null = null;
     let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -466,11 +469,11 @@ export function useChannelMessages(channelId: string | null) {
         };
 
         setMessages((prev) => {
-          const next = prev.map((m) => (m.id === messageId ? sentMsg : m));
+          const updated = prev.map((m) => (m.id === messageId ? sentMsg : m));
           try {
-            localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(next));
+            localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(updated));
           } catch {}
-          return next;
+          return updated;
         });
 
         // 4. Broadcast to peers ONLY AFTER successful database persistence

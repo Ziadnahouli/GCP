@@ -175,6 +175,7 @@ export function CallModal({
                 : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
             )}
             title="Diagnostics"
+            aria-label="Diagnostics"
           >
             <Activity className="w-3.5 h-3.5" />
             <span>{stats.rttMs ?? 0}ms</span>
@@ -185,6 +186,7 @@ export function CallModal({
             onClick={() => setIsFullscreen((prev) => !prev)}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
             title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            aria-label={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
@@ -350,6 +352,7 @@ export function CallModal({
                 : 'bg-white/[0.06] text-foreground hover:bg-white/[0.1]'
             )}
             title={isMicMuted ? 'Unmute' : 'Mute'}
+            aria-label={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
           >
             {isMicMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
@@ -364,6 +367,7 @@ export function CallModal({
                 : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
             )}
             title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
+            aria-label={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
           >
             {isCameraOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
           </button>
@@ -378,6 +382,7 @@ export function CallModal({
                 : 'bg-white/[0.06] text-muted-foreground hover:bg-white/[0.1] hover:text-foreground'
             )}
             title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+            aria-label={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
           >
             <Monitor className="w-4 h-4" />
           </button>
@@ -387,6 +392,7 @@ export function CallModal({
             onClick={() => setShowSoundboard(true)}
             className="p-2.5 rounded-full bg-white/[0.06] text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
             title="Soundboard"
+            aria-label="Soundboard"
           >
             <Sparkles className="w-4 h-4" />
           </button>
@@ -402,6 +408,7 @@ export function CallModal({
                   : 'bg-white/[0.06] text-muted-foreground hover:bg-white/[0.1]'
               )}
               title={isNoiseSuppressionEnabled ? 'Noise Filter ON' : 'Noise Filter OFF'}
+              aria-label={isNoiseSuppressionEnabled ? 'Disable noise filter' : 'Enable noise filter'}
             >
               <ShieldCheck className="w-4 h-4" />
             </button>
@@ -412,6 +419,7 @@ export function CallModal({
             onClick={onEndCall}
             className="p-2.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-medium transition-all shadow-md hover:shadow-rose-500/30 ml-1"
             title="Leave Call"
+            aria-label="Leave Call"
           >
             <PhoneOff className="w-4 h-4" />
           </button>

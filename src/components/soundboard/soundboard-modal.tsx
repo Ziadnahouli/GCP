@@ -163,7 +163,9 @@ export function SoundboardModal({
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => onOpenChange(false)}
+              aria-label="Close soundboard"
               className="text-muted-foreground hover:text-foreground p-1.5 rounded-lg hover:bg-surface-hover transition-colors"
             >
               <X className="w-5 h-5" />
@@ -363,7 +365,9 @@ export function SoundboardModal({
                 Upload Custom Sound
               </h4>
               <button
+                type="button"
                 onClick={() => setShowUploadModal(false)}
+                aria-label="Close upload modal"
                 className="text-muted-foreground hover:text-foreground"
               >
                 <X className="w-4 h-4" />
@@ -413,25 +417,29 @@ export function SoundboardModal({
 
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">
+                <label htmlFor="sound-upload-name" className="text-xs font-medium text-foreground block mb-1">
                   Sound Name
                 </label>
                 <input
+                  id="sound-upload-name"
                   type="text"
                   value={uploadName}
                   onChange={(e) => setUploadName(e.target.value)}
                   placeholder="e.g. Squad Wipeout"
+                  aria-label="Sound Name"
                   className="w-full px-3 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">
+                <label htmlFor="sound-upload-cat" className="text-xs font-medium text-foreground block mb-1">
                   Category
                 </label>
                 <select
+                  id="sound-upload-cat"
                   value={uploadCategory}
                   onChange={(e) => setUploadCategory(e.target.value as typeof uploadCategory)}
+                  aria-label="Category"
                   className="w-full px-3 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="memes">Gaming Memes</option>

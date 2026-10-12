@@ -228,6 +228,7 @@ class SoundboardAudioEngine {
     if (!this.ctx || !this.masterGain) return false;
     try {
       const response = await fetch(dataUri);
+      if (!response.ok) return false;
       const arrayBuffer = await response.arrayBuffer();
       const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
 

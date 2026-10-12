@@ -33,29 +33,27 @@ export function UserBar() {
   }, []);
 
   const toggleMic = () => {
-    setIsMuted((prev) => {
-      const next = !prev;
-      toast({
-        title: next ? 'Microphone Muted' : 'Microphone Active',
-        description: next ? 'You are muted' : 'Microphone unmuted',
-        type: next ? 'error' : 'success',
-        duration: 1500,
-      });
-      return next;
+    const next = !isMuted;
+    setIsMuted(next);
+    toast({
+      title: next ? 'Microphone Muted' : 'Microphone Active',
+      description: next ? 'You are muted' : 'Microphone unmuted',
+      type: next ? 'error' : 'success',
+      duration: 1500,
     });
   };
 
   const toggleDeafen = () => {
-    setIsDeafened((prev) => {
-      const next = !prev;
-      if (next && !isMuted) setIsMuted(true);
-      toast({
-        title: next ? 'Deafened' : 'Undeafened',
-        description: next ? 'Audio output and microphone muted' : 'Audio output restored',
-        type: next ? 'error' : 'success',
-        duration: 1500,
-      });
-      return next;
+    const next = !isDeafened;
+    setIsDeafened(next);
+    if (next && !isMuted) {
+      setIsMuted(true);
+    }
+    toast({
+      title: next ? 'Deafened' : 'Undeafened',
+      description: next ? 'Audio output and microphone muted' : 'Audio output restored',
+      type: next ? 'error' : 'success',
+      duration: 1500,
     });
   };
 

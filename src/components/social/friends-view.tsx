@@ -104,10 +104,13 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
     if (!addUsernameInput.trim()) return;
 
     setIsSendingRequest(true);
-    const { error } = await sendFriendRequest(addUsernameInput);
-    setIsSendingRequest(false);
-    if (!error) {
-      setAddUsernameInput('');
+    try {
+      const { error } = await sendFriendRequest(addUsernameInput);
+      if (!error) {
+        setAddUsernameInput('');
+      }
+    } finally {
+      setIsSendingRequest(false);
     }
   };
 

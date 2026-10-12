@@ -274,8 +274,15 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   };
 
   const formatTimestamp = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return '';
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${hours}:${minutes}`;
+    } catch {
+      return '';
+    }
   };
 
   return (
@@ -407,6 +414,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <Search className="w-4 h-4 text-muted-foreground shrink-0" />
           <input
             type="text"
+            aria-label="Search messages in this chat"
             placeholder="Search words, files, or squadmates in this chat..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -415,6 +423,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
+              aria-label="Clear search query"
               className="text-muted-foreground hover:text-foreground text-xs"
             >
               Clear
@@ -549,12 +558,14 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                   <div className="flex items-center gap-2 w-full mt-1">
                     <input
                       type="text"
+                      aria-label="Edit message content"
                       value={editContent}
                       onChange={(e) => setEditContent(e.target.value)}
                       className="flex-1 h-9 rounded-lg border border-subtle bg-surface-default px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     <button
                       onClick={() => handleSaveEdit(msg.id)}
+                      aria-label="Save edited message"
                       className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"
                       title="Save"
                     >
@@ -562,6 +573,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                     </button>
                     <button
                       onClick={() => setEditingMessageId(null)}
+                      aria-label="Cancel editing"
                       className="p-2 rounded-lg bg-surface-panel text-muted-foreground hover:text-foreground"
                       title="Cancel"
                     >
@@ -775,7 +787,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         <div className="p-3 bg-surface-panel/90 border-t border-border flex items-center gap-3 overflow-x-auto">
           {selectedFiles.map((file, idx) => (
             <div
-              key={idx}
+              key={`${file.name}-${file.size}-${file.lastModified}`}
               className="relative flex items-center gap-2 p-2 rounded-xl bg-card border border-border shrink-0 max-w-xs"
             >
               <File className="w-4 h-4 text-primary shrink-0" />
@@ -788,6 +800,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               <button
                 type="button"
                 onClick={() => setSelectedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                aria-label={`Remove ${file.name}`}
+                title="Remove file"
                 className="p-1 rounded-md text-muted-foreground hover:text-foreground"
               >
                 <X className="w-3.5 h-3.5" />
@@ -811,7 +825,9 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             </span>
           </div>
           <button
+            type="button"
             onClick={() => setReplyingTo(null)}
+            aria-label="Cancel reply"
             className="p-1 rounded-md text-muted-foreground hover:text-foreground"
           >
             <X className="w-3.5 h-3.5" />
@@ -835,6 +851,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
+            aria-label="Attach media or file"
             className="p-2 rounded-lg hover:bg-white/[0.04] text-muted-foreground hover:text-foreground transition-colors shrink-0"
             title="Attach Media or File (Max 25MB)"
           >
@@ -845,6 +862,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <button
             type="button"
             onClick={() => setShowSoundboard(true)}
+            aria-label="Soundboard meme effects"
             className="p-2 rounded-lg hover:bg-white/[0.04] text-muted-foreground hover:text-amber-400 transition-colors shrink-0"
             title="Soundboard Meme Effects"
           >
@@ -856,6 +874,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             <input
               ref={inputRef}
               type="text"
+              aria-label={`Message @${targetMember?.username || 'squad'}`}
               placeholder={`Message @${targetMember?.username || 'squad'}...`}
               value={inputContent}
               onChange={(e) => setInputContent(e.target.value)}
@@ -867,6 +886,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             <button
               type="button"
               onClick={() => setInputContent((prev) => prev + ' 🔥')}
+              aria-label="Add fire emoji"
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               title="Add Emoji"
             >
@@ -878,6 +898,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <Button
             type="submit"
             size="default"
+            aria-label="Send message"
             className="h-10 px-3.5 gap-1.5 shrink-0 rounded-xl font-medium"
             disabled={isSending || (!inputContent.trim() && selectedFiles.length === 0)}
           >

@@ -128,7 +128,9 @@ export function ServerSettingsModal({
               {activeTab === 'danger' && 'Server Danger Zone'}
             </h4>
             <button
+              type="button"
               onClick={() => onOpenChange(false)}
+              aria-label="Close settings"
               className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-surface-hover"
             >
               <X className="w-5 h-5" />
@@ -140,25 +142,29 @@ export function ServerSettingsModal({
             {activeTab === 'overview' && (
               <div className="space-y-4 max-w-md">
                 <div>
-                  <label className="text-xs font-bold text-foreground block mb-1">
+                  <label htmlFor="server-settings-name" className="text-xs font-bold text-foreground block mb-1">
                     Server Name
                   </label>
                   <input
+                    id="server-settings-name"
                     type="text"
                     value={serverName}
                     onChange={(e) => setServerName(e.target.value)}
+                    aria-label="Server Name"
                     className="w-full px-3 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-foreground block mb-1">
+                  <label htmlFor="server-settings-desc" className="text-xs font-bold text-foreground block mb-1">
                     Description
                   </label>
                   <textarea
+                    id="server-settings-desc"
                     rows={3}
                     value={serverDesc}
                     onChange={(e) => setServerDesc(e.target.value)}
+                    aria-label="Description"
                     className="w-full px-3 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                   />
                 </div>
@@ -222,8 +228,8 @@ export function ServerSettingsModal({
                     { role: 'Officers (Admin)', desc: 'Manage channels, invite squadmates, mute unruly players.', color: 'text-primary' },
                     { role: 'Moderator', desc: 'Delete spam messages and enforce server rules.', color: 'text-cyan-400' },
                     { role: 'Squadmate (Member)', desc: 'Chat in text channels, connect to voice lounges.', color: 'text-muted-foreground' },
-                  ].map((r, i) => (
-                    <div key={i} className="p-3 rounded-xl border border-border/60 bg-surface-sidebar/50 flex items-center justify-between">
+                  ].map((r) => (
+                    <div key={r.role} className="p-3 rounded-xl border border-border/60 bg-surface-sidebar/50 flex items-center justify-between">
                       <div>
                         <div className={cn('text-xs font-bold', r.color)}>{r.role}</div>
                         <div className="text-[11px] text-muted-foreground mt-0.5">{r.desc}</div>

@@ -21,8 +21,10 @@ export function Tabs({
   children: React.ReactNode;
   className?: string;
 }) {
+  const contextValue = React.useMemo(() => ({ value, onValueChange }), [value, onValueChange]);
+
   return (
-    <TabsContext.Provider value={{ value, onValueChange }}>
+    <TabsContext.Provider value={contextValue}>
       <div className={cn('w-full', className)}>{children}</div>
     </TabsContext.Provider>
   );

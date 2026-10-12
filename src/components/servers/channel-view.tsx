@@ -35,7 +35,6 @@ import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
-
 interface ChannelViewProps {
   server: Server;
   channel: Channel;
@@ -305,14 +304,17 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search in channel..."
+                    aria-label="Search in channel"
                     className="w-32 sm:w-44 bg-transparent text-xs text-foreground focus:outline-none"
                     autoFocus
                   />
                   <button
+                    type="button"
                     onClick={() => {
                       setSearchQuery('');
                       setShowSearch(false);
                     }}
+                    aria-label="Clear channel search"
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <X className="w-3 h-3" />
@@ -320,7 +322,9 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 </div>
               ) : (
                 <button
+                  type="button"
                   onClick={() => setShowSearch(true)}
+                  aria-label="Search Messages"
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
                   title="Search Messages"
                 >
@@ -331,7 +335,9 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
             {/* Soundboard Trigger */}
             <button
+              type="button"
               onClick={() => setShowSoundboard(true)}
+              aria-label="Soundboard"
               className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
               title="Soundboard"
             >
@@ -418,10 +424,14 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     )}
 
                     <span className="text-[10px] text-muted-foreground font-mono">
-                      {new Date(msg.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {(() => {
+                        try {
+                          const d = new Date(msg.created_at);
+                          return isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                        } catch {
+                          return '';
+                        }
+                      })()}
                     </span>
 
                     {msg.status === 'sending' && (
@@ -466,6 +476,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             <button
               type="button"
               onClick={() => setShowSoundboard(true)}
+              aria-label="Trigger Soundboard Meme"
               className="text-muted-foreground hover:text-amber-400 p-1.5 rounded-lg transition-colors shrink-0"
               title="Trigger Soundboard Meme"
             >
@@ -477,6 +488,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
+              aria-label={`Message #${channel.name}`}
               placeholder={`Message #${channel.name}...`}
               className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none resize-none max-h-28 py-1 font-normal"
             />
@@ -484,6 +496,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             <Button
               type="submit"
               size="sm"
+              aria-label="Send channel message"
               disabled={!inputText.trim() || isSending}
               className="h-8 w-8 p-0 rounded-lg shrink-0 font-medium"
             >
@@ -566,7 +579,8 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         e.stopPropagation();
                         handleStartDirectChat(m.id, m.display_name);
                       }}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-primary/15 text-primary hover:bg-primary/25 transition-all shrink-0"
+                      aria-label={`Direct Message ${m.display_name}`}
+                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 p-1.5 rounded-lg bg-primary/15 text-primary hover:bg-primary/25 focus:ring-1 focus:ring-primary transition-all shrink-0"
                       title="Direct Message"
                     >
                       <MessageSquare className="w-3.5 h-3.5" />

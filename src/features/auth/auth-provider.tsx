@@ -309,13 +309,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updateProfile = React.useCallback(
     async (updates: Partial<UserProfile>) => {
       // Optimistically update local state for zero-latency instant feedback
-      setProfile((prev) => {
-        const next = { ...(prev || DEFAULT_PROFILE), ...updates, updated_at: new Date().toISOString() };
-        try {
-          localStorage.setItem('nexus_local_profile', JSON.stringify(next));
-        } catch {}
-        return next;
-      });
+      const nextProfile = { ...(profile || DEFAULT_PROFILE), ...updates, updated_at: new Date().toISOString() };
+      setProfile(nextProfile);
+      try {
+        localStorage.setItem('nexus_local_profile', JSON.stringify(nextProfile));
+      } catch {}
 
       if (!config.isConfigured || !user) {
         return { error: null };
@@ -369,7 +367,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: err instanceof Error ? err.message : 'Failed to update profile' };
       }
     },
-    [config.isConfigured, supabase, user]
+    [config.isConfigured, profile, supabase, user]
   );
 
   // Update settings
@@ -380,11 +378,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!config.isConfigured) {
-        setSettings((prev) => {
-          const updated = { ...(prev || DEFAULT_SETTINGS), ...updates, updated_at: new Date().toISOString() };
+        const updated = { ...(settings || DEFAULT_SETTINGS), ...updates, updated_at: new Date().toISOString() };
+        setSettings(updated);
+        try {
           localStorage.setItem('nexus_local_settings', JSON.stringify(updated));
-          return updated;
-        });
+        } catch {}
         return { error: null };
       }
 
@@ -405,7 +403,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSettings((prev) => (prev ? { ...prev, ...updates } : null));
       return { error: null };
     },
-    [config.isConfigured, supabase, user]
+    [config.isConfigured, settings, supabase, user]
   );
 
   const refreshProfile = React.useCallback(async () => {
@@ -414,23 +412,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, fetchProfileAndSettings]);
 
+  const authContextValue = React.useMemo(
+    () => ({
+      user,
+      profile,
+      settings,
+      isLoading,
+      isConfigured: config.isConfigured,
+      error,
+      signInWithPassword,
+      signUpWithPassword,
+      signOut,
+      updateProfile,
+      updateSettings,
+      refreshProfile,
+    }),
+    [
+      user,
+      profile,
+      settings,
+      isLoading,
+      config.isConfigured,
+      error,
+      signInWithPassword,
+      signUpWithPassword,
+      signOut,
+      updateProfile,
+      updateSettings,
+      refreshProfile,
+    ]
+  );
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        profile,
-        settings,
-        isLoading,
-        isConfigured: config.isConfigured,
-        error,
-        signInWithPassword,
-        signUpWithPassword,
-        signOut,
-        updateProfile,
-        updateSettings,
-        refreshProfile,
-      }}
-    >
+    <AuthContext.Provider value={authContextValue}>
       {children}
     </AuthContext.Provider>
   );

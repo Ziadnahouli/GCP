@@ -25,6 +25,20 @@ export function useMessages(conversationId: string | null) {
   const prevConversationIdRef = React.useRef<string | null>(null);
   const isFetchingRef = React.useRef(false);
   const membershipVerifiedRef = React.useRef<Set<string>>(new Set());
+  const createdBlobUrlsRef = React.useRef<Set<string>>(new Set());
+
+  // Revoke any created blob object URLs on unmount to prevent memory leaks
+  React.useEffect(() => {
+    const blobUrls = createdBlobUrlsRef.current;
+    return () => {
+      blobUrls.forEach((url) => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      });
+      blobUrls.clear();
+    };
+  }, []);
 
   React.useEffect(() => {
     activeConversationIdRef.current = conversationId;
@@ -99,7 +113,6 @@ export function useMessages(conversationId: string | null) {
         if (msgsErr) {
           debugLogger.error('messaging', `Error fetching messages from database: ${msgsErr.message}`, msgsErr);
           console.warn('Error fetching messages from database:', msgsErr);
-          setIsLoading(false);
           return;
         }
 
@@ -114,7 +127,6 @@ export function useMessages(conversationId: string | null) {
           try {
             if (cacheKey) localStorage.removeItem(cacheKey);
           } catch {}
-          setIsLoading(false);
           return;
         }
 
@@ -213,7 +225,7 @@ export function useMessages(conversationId: string | null) {
         }
       }
     },
-    [conversationId, userId, supabase, isUUID, isConfigured, cacheKey]
+    [conversationId, userId, supabase, isUUID, isConfigured, cacheKey, user?.id]
   );
 
   // Realtime channel subscriptions
@@ -222,9 +234,12 @@ export function useMessages(conversationId: string | null) {
       prevConversationIdRef.current = conversationId;
       setMessages([]);
     }
-    fetchMessages(true);
 
-    if (!conversationId || !isConfigured || !userId || !isUUID) return;
+    if (!conversationId || !isConfigured || !userId || !isUUID) {
+      return () => {};
+    }
+
+    fetchMessages(true);
 
     let reconnectTimeout: NodeJS.Timeout | null = null;
     let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -403,7 +418,7 @@ export function useMessages(conversationId: string | null) {
         chatChannelRef.current = null;
       }
     };
-  }, [conversationId, fetchMessages, isConfigured, userId, currentUsername, supabase, isUUID]);
+  }, [conversationId, fetchMessages, isConfigured, userId, currentUsername, supabase, isUUID, profile?.username]);
 
   // Send message with optional file uploads
   const sendMessage = async (
@@ -421,17 +436,21 @@ export function useMessages(conversationId: string | null) {
 
     // Local demo mode simulation ONLY when Supabase is not configured
     if (!isConfigured) {
-      const mockAttachments: MessageAttachment[] = files.map((f, i) => ({
-        id: `att-mock-${Date.now()}-${i}`,
-        message_id: `local-msg-${Date.now()}`,
-        conversation_id: conversationId,
-        file_name: f.name,
-        file_type: f.type,
-        file_size: f.size,
-        storage_path: 'local/path',
-        url: URL.createObjectURL(f),
-        created_at: new Date().toISOString(),
-      }));
+      const mockAttachments: MessageAttachment[] = files.map((f, i) => {
+        const url = URL.createObjectURL(f);
+        createdBlobUrlsRef.current.add(url);
+        return {
+          id: `att-mock-${Date.now()}-${i}`,
+          message_id: `local-msg-${Date.now()}`,
+          conversation_id: conversationId,
+          file_name: f.name,
+          file_type: f.type,
+          file_size: f.size,
+          storage_path: 'local/path',
+          url,
+          created_at: new Date().toISOString(),
+        };
+      });
 
       const newMsg: Message = {
         id: `local-msg-${Date.now()}`,
@@ -482,17 +501,21 @@ export function useMessages(conversationId: string | null) {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       sender: profile || undefined,
-      attachments: files.map((f, i) => ({
-        id: `att-opt-${Date.now()}-${i}`,
-        message_id: optId,
-        conversation_id: conversationId,
-        file_name: f.name,
-        file_type: f.type,
-        file_size: f.size,
-        storage_path: '',
-        url: URL.createObjectURL(f),
-        created_at: new Date().toISOString(),
-      })),
+      attachments: files.map((f, i) => {
+        const url = URL.createObjectURL(f);
+        createdBlobUrlsRef.current.add(url);
+        return {
+          id: `att-opt-${Date.now()}-${i}`,
+          message_id: optId,
+          conversation_id: conversationId,
+          file_name: f.name,
+          file_type: f.type,
+          file_size: f.size,
+          storage_path: '',
+          url,
+          created_at: new Date().toISOString(),
+        };
+      }),
       reactions: [],
       status: 'sending',
     };
@@ -691,12 +714,22 @@ export function useMessages(conversationId: string | null) {
       };
 
       // 3. Reconcile optimistic message with confirmed persisted message
-      setMessages((prev) => {
-        const next = prev.map((m) => (m.id === optId ? confirmedMsg : m));
-        try {
-          if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(next));
-        } catch {}
-        return next;
+      setMessages((prev) => prev.map((m) => (m.id === optId ? confirmedMsg : m)));
+      try {
+        if (cacheKey) {
+          const current = messages.map((m) => (m.id === optId ? confirmedMsg : m));
+          localStorage.setItem(cacheKey, JSON.stringify(current));
+        }
+      } catch {}
+
+      // Revoke any optimistic blob URLs now that persisted attachments are confirmed
+      optMsg.attachments?.forEach((a) => {
+        if (a.url && a.url.startsWith('blob:')) {
+          try {
+            URL.revokeObjectURL(a.url);
+            createdBlobUrlsRef.current.delete(a.url);
+          } catch {}
+        }
       });
 
       // 4. Broadcast to peers ONLY AFTER successful database persistence

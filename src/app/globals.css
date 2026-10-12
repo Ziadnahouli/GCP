@@ -93,7 +93,19 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-feature-settings: 'rlig' 1, 'calt' 1;
   overflow-x: hidden;
-  user-select: none;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+::selection {
+  background-color: hsl(var(--primary) / 0.25);
+  color: hsl(var(--foreground));
+}
+
+/* Allow text selection in message bodies, inputs, code snippets, logs, and IDs */
+.selectable, [data-selectable], pre, code, .prose, input, textarea, [role="textbox"] {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Ensure inputs, textareas, and selects always have dark surface background and white text */

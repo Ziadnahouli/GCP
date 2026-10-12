@@ -168,8 +168,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const remoteAudioElementRef = React.useRef<HTMLAudioElement | null>(null);
 
   // ZeroTier Virtual LAN IP states
-  const [peerZeroTierIp, setPeerZeroTierIpState] = React.useState<string | null>(getPeerZeroTierIp());
-  const peerZeroTierIpRef = React.useRef<string | null>(getPeerZeroTierIp());
+  const [peerZeroTierIp, setPeerZeroTierIpState] = React.useState<string | null>(() => getPeerZeroTierIp());
+  const peerZeroTierIpRef = React.useRef<string | null>(null);
+  if (peerZeroTierIpRef.current === null && typeof window !== 'undefined') {
+    peerZeroTierIpRef.current = getPeerZeroTierIp();
+  }
 
   // ICE candidates buffering and deduplication
   const localIceCandidatesRef = React.useRef<RTCIceCandidateInit[]>([]);
@@ -1159,6 +1162,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => {
+      if (ringtoneRef.current) {
+        ringtoneRef.current.stop();
+      }
+      myChannel.unsubscribe();
       supabase.removeChannel(myChannel);
     };
   }, [user, supabase, stopMediaTracks, toast, applyAnswerSdp, applyRemoteCandidate, handlePeerMediaToggle, activeConversationId, drainPendingRemoteCandidates, sendSignalToRoom, sendSignalToUser]);
@@ -2048,41 +2055,119 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Stable callback dispatchers to keep context value reference stable
+  const startCallRef = React.useRef(startCall);
+  startCallRef.current = startCall;
+  const stableStartCall = React.useCallback(
+    (...args: Parameters<typeof startCall>) => startCallRef.current(...args),
+    []
+  );
+
+  const acceptCallRef = React.useRef(acceptCall);
+  acceptCallRef.current = acceptCall;
+  const stableAcceptCall = React.useCallback(
+    (...args: Parameters<typeof acceptCall>) => acceptCallRef.current(...args),
+    []
+  );
+
+  const rejectCallRef = React.useRef(rejectCall);
+  rejectCallRef.current = rejectCall;
+  const stableRejectCall = React.useCallback(
+    (...args: Parameters<typeof rejectCall>) => rejectCallRef.current(...args),
+    []
+  );
+
+  const endCallRef = React.useRef(endCall);
+  endCallRef.current = endCall;
+  const stableEndCall = React.useCallback(
+    (...args: Parameters<typeof endCall>) => endCallRef.current(...args),
+    []
+  );
+
+  const toggleMicRef = React.useRef(toggleMic);
+  toggleMicRef.current = toggleMic;
+  const stableToggleMic = React.useCallback(
+    (...args: Parameters<typeof toggleMic>) => toggleMicRef.current(...args),
+    []
+  );
+
+  const toggleCameraRef = React.useRef(toggleCamera);
+  toggleCameraRef.current = toggleCamera;
+  const stableToggleCamera = React.useCallback(
+    (...args: Parameters<typeof toggleCamera>) => toggleCameraRef.current(...args),
+    []
+  );
+
+  const toggleScreenShareRef = React.useRef(toggleScreenShare);
+  toggleScreenShareRef.current = toggleScreenShare;
+  const stableToggleScreenShare = React.useCallback(
+    (...args: Parameters<typeof toggleScreenShare>) => toggleScreenShareRef.current(...args),
+    []
+  );
+
+  const callContextValue = React.useMemo(
+    () => ({
+      callStatus,
+      activeConversationId,
+      isVideoCall,
+      isMicMuted,
+      isCameraOn,
+      isScreenSharing,
+      incomingCall,
+      localStream,
+      remoteStream,
+      screenStream,
+      participants,
+      stats,
+      startCall: stableStartCall,
+      acceptCall: stableAcceptCall,
+      rejectCall: stableRejectCall,
+      endCall: stableEndCall,
+      restartConnection: restartIceConnection,
+      toggleMic: stableToggleMic,
+      toggleCamera: stableToggleCamera,
+      toggleScreenShare: stableToggleScreenShare,
+      broadcastSoundboardClip,
+      isNoiseSuppressionEnabled,
+      toggleNoiseSuppression,
+      peerZeroTierIp,
+      setPeerZeroTierDirectIp,
+    }),
+    [
+      callStatus,
+      activeConversationId,
+      isVideoCall,
+      isMicMuted,
+      isCameraOn,
+      isScreenSharing,
+      incomingCall,
+      localStream,
+      remoteStream,
+      screenStream,
+      participants,
+      stats,
+      stableStartCall,
+      stableAcceptCall,
+      stableRejectCall,
+      stableEndCall,
+      restartIceConnection,
+      stableToggleMic,
+      stableToggleCamera,
+      stableToggleScreenShare,
+      broadcastSoundboardClip,
+      isNoiseSuppressionEnabled,
+      toggleNoiseSuppression,
+      peerZeroTierIp,
+      setPeerZeroTierDirectIp,
+    ]
+  );
+
   return (
-    <CallContext.Provider
-      value={{
-        callStatus,
-        activeConversationId,
-        isVideoCall,
-        isMicMuted,
-        isCameraOn,
-        isScreenSharing,
-        incomingCall,
-        localStream,
-        remoteStream,
-        screenStream,
-        participants,
-        stats,
-        startCall,
-        acceptCall,
-        rejectCall,
-        endCall,
-        restartConnection: restartIceConnection,
-        toggleMic,
-        toggleCamera,
-        toggleScreenShare,
-        broadcastSoundboardClip,
-        isNoiseSuppressionEnabled,
-        toggleNoiseSuppression,
-        peerZeroTierIp,
-        setPeerZeroTierDirectIp,
-      }}
-    >
+    <CallContext.Provider value={callContextValue}>
       {children}
       <audio
         ref={remoteAudioElementRef}
         autoPlay
-        playsInline
         aria-hidden="true"
         className="fixed -top-[9999px] -left-[9999px] w-1 h-1 opacity-0 pointer-events-none"
       />

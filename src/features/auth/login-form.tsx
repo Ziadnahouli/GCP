@@ -92,10 +92,11 @@ export function LoginForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+          <label htmlFor="login-email" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
             Email Address
           </label>
           <Input
+            id="login-email"
             type="email"
             placeholder="your-email@nexus.gg"
             value={formData.email}
@@ -108,7 +109,7 @@ export function LoginForm() {
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <label htmlFor="login-password" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Password
             </label>
             <Link
@@ -119,6 +120,7 @@ export function LoginForm() {
             </Link>
           </div>
           <Input
+            id="login-password"
             type="password"
             placeholder="••••••••••••"
             value={formData.password}

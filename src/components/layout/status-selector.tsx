@@ -67,11 +67,11 @@ export function StatusSelector({ currentStatus, onSelect, onClose, className }: 
       ref={containerRef}
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        'status-selector-container z-50 w-64 rounded-xl bg-card border border-border/80 shadow-2xl p-1.5 backdrop-blur-md animate-in duration-150',
+        'status-selector-container z-50 w-64 rounded-xl bg-surface-panel border border-white/[0.08] shadow-panel p-1.5 backdrop-blur-md animate-in duration-150',
         className || 'absolute bottom-16 left-2 slide-in-from-bottom-2'
       )}
     >
-      <div className="px-2 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase border-b border-border/60 mb-1">
+      <div className="px-2 py-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase border-b border-white/[0.06] mb-1">
         Change Presence
       </div>
 
@@ -86,8 +86,8 @@ export function StatusSelector({ currentStatus, onSelect, onClose, className }: 
             className={cn(
               'w-full flex items-center justify-between p-2 rounded-lg text-left transition-colors',
               currentStatus === opt.value
-                ? 'bg-primary/15 text-primary'
-                : 'hover:bg-surface-hover text-foreground'
+                ? 'bg-primary/10 text-primary font-medium'
+                : 'hover:bg-surface-hover text-foreground/90'
             )}
           >
             <div className="flex items-center gap-2.5">

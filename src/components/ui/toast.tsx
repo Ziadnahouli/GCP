@@ -59,16 +59,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={item.id}
             className={cn(
-              'pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-xl bg-card text-foreground backdrop-blur-md transition-all animate-in slide-in-from-bottom-5 fade-in duration-200',
-              item.type === 'error' && 'border-rose-500/50 bg-rose-950/20 text-rose-200',
-              item.type === 'success' && 'border-emerald-500/50 bg-emerald-950/20 text-emerald-200',
-              item.type === 'info' && 'border-primary/50 bg-primary/10 text-primary-foreground',
-              (!item.type || item.type === 'default') && 'border-border bg-card'
+              'pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-xl bg-surface-panel text-foreground backdrop-blur-md transition-all animate-in slide-in-from-bottom-5 fade-in duration-200 border-white/[0.08]',
+              item.type === 'error' && 'border-rose-500/30 bg-rose-950/25 text-rose-200',
+              item.type === 'success' && 'border-emerald-500/30 bg-emerald-950/25 text-emerald-200',
+              item.type === 'info' && 'border-primary/30 bg-primary/10 text-foreground',
+              (!item.type || item.type === 'default') && 'border-white/[0.08] bg-surface-panel'
             )}
           >
-            {item.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />}
-            {item.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />}
-            {item.type === 'info' && <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />}
+            {item.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />}
+            {item.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+            {item.type === 'info' && <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />}
 
             <div className="flex-1">
               {item.title && <h5 className="font-semibold text-sm leading-tight mb-1">{item.title}</h5>}

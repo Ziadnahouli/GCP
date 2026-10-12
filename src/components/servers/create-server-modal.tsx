@@ -89,15 +89,15 @@ export function CreateServerModal({
       />
 
       {/* Modal Dialog */}
-      <div className="relative w-full max-w-lg rounded-2xl border border-border/80 bg-surface-default p-4 sm:p-6 shadow-2xl z-10 animate-in zoom-in-95 duration-150 space-y-4 sm:space-y-5 max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg rounded-2xl border border-white/[0.08] bg-surface-panel p-4 sm:p-6 shadow-2xl shadow-black/90 z-10 animate-in zoom-in-95 duration-150 space-y-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
+            <div className="w-8 h-8 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center text-primary">
               <Gamepad2 className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-foreground">Create Your Server</h3>
-              <p className="text-xs text-muted-foreground">
+              <h3 className="text-sm font-semibold text-foreground">Create Your Server</h3>
+              <p className="text-xs text-muted-foreground/70">
                 Your server is where you and your gaming squad talk and play.
               </p>
             </div>
@@ -106,7 +106,7 @@ export function CreateServerModal({
             type="button"
             onClick={() => onOpenChange(false)}
             aria-label="Close dialog"
-            className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-surface-hover"
+            className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-white/[0.04] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -114,7 +114,7 @@ export function CreateServerModal({
 
         {/* Template Selectors */}
         <div className="space-y-2">
-          <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
             Start from a Template
           </div>
           <div className="grid gap-2">
@@ -128,24 +128,24 @@ export function CreateServerModal({
                   key={tmpl.id}
                   onClick={() => handleSelectTemplate(tmpl)}
                   className={cn(
-                    'w-full text-left flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer',
+                    'w-full text-left flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer',
                     isSelected
-                      ? 'border-primary bg-primary/10 shadow-glow-sm'
-                      : 'border-border/60 bg-surface-sidebar/60 hover:bg-surface-hover'
+                      ? 'border-primary/50 bg-primary/10'
+                      : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04]'
                   )}
                 >
                   <div className="flex items-center gap-3">
                     <div
                       className={cn(
-                        'w-9 h-9 rounded-lg flex items-center justify-center',
-                        isSelected ? 'bg-primary text-primary-foreground' : 'bg-surface-default text-muted-foreground'
+                        'w-8 h-8 rounded-md flex items-center justify-center',
+                        isSelected ? 'bg-primary text-primary-foreground' : 'bg-white/[0.04] text-muted-foreground'
                       )}
                     >
                       <Icon className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-foreground">{tmpl.title}</div>
-                      <div className="text-[11px] text-muted-foreground">{tmpl.desc}</div>
+                      <div className="text-xs font-medium text-foreground">{tmpl.title}</div>
+                      <div className="text-[11px] text-muted-foreground/60">{tmpl.desc}</div>
                     </div>
                   </div>
 
@@ -159,7 +159,7 @@ export function CreateServerModal({
         {/* Form Inputs */}
         <form onSubmit={handleSubmit} className="space-y-3 pt-1">
           <div>
-            <label htmlFor="create-server-name" className="text-xs font-bold text-foreground block mb-1">
+            <label htmlFor="create-server-name" className="text-xs font-medium text-foreground block mb-1">
               Server Name
             </label>
             <input
@@ -170,12 +170,12 @@ export function CreateServerModal({
               onChange={(e) => setServerName(e.target.value)}
               placeholder="e.g. Tactical Squad Alpha"
               aria-label="Server Name"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary shadow-inner"
+              className="w-full px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.02] text-foreground text-xs focus:outline-none focus:border-white/[0.2] transition-colors"
             />
           </div>
 
           <div>
-            <label htmlFor="create-server-desc" className="text-xs font-bold text-foreground block mb-1">
+            <label htmlFor="create-server-desc" className="text-xs font-medium text-foreground block mb-1">
               Server Description (Optional)
             </label>
             <textarea
@@ -185,16 +185,17 @@ export function CreateServerModal({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What games does your squad play?"
               aria-label="Server Description (Optional)"
-              className="w-full px-3.5 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary resize-none shadow-inner"
+              className="w-full px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.02] text-foreground text-xs focus:outline-none focus:border-white/[0.2] resize-none transition-colors"
             />
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2">
             <Button
               type="button"
-              variant="subtle"
+              variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
+              className="border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] text-xs font-medium"
             >
               Cancel
             </Button>
@@ -203,7 +204,7 @@ export function CreateServerModal({
               variant="default"
               size="sm"
               disabled={submitting || !serverName.trim()}
-              className="font-bold px-5"
+              className="font-medium px-4 text-xs"
             >
               {submitting ? 'Creating...' : 'Create Server'}
             </Button>

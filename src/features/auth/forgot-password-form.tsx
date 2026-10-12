@@ -73,17 +73,17 @@ export function ForgotPasswordForm() {
 
   if (submitted) {
     return (
-      <div className="w-full max-w-md mx-auto p-8 rounded-2xl bg-card/90 border border-border shadow-2xl backdrop-blur-xl text-center">
-        <div className="w-14 h-14 rounded-2xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary mx-auto mb-4">
-          <CheckCircle2 className="w-8 h-8" />
+      <div className="w-full max-w-sm mx-auto p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90 text-center">
+        <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary mx-auto mb-3">
+          <CheckCircle2 className="w-5 h-5" />
         </div>
-        <h2 className="text-2xl font-bold text-foreground mb-2">Check Your Inbox</h2>
-        <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-          If an account exists for <span className="text-foreground font-semibold">{email}</span>,
+        <h2 className="text-xl font-semibold text-foreground mb-1">Check Your Inbox</h2>
+        <p className="text-xs text-muted-foreground/70 mb-5 leading-relaxed font-normal">
+          If an account exists for <span className="text-foreground font-medium">{email}</span>,
           you will receive a password reset link shortly.
         </p>
         <Link href="/login">
-          <Button variant="outline" className="w-full">
+          <Button variant="outline" className="w-full border-white/[0.08] bg-white/[0.02] text-xs font-medium">
             Back to Sign In
           </Button>
         </Link>
@@ -92,40 +92,41 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <div className="w-full max-w-md mx-auto p-8 rounded-2xl bg-card/90 border border-border shadow-2xl backdrop-blur-xl">
+    <div className="w-full max-w-sm mx-auto p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90">
       <div className="flex flex-col items-center text-center mb-6">
-        <div className="w-14 h-14 rounded-2xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary mb-3 shadow-glow-sm">
-          <KeyRound className="w-8 h-8" />
+        <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary mb-3">
+          <KeyRound className="w-5 h-5" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Reset Password</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Reset Password</h1>
+        <p className="text-xs text-muted-foreground/70 mt-1">
           Enter your registered email to receive recovery instructions
         </p>
       </div>
 
       {error && (
-        <div className="mb-5 p-3 rounded-xl bg-destructive/15 border border-destructive/30 text-destructive text-sm font-medium">
+        <div className="mb-5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium">
           {error}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="forgot-email" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+          <label htmlFor="forgot-email" className="block text-xs font-medium text-muted-foreground/80 mb-1.5">
             Account Email
           </label>
           <Input
             id="forgot-email"
             type="email"
-            placeholder="player@nexus.gg"
+            placeholder="player@gcp.gg"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             icon={<Mail className="w-4 h-4" />}
             disabled={loading}
+            className="bg-white/[0.02] border-white/[0.08] text-xs"
           />
         </div>
 
-        <Button type="submit" className="w-full mt-2" size="lg" disabled={loading}>
+        <Button type="submit" className="w-full mt-2 font-medium text-xs h-10" size="lg" disabled={loading}>
           {loading ? (
             <span className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -140,7 +141,7 @@ export function ForgotPasswordForm() {
       <div className="mt-6 text-center">
         <Link
           href="/login"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 hover:text-foreground font-medium transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
         </Link>

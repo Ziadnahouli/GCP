@@ -18,7 +18,7 @@ export function NavHeader({ title = 'Friends & Activity', subtitle, onOpenMobile
   const [showZeroTier, setShowZeroTier] = React.useState(false);
 
   return (
-    <header className="h-12 border-b border-subtle bg-surface-header/80 backdrop-blur-xl px-3 sm:px-4 flex items-center justify-between shrink-0 select-none z-10 transition-colors">
+    <header className="h-12 border-b border-white/[0.06] bg-surface-header px-3 sm:px-4 flex items-center justify-between shrink-0 select-none z-10">
       {/* Title & Mobile Menu Trigger */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         {onOpenMobileMenu && (
@@ -41,12 +41,12 @@ export function NavHeader({ title = 'Friends & Activity', subtitle, onOpenMobile
 
       {/* Center Search Input */}
       <div className="relative w-48 sm:w-64 md:w-72 hidden md:block">
-        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none" />
+        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none" />
         <input
           type="text"
           placeholder="Search... [Ctrl+K]"
           aria-label="Quick search"
-          className="w-full h-7 pl-8 pr-3 text-xs rounded-lg bg-surface-default/60 border border-subtle text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all font-normal"
+          className="w-full h-7 pl-8 pr-3 text-xs rounded-lg bg-surface-default/70 border border-white/[0.06] hover:border-white/[0.12] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50 transition-colors font-normal"
         />
       </div>
 
@@ -81,7 +81,7 @@ export function NavHeader({ title = 'Friends & Activity', subtitle, onOpenMobile
 
         {/* Cloud Sync Status Indicator */}
         <div
-          className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] text-muted-foreground font-mono"
+          className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] text-muted-foreground font-mono bg-white/[0.02] border border-white/[0.04]"
           title={isConfigured ? 'Supabase Realtime Synced' : 'Local Sandbox Mode'}
         >
           <span className={cn('w-1.5 h-1.5 rounded-full', isConfigured ? 'bg-emerald-400' : 'bg-amber-400')} />
@@ -96,7 +96,7 @@ export function NavHeader({ title = 'Friends & Activity', subtitle, onOpenMobile
           aria-label="Notifications"
         >
           <Bell className="w-4 h-4" />
-          <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-primary" />
+          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-primary" />
         </button>
       </div>
 

@@ -234,22 +234,22 @@ export function PermissionsModal({
       />
 
       {/* Modal Card */}
-      <div className="relative w-full max-w-lg rounded-2xl border border-border/80 bg-surface-default shadow-2xl overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-150">
-        {/* Glowing Top Ambient Header */}
-        <div className="px-6 py-5 border-b border-border/80 bg-surface-sidebar/60 relative">
+      <div className="relative w-full max-w-lg rounded-2xl border border-white/[0.08] bg-surface-panel shadow-2xl shadow-black/90 overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-150">
+        {/* Top Header */}
+        <div className="px-5 py-4 sm:px-6 sm:py-5 border-b border-white/[0.06] bg-surface-header/70 relative select-none">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shadow-glow-sm">
-                <ShieldCheck className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center text-primary">
+                <ShieldCheck className="w-4 h-4" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-bold text-foreground">Welcome to Nexus</h3>
-                  <Badge variant="default" className="text-[10px] bg-primary/20 text-primary border-primary/30">
+                  <h3 className="text-sm font-semibold text-foreground">Welcome to GCP</h3>
+                  <Badge variant="subtle" className="text-[9px] bg-primary/15 text-primary border-primary/25 px-1.5 py-0">
                     Permissions Setup
                   </Badge>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="text-xs text-muted-foreground/70 mt-0.5">
                   Authorize hardware & audio devices for seamless gaming communication.
                 </p>
               </div>
@@ -257,7 +257,7 @@ export function PermissionsModal({
 
             <button
               onClick={handleClose}
-              className="text-muted-foreground hover:text-foreground p-1.5 rounded-lg hover:bg-surface-hover transition-colors"
+              className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-white/[0.04] transition-colors"
               title="Close"
               aria-label="Close"
             >
@@ -267,122 +267,122 @@ export function PermissionsModal({
         </div>
 
         {/* Permission Cards List */}
-        <div className="p-6 space-y-3 bg-surface-default">
+        <div className="p-5 sm:p-6 space-y-2.5 bg-surface-panel">
           {/* 1. Microphone */}
-          <div className="p-3.5 rounded-xl border border-border/70 bg-surface-sidebar/50 flex items-center justify-between gap-3">
+          <div className="p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+              <div className="w-8 h-8 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
                 <Mic className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
                   Microphone & Voice
                 </div>
-                <p className="text-[11px] text-muted-foreground truncate">
+                <p className="text-[11px] text-muted-foreground/60 truncate">
                   Real-time voice rooms, push-to-talk, and squad calls.
                 </p>
               </div>
             </div>
 
             {permissions.mic === 'granted' ? (
-              <Badge variant="success" className="text-[10px] shrink-0 gap-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+              <Badge variant="success" className="text-[9px] shrink-0 gap-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/25 px-1.5 py-0">
                 <CheckCircle2 className="w-3 h-3" /> Granted
               </Badge>
             ) : permissions.mic === 'denied' ? (
-              <Badge variant="destructive" className="text-[10px] shrink-0 gap-1">
+              <Badge variant="destructive" className="text-[9px] shrink-0 gap-1 px-1.5 py-0">
                 <AlertCircle className="w-3 h-3" /> Blocked
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-[10px] shrink-0 text-muted-foreground">
+              <Badge variant="outline" className="text-[9px] shrink-0 text-muted-foreground/70 border-white/[0.08] px-1.5 py-0">
                 Required
               </Badge>
             )}
           </div>
 
           {/* 2. Camera */}
-          <div className="p-3.5 rounded-xl border border-border/70 bg-surface-sidebar/50 flex items-center justify-between gap-3">
+          <div className="p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
+              <div className="w-8 h-8 rounded-md bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
                 <Video className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
                   Camera & Video Feed
                 </div>
-                <p className="text-[11px] text-muted-foreground truncate">
+                <p className="text-[11px] text-muted-foreground/60 truncate">
                   Facecam calling and squad streaming.
                 </p>
               </div>
             </div>
 
             {permissions.camera === 'granted' ? (
-              <Badge variant="success" className="text-[10px] shrink-0 gap-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+              <Badge variant="success" className="text-[9px] shrink-0 gap-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/25 px-1.5 py-0">
                 <CheckCircle2 className="w-3 h-3" /> Granted
               </Badge>
             ) : permissions.camera === 'denied' ? (
-              <Badge variant="destructive" className="text-[10px] shrink-0 gap-1">
+              <Badge variant="destructive" className="text-[9px] shrink-0 gap-1 px-1.5 py-0">
                 <AlertCircle className="w-3 h-3" /> Blocked
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-[10px] shrink-0 text-muted-foreground">
+              <Badge variant="outline" className="text-[9px] shrink-0 text-muted-foreground/70 border-white/[0.08] px-1.5 py-0">
                 Required
               </Badge>
             )}
           </div>
 
           {/* 3. Audio Autoplay & Soundboard */}
-          <div className="p-3.5 rounded-xl border border-border/70 bg-surface-sidebar/50 flex items-center justify-between gap-3">
+          <div className="p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+              <div className="w-8 h-8 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
                 <Volume2 className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
                   Audio Autoplay & Soundboard
                 </div>
-                <p className="text-[11px] text-muted-foreground truncate">
+                <p className="text-[11px] text-muted-foreground/60 truncate">
                   Meme soundboard clips and incoming call ringtones.
                 </p>
               </div>
             </div>
 
             {permissions.audio === 'granted' ? (
-              <Badge variant="success" className="text-[10px] shrink-0 gap-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+              <Badge variant="success" className="text-[9px] shrink-0 gap-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/25 px-1.5 py-0">
                 <CheckCircle2 className="w-3 h-3" /> Unlocked
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-[10px] shrink-0 text-amber-400 border-amber-500/30">
+              <Badge variant="outline" className="text-[9px] shrink-0 text-amber-400 border-amber-500/25 px-1.5 py-0">
                 Pending
               </Badge>
             )}
           </div>
 
           {/* 4. Desktop Notifications */}
-          <div className="p-3.5 rounded-xl border border-border/70 bg-surface-sidebar/50 flex items-center justify-between gap-3">
+          <div className="p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 shrink-0">
+              <div className="w-8 h-8 rounded-md bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 shrink-0">
                 <Bell className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
                   Desktop Alerts
                 </div>
-                <p className="text-[11px] text-muted-foreground truncate">
+                <p className="text-[11px] text-muted-foreground/60 truncate">
                   Direct message pings and call rings when tab is in background.
                 </p>
               </div>
             </div>
 
             {permissions.notifications === 'granted' ? (
-              <Badge variant="success" className="text-[10px] shrink-0 gap-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+              <Badge variant="success" className="text-[9px] shrink-0 gap-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/25 px-1.5 py-0">
                 <CheckCircle2 className="w-3 h-3" /> Allowed
               </Badge>
             ) : permissions.notifications === 'denied' ? (
-              <Badge variant="destructive" className="text-[10px] shrink-0 gap-1">
+              <Badge variant="destructive" className="text-[9px] shrink-0 gap-1 px-1.5 py-0">
                 <AlertCircle className="w-3 h-3" /> Blocked
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-[10px] shrink-0 text-muted-foreground">
+              <Badge variant="outline" className="text-[9px] shrink-0 text-muted-foreground/70 border-white/[0.08] px-1.5 py-0">
                 Optional
               </Badge>
             )}
@@ -390,17 +390,17 @@ export function PermissionsModal({
 
           {/* Denied Tip */}
           {(permissions.mic === 'denied' || permissions.camera === 'denied') && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
+            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div>
-                <strong>Permissions Blocked in Browser:</strong> Click the padlock icon 🔒 in your browser URL address bar to re-enable Microphone & Camera access.
+                <strong>Permissions Blocked in Browser:</strong> Click the padlock icon in your browser URL address bar to re-enable Microphone & Camera access.
               </div>
             </div>
           )}
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-border/80 bg-surface-sidebar/40 flex items-center justify-between gap-3">
+        <div className="px-6 py-3.5 border-t border-white/[0.06] bg-surface-sidebar/40 flex items-center justify-between gap-3">
           <Button
             variant="ghost"
             size="sm"
@@ -415,7 +415,7 @@ export function PermissionsModal({
             size="sm"
             onClick={handleAuthorizeAll}
             disabled={isAuthorizing}
-            className="gap-2 shadow-glow-sm"
+            className="gap-2 font-medium text-xs shadow-sm"
           >
             {isAuthorizing ? (
               <>
@@ -430,7 +430,7 @@ export function PermissionsModal({
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Authorize All Needed Permissions</span>
+                <span>Authorize Permissions</span>
               </>
             )}
           </Button>

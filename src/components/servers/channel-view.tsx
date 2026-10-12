@@ -254,18 +254,18 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
       {/* Center Stage: Channel Chat Feed */}
       <div className="flex-1 flex flex-col h-full min-w-0">
         {/* Top Channel Header */}
-        <div className="h-12 border-b border-subtle px-3 sm:px-4 flex items-center justify-between shrink-0 bg-surface-header/80 backdrop-blur-xl select-none">
+        <div className="h-12 border-b border-white/[0.06] px-3 sm:px-4 flex items-center justify-between shrink-0 bg-surface-header/90 backdrop-blur-md select-none">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => router.push('/')}
-              className="p-1 -ml-1 text-muted-foreground hover:text-foreground hover:bg-white/[0.04] rounded-lg transition-colors flex items-center gap-1"
+              className="p-1.5 -ml-1 text-muted-foreground hover:text-foreground hover:bg-white/[0.04] rounded-md transition-colors flex items-center gap-1"
               title="Back to Direct Messages & Friends"
               aria-label="Back to Direct Messages"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-1.5 min-w-0">
-              <Hash className="w-4 h-4 text-muted-foreground/60 shrink-0" />
+              <Hash className="w-4 h-4 text-muted-foreground/70 shrink-0" />
               <h3 className="font-semibold text-xs text-foreground truncate">
                 {channel.name}
               </h3>
@@ -274,7 +274,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             {channel.topic && (
               <>
                 <span className="w-1 h-1 rounded-full bg-muted-foreground/30 shrink-0 hidden sm:inline-block" />
-                <span className="text-[11px] text-muted-foreground/60 truncate hidden sm:inline-block max-w-sm font-normal">
+                <span className="text-[11px] text-muted-foreground/70 truncate hidden sm:inline-block max-w-sm font-normal">
                   {channel.topic}
                 </span>
               </>
@@ -287,7 +287,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
               variant="outline"
               size="sm"
               onClick={() => router.push('/')}
-              className="h-7 text-xs px-2.5 gap-1.5 border-subtle bg-white/[0.02] text-muted-foreground hover:text-foreground hover:bg-white/[0.06] rounded-lg"
+              className="h-7 text-xs px-2.5 gap-1.5 border-white/[0.06] bg-white/[0.02] text-muted-foreground hover:text-foreground hover:bg-white/[0.05] rounded-md font-medium"
               title="Switch to Direct Messages & Friends"
             >
               <MessageSquare className="w-3.5 h-3.5 text-primary" />
@@ -297,7 +297,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             {/* Search Toggle */}
             <div className="relative">
               {showSearch ? (
-                <div className="flex items-center gap-1 bg-surface-sidebar rounded-lg px-2 py-0.5 border border-subtle">
+                <div className="flex items-center gap-1.5 bg-white/[0.03] rounded-md px-2 py-1 border border-white/[0.08]">
                   <Search className="w-3.5 h-3.5 text-muted-foreground/60" />
                   <input
                     type="text"
@@ -305,7 +305,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search in channel..."
                     aria-label="Search in channel"
-                    className="w-32 sm:w-44 bg-transparent text-xs text-foreground focus:outline-none"
+                    className="w-32 sm:w-44 bg-transparent text-xs text-foreground focus:outline-none placeholder:text-muted-foreground/50"
                     autoFocus
                   />
                   <button
@@ -325,7 +325,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   type="button"
                   onClick={() => setShowSearch(true)}
                   aria-label="Search Messages"
-                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
                   title="Search Messages"
                 >
                   <Search className="w-4 h-4" />
@@ -338,7 +338,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
               type="button"
               onClick={() => setShowSoundboard(true)}
               aria-label="Soundboard"
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
               title="Soundboard"
             >
               <Sparkles className="w-4 h-4" />
@@ -348,9 +348,9 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             <button
               onClick={() => setShowMembers((prev) => !prev)}
               className={cn(
-                'p-1.5 rounded-lg transition-colors',
+                'p-1.5 rounded-md transition-colors',
                 showMembers
-                  ? 'bg-primary/20 text-primary'
+                  ? 'bg-primary/15 text-primary'
                   : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
               )}
               title="Toggle Squad Member List"
@@ -361,16 +361,16 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
         </div>
 
         {/* Message Feed */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
           {/* Channel Start Banner */}
-          <div className="py-6 space-y-2 border-b border-border/40 mb-4">
-            <div className="w-14 h-14 rounded-2xl bg-surface-sidebar border border-border/80 flex items-center justify-center text-primary shadow-inner">
-              <Hash className="w-8 h-8" />
+          <div className="py-4 space-y-2 border-b border-white/[0.06] mb-3">
+            <div className="w-11 h-11 rounded-xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center text-primary">
+              <Hash className="w-6 h-6" />
             </div>
-            <h2 className="text-xl font-black text-foreground tracking-tight">
-              Welcome to #{channel.name}!
+            <h2 className="text-base font-semibold text-foreground tracking-tight">
+              Welcome to #{channel.name}
             </h2>
-            <p className="text-xs text-muted-foreground max-w-md leading-relaxed">
+            <p className="text-xs text-muted-foreground/70 max-w-md leading-relaxed font-normal">
               This is the start of the #{channel.name} channel for {server.name}. Share strats, callouts, and coordinate your gaming matches.
             </p>
           </div>
@@ -381,7 +381,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             return (
               <div
                 key={msg.id}
-                className="flex items-start gap-3.5 group rounded-xl hover:bg-surface-hover/40 p-2 -mx-2 transition-colors"
+                className="flex items-start gap-3 group rounded-lg hover:bg-white/[0.02] p-2 -mx-2 transition-colors"
               >
                 <div
                   className="cursor-pointer"
@@ -392,7 +392,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     src={msg.profile?.avatar_url}
                     name={msg.profile?.display_name || 'Gamer'}
                     size="md"
-                    className="mt-0.5 shrink-0 hover:ring-2 hover:ring-primary transition-all"
+                    className="mt-0.5 shrink-0 hover:ring-1 hover:ring-primary/60 transition-all"
                   />
                 </div>
 
@@ -400,7 +400,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
                       onClick={() => handleStartDirectChat(msg.user_id, msg.profile?.display_name || 'Member')}
-                      className="font-bold text-xs text-foreground hover:underline hover:text-primary cursor-pointer transition-colors"
+                      className="font-medium text-xs text-foreground hover:text-primary cursor-pointer transition-colors"
                       title="Send direct message"
                     >
                       {msg.profile?.display_name || 'Squad Member'}
@@ -409,7 +409,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     {isOwner ? (
                       <Badge
                         variant="default"
-                        className="text-[9px] px-1.5 py-0 bg-amber-500/20 text-amber-400 border-amber-500/30 gap-1 font-mono uppercase"
+                        className="text-[9px] px-1.5 py-0 bg-amber-500/10 text-amber-300 border-amber-500/20 gap-1 font-mono uppercase"
                       >
                         <Crown className="w-2.5 h-2.5" />
                         Leader
@@ -417,13 +417,13 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     ) : (
                       <Badge
                         variant="subtle"
-                        className="text-[9px] px-1.5 py-0 text-primary border-primary/30 font-mono uppercase"
+                        className="text-[9px] px-1.5 py-0 text-primary border-primary/20 bg-primary/10 font-mono uppercase"
                       >
                         Squad
                       </Badge>
                     )}
 
-                    <span className="text-[10px] text-muted-foreground font-mono">
+                    <span className="text-[10px] text-muted-foreground/50 font-mono">
                       {(() => {
                         try {
                           const d = new Date(msg.created_at);
@@ -435,7 +435,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     </span>
 
                     {msg.status === 'sending' && (
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground/60 font-mono">
                         <Loader2 className="w-2.5 h-2.5 animate-spin text-primary" />
                         <span>sending...</span>
                       </span>
@@ -457,7 +457,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     )}
                   </div>
 
-                  <p className="text-xs text-foreground/90 mt-1 leading-relaxed break-words">
+                  <p className="text-xs text-foreground/85 mt-1 leading-relaxed break-words font-normal">
                     {msg.content}
                   </p>
                 </div>
@@ -468,16 +468,16 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 border-t border-subtle bg-surface-header/40 backdrop-blur-xl shrink-0">
+        <div className="p-3 border-t border-white/[0.06] bg-surface-header/50 backdrop-blur-md shrink-0">
           <form
             onSubmit={handleSend}
-            className="flex items-center gap-2 bg-surface-default/70 border border-subtle rounded-xl p-1.5 px-3 focus-within:border-primary/50 transition-all"
+            className="flex items-center gap-2 bg-white/[0.02] border border-white/[0.06] rounded-lg p-1.5 px-3 focus-within:border-white/[0.12] focus-within:bg-white/[0.03] transition-all"
           >
             <button
               type="button"
               onClick={() => setShowSoundboard(true)}
               aria-label="Trigger Soundboard Meme"
-              className="text-muted-foreground hover:text-amber-400 p-1.5 rounded-lg transition-colors shrink-0"
+              className="text-muted-foreground hover:text-amber-400 p-1.5 rounded-md transition-colors shrink-0"
               title="Trigger Soundboard Meme"
             >
               <Sparkles className="w-4 h-4" />
@@ -490,7 +490,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
               onKeyDown={handleKeyDown}
               aria-label={`Message #${channel.name}`}
               placeholder={`Message #${channel.name}...`}
-              className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none resize-none max-h-28 py-1 font-normal"
+              className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-28 py-1 font-normal"
             />
 
             <Button
@@ -498,7 +498,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
               size="sm"
               aria-label="Send channel message"
               disabled={!inputText.trim() || isSending}
-              className="h-8 w-8 p-0 rounded-lg shrink-0 font-medium"
+              className="h-7 w-7 p-0 rounded-md shrink-0 font-medium"
             >
               {isSending ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -512,30 +512,29 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
       {/* Right Squad Members Panel */}
       {showMembers && (
-        <aside className="w-64 border-l border-border bg-surface-sidebar hidden lg:flex flex-col p-4 shrink-0 overflow-y-auto select-none">
+        <aside className="w-60 border-l border-white/[0.06] bg-surface-sidebar hidden lg:flex flex-col p-3 shrink-0 overflow-y-auto select-none">
           {/* Direct Messages Quick Action */}
-          <div className="mb-4 pb-3 border-b border-border/60">
+          <div className="mb-3 pb-2.5 border-b border-white/[0.06]">
             <Button
               size="sm"
-              variant="default"
+              variant="outline"
               onClick={() => router.push('/')}
-              className="w-full text-xs font-bold gap-2 shadow-sm"
+              className="w-full text-xs font-medium gap-2 border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] text-muted-foreground hover:text-foreground h-8"
               title="Exit server to direct messages"
             >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Direct Messages & Friends</span>
+              <MessageSquare className="w-3.5 h-3.5 text-primary" />
+              <span>Direct Messages</span>
             </Button>
           </div>
 
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center justify-between">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2 flex items-center justify-between px-1">
             <span className="flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-primary" />
+              <Users className="w-3 h-3 text-primary/80" />
               <span>Squad ({squadList.length})</span>
             </span>
-            <span className="text-[10px] text-muted-foreground font-normal">Click to chat</span>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {squadList.map((m) => {
               const isMe = m.id === user?.id;
 
@@ -544,14 +543,14 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   key={m.id}
                   onClick={() => !isMe && handleStartDirectChat(m.id, m.display_name)}
                   className={cn(
-                    'flex items-center justify-between p-2 rounded-xl transition-all group',
+                    'flex items-center justify-between p-1.5 rounded-md transition-colors group',
                     isMe
-                      ? 'bg-surface-default/40 opacity-80 cursor-default'
-                      : 'hover:bg-surface-hover cursor-pointer border border-transparent hover:border-border/60'
+                      ? 'bg-white/[0.02] opacity-80 cursor-default'
+                      : 'hover:bg-white/[0.04] cursor-pointer'
                   )}
                   title={isMe ? 'You' : `Send private message to ${m.display_name}`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <Avatar
                       src={m.avatar_url || null}
                       name={m.display_name}
@@ -560,13 +559,13 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                       size="sm"
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors flex items-center gap-1">
+                      <div className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors flex items-center gap-1">
                         <span className="truncate">{m.display_name}</span>
                         {isMe && (
-                          <span className="text-[9px] text-primary font-mono">(You)</span>
+                          <span className="text-[9px] text-muted-foreground/60 font-mono">(You)</span>
                         )}
                       </div>
-                      <div className="text-[10px] text-muted-foreground font-mono truncate">
+                      <div className="text-[10px] text-muted-foreground/60 font-mono truncate">
                         @{m.username}
                       </div>
                     </div>
@@ -580,10 +579,10 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         handleStartDirectChat(m.id, m.display_name);
                       }}
                       aria-label={`Direct Message ${m.display_name}`}
-                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 p-1.5 rounded-lg bg-primary/15 text-primary hover:bg-primary/25 focus:ring-1 focus:ring-primary transition-all shrink-0"
+                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 p-1 rounded-md bg-white/[0.06] text-muted-foreground hover:text-foreground hover:bg-white/[0.1] transition-all shrink-0"
                       title="Direct Message"
                     >
-                      <MessageSquare className="w-3.5 h-3.5" />
+                      <MessageSquare className="w-3 h-3" />
                     </button>
                   )}
                 </div>

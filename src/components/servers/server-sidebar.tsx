@@ -64,26 +64,26 @@ export function ServerSidebar({
   };
 
   return (
-    <aside className="w-60 h-full bg-surface-sidebar border-r border-border flex flex-col justify-between select-none shrink-0 z-20">
-      <div className="overflow-y-auto flex-1">
+    <aside className="w-60 h-full bg-surface-sidebar border-r border-white/[0.06] flex flex-col justify-between select-none shrink-0 z-20">
+      <div className="overflow-y-auto flex-1 no-scrollbar">
         {/* Server Top Header / Dropdown Trigger */}
         <div className="relative">
           <button
             onClick={() => setShowMenu((prev) => !prev)}
-            className="w-full h-14 border-b border-border/80 px-4 flex items-center justify-between hover:bg-surface-hover/80 transition-colors group text-left"
+            className="w-full h-12 border-b border-white/[0.06] px-3.5 flex items-center justify-between hover:bg-white/[0.03] transition-colors group text-left"
           >
             <div className="min-w-0 flex-1 pr-2">
-              <h2 className="font-extrabold text-sm text-foreground truncate group-hover:text-primary transition-colors flex items-center gap-1.5">
+              <h2 className="font-bold text-xs text-foreground truncate group-hover:text-primary transition-colors flex items-center gap-1.5">
                 <span className="truncate">{server.name}</span>
               </h2>
-              <div className="text-[10px] text-muted-foreground truncate font-mono">
+              <div className="text-[10px] text-muted-foreground/60 truncate font-mono">
                 {server.members.length + 3} squad members
               </div>
             </div>
 
             <ChevronDown
               className={cn(
-                'w-4 h-4 text-muted-foreground transition-transform duration-200 shrink-0',
+                'w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 shrink-0',
                 showMenu && 'rotate-180 text-foreground'
               )}
             />
@@ -91,13 +91,13 @@ export function ServerSidebar({
 
           {/* Server Action Dropdown */}
           {showMenu && (
-            <div className="absolute top-14 left-2 right-2 z-40 bg-card border border-border rounded-xl shadow-xl p-1.5 space-y-1 animate-in zoom-in-95 duration-100">
+            <div className="absolute top-13 left-2 right-2 z-40 bg-card border border-white/[0.08] rounded-xl shadow-panel p-1 space-y-0.5 animate-in fade-in duration-100">
               <button
                 onClick={() => {
                   setShowMenu(false);
                   onOpenServerSettings?.();
                 }}
-                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
               >
                 <Settings className="w-3.5 h-3.5" />
                 <span>Server Settings</span>
@@ -108,7 +108,7 @@ export function ServerSidebar({
                   setShowMenu(false);
                   setShowAddChannel(true);
                 }}
-                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
               >
                 <Plus className="w-3.5 h-3.5 text-primary" />
                 <span>Create Channel</span>
@@ -123,7 +123,7 @@ export function ServerSidebar({
                     type: 'success',
                   });
                 }}
-                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
               >
                 <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Invite Squadmates</span>
@@ -133,16 +133,16 @@ export function ServerSidebar({
         </div>
 
         {/* Quick Switch to Direct Messages & Friends */}
-        <div className="p-2 border-b border-border/60 bg-surface-header/30">
+        <div className="p-2 border-b border-white/[0.06]">
           <button
             onClick={() => router.push('/')}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs transition-all border border-primary/20 group shadow-sm text-left"
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] text-muted-foreground hover:text-foreground font-medium text-xs transition-colors border border-white/[0.06] text-left"
             title="Switch to Direct Messages & Friends Hub"
           >
-            <MessageSquare className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" />
+            <MessageSquare className="w-3.5 h-3.5 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
-              <div className="truncate">Direct Messages</div>
-              <div className="text-[10px] text-muted-foreground font-normal truncate">
+              <div className="truncate font-semibold text-foreground text-xs">Direct Messages</div>
+              <div className="text-[10px] text-muted-foreground/60 font-normal truncate">
                 Private chats & friends
               </div>
             </div>
@@ -150,8 +150,8 @@ export function ServerSidebar({
         </div>
 
         {/* Text Channels Category */}
-        <div className="p-3">
-          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 px-2 py-1">
+        <div className="p-2 mt-0.5">
+          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 px-2 py-1">
             <span className="flex items-center gap-1">
               <span>Text Channels</span>
             </span>
@@ -160,15 +160,15 @@ export function ServerSidebar({
                 setNewChannelType('text');
                 setShowAddChannel(true);
               }}
-              className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
+              className="text-muted-foreground/60 hover:text-foreground p-0.5 rounded transition-colors"
               title="Add Text Channel"
               aria-label="Add Text Channel"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
             </button>
           </div>
 
-          <div className="space-y-0.5 mt-1">
+          <div className="space-y-0.5 mt-0.5">
             {textChannels.map((channel) => {
               const isActive = activeChannelId === channel.id;
 
@@ -177,26 +177,30 @@ export function ServerSidebar({
                   key={channel.id}
                   onClick={() => onSelectChannel(channel)}
                   className={cn(
-                    'group flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium cursor-pointer transition-all',
+                    'group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors relative',
                     isActive
-                      ? 'bg-primary/15 text-primary font-bold shadow-glow-sm'
-                      : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+                      ? 'bg-white/[0.06] text-foreground font-semibold'
+                      : 'text-muted-foreground hover:bg-white/[0.03] hover:text-foreground'
                   )}
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <Hash
                       className={cn(
-                        'w-4 h-4 shrink-0 transition-colors',
-                        isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'
+                        'w-3.5 h-3.5 shrink-0 transition-colors',
+                        isActive ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-foreground'
                       )}
                     />
                     <span className="truncate">{channel.name}</span>
                   </div>
 
                   {channel.topic && (
-                    <span className="text-[10px] text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity truncate max-w-[50px]">
+                    <span className="text-[10px] text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity truncate max-w-[50px]">
                       topic
                     </span>
+                  )}
+
+                  {isActive && (
+                    <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-primary rounded-r" />
                   )}
                 </div>
               );
@@ -270,10 +274,10 @@ export function ServerSidebar({
       {showAddChannel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="fixed inset-0 bg-background/80 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm"
             onClick={() => setShowAddChannel(false)}
           />
-          <div className="relative w-full max-w-sm rounded-2xl border border-border bg-surface-default p-5 shadow-2xl z-10 space-y-4">
+          <div className="relative w-full max-w-sm rounded-2xl border border-white/[0.08] bg-surface-default p-5 shadow-modal z-10 space-y-4">
             <h3 className="text-sm font-bold text-foreground">Create Channel</h3>
 
             <div className="flex gap-2">
@@ -281,10 +285,10 @@ export function ServerSidebar({
                 type="button"
                 onClick={() => setNewChannelType('text')}
                 className={cn(
-                  'flex-1 p-2.5 rounded-xl border flex flex-col items-center gap-1 text-xs font-bold transition-all',
+                  'flex-1 p-2 rounded-xl border flex flex-col items-center gap-1 text-xs font-semibold transition-colors',
                   newChannelType === 'text'
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border/60 bg-surface-sidebar text-muted-foreground'
+                    ? 'border-primary/50 bg-primary/10 text-primary'
+                    : 'border-white/[0.06] bg-surface-panel text-muted-foreground hover:text-foreground'
                 )}
               >
                 <Hash className="w-4 h-4" />
@@ -294,10 +298,10 @@ export function ServerSidebar({
                 type="button"
                 onClick={() => setNewChannelType('voice')}
                 className={cn(
-                  'flex-1 p-2.5 rounded-xl border flex flex-col items-center gap-1 text-xs font-bold transition-all',
+                  'flex-1 p-2 rounded-xl border flex flex-col items-center gap-1 text-xs font-semibold transition-colors',
                   newChannelType === 'voice'
-                    ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
-                    : 'border-border/60 bg-surface-sidebar text-muted-foreground'
+                    ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                    : 'border-white/[0.06] bg-surface-panel text-muted-foreground hover:text-foreground'
                 )}
               >
                 <Volume2 className="w-4 h-4" />
@@ -306,7 +310,7 @@ export function ServerSidebar({
             </div>
 
             <div>
-              <label htmlFor="new-channel-name-input" className="text-xs font-medium text-foreground block mb-1">
+              <label htmlFor="new-channel-name-input" className="text-xs font-medium text-foreground block mb-1.5">
                 Channel Name
               </label>
               <input
@@ -314,8 +318,8 @@ export function ServerSidebar({
                 type="text"
                 value={newChannelName}
                 onChange={(e) => setNewChannelName(e.target.value)}
-                placeholder={newChannelType === 'text' ? 'e.g. ranked-strats' : 'e.g. Scrim Comms'}
-                className="w-full px-3 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder={newChannelType === 'text' ? 'e.g. general' : 'e.g. Scrim Voice'}
+                className="w-full px-3 py-2 rounded-xl border border-white/[0.08] bg-surface-panel text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50"
               />
             </div>
 
@@ -331,7 +335,7 @@ export function ServerSidebar({
                 type="button"
                 disabled={!newChannelName.trim()}
                 onClick={handleCreateChannelSubmit}
-                className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold shadow-md hover:opacity-90 disabled:opacity-50"
+                className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-subtle hover:bg-primary-hover disabled:opacity-50"
               >
                 Create
               </button>

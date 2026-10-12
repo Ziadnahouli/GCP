@@ -171,7 +171,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
               }}
             />
 
-            <div className="flex flex-col w-[calc(92vw-72px)] sm:w-64 max-w-[280px] h-full bg-surface-sidebar border-r border-border">
+            <div className="flex flex-col w-[calc(92vw-72px)] sm:w-64 max-w-[280px] h-full bg-surface-sidebar border-r border-white/[0.06]">
               <div className="flex-1 overflow-hidden">
                 {activeServer && !selectedConversationId ? (
                   <ServerSidebar
@@ -216,7 +216,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto min-h-0 bg-background">{children}</main>
 
         {/* 4. Mobile Bottom Tab Bar (Phone Friendly) */}
-        <nav className="md:hidden h-14 bg-surface-sidebar border-t border-border/80 flex items-center justify-around px-2 shrink-0 z-20 select-none">
+        <nav className="md:hidden h-14 bg-surface-sidebar border-t border-white/[0.06] flex items-center justify-around px-2 shrink-0 z-20 select-none">
           <button
             onClick={() => router.push('/')}
             className={cn(

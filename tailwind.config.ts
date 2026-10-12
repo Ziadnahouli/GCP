@@ -67,8 +67,11 @@ const config: Config = {
         sm: 'calc(var(--radius) - 4px)',
       },
       boxShadow: {
-        glow: '0 0 20px -5px hsl(var(--primary) / 0.35)',
-        'glow-sm': '0 0 10px -2px hsl(var(--primary) / 0.25)',
+        'subtle': '0 1px 2px 0 rgba(0, 0, 0, 0.35)',
+        'panel': '0 4px 20px -2px rgba(0, 0, 0, 0.45)',
+        'modal': '0 12px 32px -4px rgba(0, 0, 0, 0.6)',
+        'glow': '0 0 16px -4px hsl(var(--primary) / 0.25)',
+        'glow-sm': '0 0 8px -2px hsl(var(--primary) / 0.20)',
       },
       keyframes: {
         'accordion-down': {

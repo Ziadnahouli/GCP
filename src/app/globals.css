@@ -4,54 +4,54 @@
 
 @layer base {
   :root {
-    /* Base dark Zen Obsidian palette */
-    --background: 224 30% 5%; /* #07080c deep obsidian */
+    /* Premium Graphite & Deep Slate Minimal Palette */
+    --background: 222 18% 7%; /* #0f1117 deep graphite */
     --foreground: 210 20% 98%;
 
-    --card: 224 24% 8%; /* #0c0f15 */
+    --card: 220 15% 10%; /* #14171f subtle elevation */
     --card-foreground: 210 20% 98%;
 
-    --popover: 224 24% 8%;
+    --popover: 220 15% 10%;
     --popover-foreground: 210 20% 98%;
 
-    /* Default Accent: Violet */
-    --primary: 263 70% 58%; /* #8b5cf6 */
+    /* Restrained Blue-Violet Accent (#6366f1) */
+    --primary: 239 84% 67%;
     --primary-foreground: 210 40% 98%;
-    --primary-hover: 263 70% 50%;
+    --primary-hover: 239 84% 60%;
 
-    --secondary: 224 18% 12%;
+    --secondary: 220 14% 13%;
     --secondary-foreground: 210 20% 95%;
 
-    --muted: 224 16% 14%;
-    --muted-foreground: 215 15% 65%;
+    --muted: 220 13% 14%;
+    --muted-foreground: 218 13% 62%;
 
-    --accent: 224 20% 13%;
+    --accent: 220 14% 14%;
     --accent-foreground: 210 20% 98%;
 
     --destructive: 350 80% 55%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 224 16% 14%;
-    --input: 224 16% 14%;
-    --ring: 263 70% 58%;
+    --border: 220 13% 14%;
+    --input: 220 13% 14%;
+    --ring: 239 84% 67%;
 
-    /* Gaming Surface Hierarchy */
-    --surface-default: 224 22% 8.5%;
-    --surface-hover: 224 20% 13%;
-    --surface-active: 224 20% 16%;
-    --surface-header: 224 25% 6.5%;
-    --surface-sidebar: 224 30% 5%; /* Deepest shell */
-    --surface-panel: 224 22% 9.5%;
+    /* Restrained Graphite Surface Hierarchy */
+    --surface-default: 220 15% 10%; /* #14171f */
+    --surface-hover: 220 14% 14.5%; /* #1d212b */
+    --surface-active: 220 14% 17%; /* #222733 */
+    --surface-header: 220 17% 8%; /* #111319 */
+    --surface-sidebar: 220 19% 6%; /* #0c0e14 deepest shell */
+    --surface-panel: 220 14% 12%; /* #171a23 */
 
-    --radius: 0.75rem;
+    --radius: 0.625rem;
   }
 
   /* Accent theme variations */
   [data-theme='violet'] {
-    --primary: 263 70% 58%;
+    --primary: 239 84% 67%; /* Restrained blue-violet default */
     --primary-foreground: 210 40% 98%;
-    --primary-hover: 263 70% 50%;
-    --ring: 263 70% 58%;
+    --primary-hover: 239 84% 60%;
+    --ring: 239 84% 67%;
   }
 
   [data-theme='cyan'] {
@@ -144,33 +144,37 @@ input:-webkit-autofill:active {
   background: hsl(224 15% 32%);
 }
 
-/* Glassmorphism & Minimal Obsidian Utilities */
+/* Minimal Graphite Glass Panels */
 .glass-panel {
-  background: hsla(224, 24%, 8%, 0.78);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid hsla(210, 20%, 98%, 0.06);
+  background: hsla(220, 16%, 10%, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid hsla(0, 0%, 100%, 0.06);
 }
 
 .glass-dock {
-  background: hsla(224, 26%, 6%, 0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid hsla(210, 20%, 98%, 0.08);
+  background: hsla(220, 18%, 8%, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid hsla(0, 0%, 100%, 0.07);
 }
 
 .border-subtle {
-  border-color: hsla(210, 20%, 98%, 0.06);
+  border-color: hsla(0, 0%, 100%, 0.06);
 }
 
-/* Custom glow utility */
+/* Restrained Focus & Elevation */
+.elevation-panel {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.45);
+}
+
 .glow-primary {
-  box-shadow: 0 0 20px -3px hsl(var(--primary) / 0.35);
+  box-shadow: 0 0 16px -4px hsl(var(--primary) / 0.25);
 }
 
 .glow-border {
-  border-color: hsl(var(--primary) / 0.5);
-  box-shadow: 0 0 12px -2px hsl(var(--primary) / 0.25);
+  border-color: hsl(var(--primary) / 0.4);
+  box-shadow: 0 0 8px -2px hsl(var(--primary) / 0.18);
 }
 
 /* Touch friendly no-scrollbar utility for mobile horizontal tab strips */

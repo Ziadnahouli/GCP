@@ -141,36 +141,36 @@ export function LogsWindow({ open: controlledOpen, onOpenChange }: LogsWindowPro
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-background/70 backdrop-blur-md animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-background/80 backdrop-blur-md animate-in fade-in duration-150">
       <div
         className={cn(
-          'relative w-full rounded-2xl border border-border/90 bg-surface-default shadow-2xl flex flex-col overflow-hidden transition-all duration-200 z-10',
+          'relative w-full rounded-2xl border border-white/[0.08] bg-surface-panel shadow-2xl shadow-black/90 flex flex-col overflow-hidden transition-all duration-200 z-10',
           isExpanded
             ? 'h-[96vh] max-w-[98vw]'
             : 'h-[85vh] max-h-[750px] max-w-5xl'
         )}
       >
         {/* Header Bar */}
-        <div className="px-4 py-3 bg-surface-sidebar border-b border-border/80 flex items-center justify-between shrink-0 select-none">
+        <div className="px-4 py-3 bg-surface-sidebar border-b border-white/[0.06] flex items-center justify-between shrink-0 select-none">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shadow-glow-sm">
+            <div className="w-8 h-8 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center text-primary">
               <Terminal className="w-4 h-4" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-foreground">
-                  Nexus Diagnostics & Live Logs
+                <h3 className="text-xs font-semibold text-foreground">
+                  GCP Diagnostics & Live Logs
                 </h3>
                 {errorCount > 0 && (
-                  <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                  <Badge variant="destructive" className="text-[9px] px-1.5 py-0">
                     {errorCount} {errorCount === 1 ? 'Error' : 'Errors'}
                   </Badge>
                 )}
-                <span className="text-[11px] font-mono text-muted-foreground hidden sm:inline">
-                  (Press Ctrl + ~ to toggle)
+                <span className="text-[10px] font-mono text-muted-foreground/60 hidden sm:inline">
+                  (Ctrl + ~)
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground/60">
                 Real-time Supabase messaging, WebSocket, session & network event telemetry.
               </p>
             </div>
@@ -181,16 +181,16 @@ export function LogsWindow({ open: controlledOpen, onOpenChange }: LogsWindowPro
               variant="ghost"
               size="sm"
               onClick={() => setIsExpanded((prev) => !prev)}
-              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
               title={isExpanded ? 'Restore window size' : 'Maximize window'}
             >
-              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setIsOpen(false)}
-              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
               title="Close diagnostics window"
             >
               <X className="w-4 h-4" />
@@ -199,13 +199,13 @@ export function LogsWindow({ open: controlledOpen, onOpenChange }: LogsWindowPro
         </div>
 
         {/* Live System Diagnostics Status Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-surface-sidebar/50 border-b border-border/60 text-xs shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-surface-sidebar/40 border-b border-white/[0.06] text-xs shrink-0">
           {/* 1. Database Ping */}
-          <div className="p-2 rounded-xl border border-border/60 bg-surface-sidebar/80 flex items-center gap-2">
+          <div className="p-2 rounded-lg border border-white/[0.06] bg-white/[0.02] flex items-center gap-2">
             <Database className="w-4 h-4 text-primary shrink-0" />
             <div className="min-w-0">
-              <div className="text-[10px] text-muted-foreground uppercase font-bold">Database Latency</div>
-              <div className="font-mono font-semibold text-foreground truncate">
+              <div className="text-[10px] text-muted-foreground/70 uppercase font-semibold">Database Latency</div>
+              <div className="font-mono font-medium text-foreground text-xs truncate">
                 {isRunningDiagnostics ? (
                   <span className="text-muted-foreground animate-pulse">Pinging...</span>
                 ) : diagnosticsSummary ? (

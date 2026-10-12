@@ -77,11 +77,11 @@ export function UserBar() {
 
   return (
     <>
-      <div className="relative h-13 bg-surface-sidebar/95 backdrop-blur-md border-t border-subtle px-2 py-1.5 flex items-center justify-between select-none transition-colors">
+      <div className="relative h-13 bg-surface-sidebar border-t border-white/[0.06] px-2 py-1.5 flex items-center justify-between select-none">
         {/* User Info & Avatar Button */}
         <div
           onClick={() => setShowStatusPicker((prev) => !prev)}
-          className="flex items-center gap-2 p-1 rounded-lg hover:bg-white/[0.04] transition-colors cursor-pointer min-w-0 max-w-[105px] sm:max-w-[120px]"
+          className="flex items-center gap-2 p-1 rounded-lg hover:bg-white/[0.03] transition-colors cursor-pointer min-w-0 max-w-[105px] sm:max-w-[120px]"
           title="Click to change status"
         >
           <Avatar

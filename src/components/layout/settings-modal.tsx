@@ -163,23 +163,23 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-4xl p-0 h-[620px] max-h-[92vh] flex flex-col md:flex-row overflow-hidden border-border bg-card w-[95vw] md:w-full"
+        className="max-w-4xl p-0 h-[620px] max-h-[92vh] flex flex-col md:flex-row overflow-hidden border border-white/[0.08] bg-surface-panel w-[95vw] md:w-full shadow-2xl shadow-black/90 rounded-2xl"
         onClose={() => onOpenChange(false)}
       >
         {/* Settings Navigation Sidebar */}
-        <div className="w-full md:w-56 bg-surface-sidebar p-3 md:p-4 border-b md:border-b-0 md:border-r border-border shrink-0 flex flex-row md:flex-col justify-between overflow-x-auto md:overflow-x-visible gap-2 no-scrollbar">
+        <div className="w-full md:w-56 bg-surface-sidebar p-3 md:p-4 border-b md:border-b-0 md:border-r border-white/[0.06] shrink-0 flex flex-row md:flex-col justify-between overflow-x-auto md:overflow-x-visible gap-2 no-scrollbar select-none">
           <div className="flex flex-row md:flex-col gap-1 items-center md:items-stretch overflow-x-auto shrink-0 no-scrollbar">
-            <div className="hidden md:block px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+            <div className="hidden md:block px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
               User Settings
             </div>
 
             <button
               onClick={() => setActiveTab('profile')}
               className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
+                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
                 activeTab === 'profile'
-                  ? 'bg-primary/15 text-primary font-semibold'
-                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+                  ? 'bg-white/[0.06] text-foreground font-medium'
+                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
               )}
             >
               <User className="w-4 h-4 shrink-0" />
@@ -189,10 +189,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <button
               onClick={() => setActiveTab('appearance')}
               className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
+                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
                 activeTab === 'appearance'
-                  ? 'bg-primary/15 text-primary font-semibold'
-                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+                  ? 'bg-white/[0.06] text-foreground font-medium'
+                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
               )}
             >
               <Palette className="w-4 h-4 shrink-0" />
@@ -202,10 +202,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <button
               onClick={() => setActiveTab('audio')}
               className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
+                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
                 activeTab === 'audio'
-                  ? 'bg-primary/15 text-primary font-semibold'
-                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+                  ? 'bg-white/[0.06] text-foreground font-medium'
+                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
               )}
             >
               <Volume2 className="w-4 h-4 shrink-0" />
@@ -215,10 +215,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <button
               onClick={() => setActiveTab('notifications')}
               className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
+                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
                 activeTab === 'notifications'
-                  ? 'bg-primary/15 text-primary font-semibold'
-                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+                  ? 'bg-white/[0.06] text-foreground font-medium'
+                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
               )}
             >
               <Bell className="w-4 h-4 shrink-0" />
@@ -228,10 +228,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             <button
               onClick={() => setActiveTab('diagnostics')}
               className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left shrink-0',
+                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
                 activeTab === 'diagnostics'
-                  ? 'bg-primary/15 text-primary font-semibold'
-                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+                  ? 'bg-white/[0.06] text-foreground font-medium'
+                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
               )}
             >
               <Terminal className="w-4 h-4 shrink-0" />
@@ -239,7 +239,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             </button>
           </div>
 
-          <div className="border-t-0 md:border-t border-border/80 pt-0 md:pt-3 shrink-0 flex items-center">
+          <div className="border-t-0 md:border-t border-white/[0.06] pt-0 md:pt-3 shrink-0 flex items-center">
             <button
               onClick={async () => {
                 await signOut();
@@ -250,7 +250,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   type: 'info',
                 });
               }}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors text-left shrink-0"
+              className="flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors text-left shrink-0"
             >
               <LogOut className="w-4 h-4 shrink-0" />
               <span>Sign Out</span>
@@ -259,7 +259,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </div>
 
         {/* Settings Body Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-card">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-surface-panel">
           {activeTab === 'profile' && (
             <div className="space-y-6 max-w-xl">
               <div>
@@ -270,7 +270,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               </div>
 
               {/* Profile Card Preview */}
-              <div className="rounded-xl border border-border bg-surface-default overflow-hidden shadow-sm">
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden shadow-sm">
                 <div
                   className="h-20 w-full transition-colors relative"
                   style={{ backgroundColor: bannerColor }}
@@ -283,20 +283,20 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       status={profile?.status || 'online'}
                       showStatus
                       size="lg"
-                      className="border-4 border-card"
+                      className="border-4 border-surface-panel"
                     />
                     <div className="mb-1">
-                      <div className="font-bold text-foreground leading-tight text-base">
+                      <div className="font-semibold text-foreground leading-tight text-base">
                         {displayName || 'Anonymous Gamer'}
                       </div>
-                      <div className="text-xs text-muted-foreground font-mono">
+                      <div className="text-xs text-muted-foreground/60 font-mono">
                         @{username || 'gamer'}
                       </div>
                     </div>
                   </div>
                 </div>
                 {customStatus && (
-                  <div className="px-5 pb-4 text-xs text-primary font-medium flex items-center gap-1.5 border-t border-border/50 pt-2.5">
+                  <div className="px-5 pb-4 text-xs text-primary font-medium flex items-center gap-1.5 border-t border-white/[0.06] pt-2.5">
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>{customStatus}</span>
                   </div>
@@ -316,6 +316,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       onChange={(e) => setDisplayName(e.target.value)}
                       placeholder="GhostRider"
                       maxLength={40}
+                      className="bg-white/[0.02] border-white/[0.08] text-xs"
                     />
                   </div>
                   <div>
@@ -328,6 +329,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       onChange={(e) => setUsername(e.target.value)}
                       placeholder="ghost_rider"
                       maxLength={30}
+                      className="bg-white/[0.02] border-white/[0.08] text-xs"
                     />
                   </div>
                 </div>
@@ -352,13 +354,13 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                         type="button"
                         onClick={() => setPresenceStatus(opt.value)}
                         className={cn(
-                          'flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all text-left',
+                          'flex items-center gap-2 p-2 rounded-lg border text-xs font-medium transition-all text-left',
                           presenceStatus === opt.value
-                            ? 'border-primary bg-primary/15 text-primary shadow-glow-sm'
-                            : 'border-border/60 bg-surface-default hover:bg-surface-hover text-muted-foreground hover:text-foreground'
+                            ? 'border-primary/50 bg-primary/10 text-primary'
+                            : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] text-muted-foreground hover:text-foreground'
                         )}
                       >
-                        <span className={cn('w-2.5 h-2.5 rounded-full shrink-0', opt.color)} />
+                        <span className={cn('w-2 h-2 rounded-full shrink-0', opt.color)} />
                         <span className="truncate">{opt.label}</span>
                       </button>
                     ))}
@@ -375,6 +377,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     onChange={(e) => setCustomStatus(e.target.value)}
                     placeholder="In match • Ranking up"
                     maxLength={80}
+                    className="bg-white/[0.02] border-white/[0.08] text-xs"
                   />
                 </div>
 
@@ -387,6 +390,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     value={avatarUrl}
                     onChange={(e) => setAvatarUrl(e.target.value)}
                     placeholder="https://..."
+                    className="bg-white/[0.02] border-white/[0.08] text-xs"
                   />
                 </div>
 
@@ -401,7 +405,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       aria-label="Banner Color Picker"
                       value={bannerColor}
                       onChange={(e) => setBannerColor(e.target.value)}
-                      className="w-10 h-10 rounded-lg border border-border bg-transparent cursor-pointer p-0.5"
+                      className="w-9 h-9 rounded-md border border-white/[0.08] bg-transparent cursor-pointer p-0.5"
                     />
                     <Input
                       id="settings-bannerColor"
@@ -409,7 +413,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       onChange={(e) => setBannerColor(e.target.value)}
                       placeholder="#7c3aed"
                       aria-label="Banner Color Hex"
-                      className="max-w-[140px] font-mono text-xs uppercase"
+                      className="max-w-[140px] font-mono text-xs uppercase bg-white/[0.02] border-white/[0.08]"
                     />
                   </div>
                 </div>
@@ -426,19 +430,19 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     maxLength={200}
                     aria-label="About Me / Bio"
                     placeholder="Tell your squad what games you play..."
-                    className="w-full rounded-lg border border-border bg-surface-default p-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-transparent transition-all resize-none"
+                    className="w-full rounded-lg border border-white/[0.08] bg-white/[0.02] p-3 text-xs text-foreground focus-visible:outline-none focus-visible:border-white/[0.2] transition-colors resize-none"
                   />
-                  <div className="text-[10px] text-muted-foreground text-right mt-1">
+                  <div className="text-[10px] text-muted-foreground/60 text-right mt-1">
                     {bio.length}/200
                   </div>
                 </div>
 
                 <div className="pt-2">
-                  <Button onClick={handleSaveProfile} disabled={isSaving} className="gap-2">
+                  <Button onClick={handleSaveProfile} disabled={isSaving} className="gap-2 font-medium">
                     {isSaving ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
-                      <Save className="w-4 h-4" />
+                      <Save className="w-3.5 h-3.5" />
                     )}
                     Save Profile Changes
                   </Button>
@@ -450,9 +454,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           {activeTab === 'appearance' && (
             <div className="space-y-6 max-w-xl">
               <div>
-                <h3 className="text-lg font-bold text-foreground">Appearance & Accent Themes</h3>
-                <p className="text-xs text-muted-foreground">
-                  Select your signature neon accent color for buttons, highlights, and borders.
+                <h3 className="text-lg font-semibold text-foreground">Appearance & Accent Themes</h3>
+                <p className="text-xs text-muted-foreground/70">
+                  Select your signature accent color for buttons, highlights, and borders.
                 </p>
               </div>
 
@@ -464,17 +468,17 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       key={theme.id}
                       onClick={() => handleSaveAppearance(theme.id)}
                       className={cn(
-                        'flex items-center justify-between p-3.5 rounded-xl border transition-all text-left',
+                        'flex items-center justify-between p-3 rounded-lg border transition-all text-left',
                         isSelected
-                          ? 'border-primary bg-primary/10 shadow-glow-sm'
-                          : 'border-border bg-surface-default hover:bg-surface-hover hover:border-border/80'
+                          ? 'border-primary/50 bg-primary/10'
+                          : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04]'
                       )}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5">
                         <span
-                          className={cn('w-5 h-5 rounded-full shrink-0 shadow-sm', theme.class)}
+                          className={cn('w-4 h-4 rounded-full shrink-0 shadow-sm', theme.class)}
                         />
-                        <span className="text-sm font-semibold text-foreground">{theme.name}</span>
+                        <span className="text-xs font-medium text-foreground">{theme.name}</span>
                       </div>
                       {isSelected && <Check className="w-4 h-4 text-primary" />}
                     </button>
@@ -482,8 +486,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 })}
               </div>
 
-              <div className="p-4 rounded-xl border border-border bg-surface-default mt-4 space-y-2">
-                <div className="text-xs font-semibold text-foreground">Theme Live Preview</div>
+              <div className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] mt-4 space-y-2">
+                <div className="text-xs font-medium text-foreground">Theme Live Preview</div>
                 <div className="flex items-center gap-2">
                   <Button size="sm">Primary Button</Button>
                   <Button size="sm" variant="outline">
@@ -500,8 +504,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           {activeTab === 'audio' && (
             <div className="space-y-6 max-w-xl">
               <div>
-                <h3 className="text-lg font-bold text-foreground">Voice & Audio Settings</h3>
-                <p className="text-xs text-muted-foreground">
+                <h3 className="text-lg font-semibold text-foreground">Voice & Audio Settings</h3>
+                <p className="text-xs text-muted-foreground/70">
                   Configure default input and output levels, sound effects, and push-to-talk.
                 </p>
               </div>
@@ -512,7 +516,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     <span className="flex items-center gap-1.5 text-foreground">
                       <Mic className="w-4 h-4 text-primary" /> Input Volume (Microphone)
                     </span>
-                    <span className="text-muted-foreground font-mono">{inputVol}%</span>
+                    <span className="text-muted-foreground/70 font-mono text-[11px]">{inputVol}%</span>
                   </div>
                   <input
                     type="range"
@@ -521,7 +525,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     aria-label="Input Volume (Microphone)"
                     value={inputVol}
                     onChange={(e) => setInputVol(Number(e.target.value))}
-                    className="w-full accent-primary h-2 bg-surface-panel rounded-lg cursor-pointer"
+                    className="w-full accent-primary h-1.5 bg-white/[0.06] rounded-lg cursor-pointer"
                   />
                 </div>
 
@@ -530,7 +534,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     <span className="flex items-center gap-1.5 text-foreground">
                       <Headphones className="w-4 h-4 text-primary" /> Output Volume (Headset)
                     </span>
-                    <span className="text-muted-foreground font-mono">{outputVol}%</span>
+                    <span className="text-muted-foreground/70 font-mono text-[11px]">{outputVol}%</span>
                   </div>
                   <input
                     type="range"
@@ -539,18 +543,18 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     aria-label="Output Volume (Headset)"
                     value={outputVol}
                     onChange={(e) => setOutputVol(Number(e.target.value))}
-                    className="w-full accent-primary h-2 bg-surface-panel rounded-lg cursor-pointer"
+                    className="w-full accent-primary h-1.5 bg-white/[0.06] rounded-lg cursor-pointer"
                   />
                 </div>
 
-                <div className="pt-2 border-t border-border space-y-3">
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-surface-default border border-border cursor-pointer">
+                <div className="pt-2 border-t border-white/[0.06] space-y-2.5">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer">
                     <div>
                       <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
                         <ShieldCheck className="w-4 h-4 text-emerald-400" />
                         AI Noise Suppression & Acoustic Filtering
                       </div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                      <div className="text-[10px] text-muted-foreground/60 mt-0.5">
                         Filters background mechanical keyboard clicks, fan hum, and room noise in voice calls.
                       </div>
                     </div>
@@ -562,7 +566,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     />
                   </label>
 
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-surface-default border border-border cursor-pointer">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer">
                     <span className="text-xs font-medium text-foreground">
                       Enable Soundboard & System Sound Effects
                     </span>
@@ -574,10 +578,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     />
                   </label>
 
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-surface-default border border-border cursor-pointer">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer">
                     <div>
                       <div className="text-xs font-medium text-foreground">Push To Talk Mode</div>
-                      <div className="text-[10px] text-muted-foreground">
+                      <div className="text-[10px] text-muted-foreground/60">
                         Default trigger key: [V]
                       </div>
                     </div>
@@ -590,8 +594,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   </label>
                 </div>
 
-                <Button onClick={handleSaveAudio} disabled={isSaving} className="gap-2">
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <Button onClick={handleSaveAudio} disabled={isSaving} className="gap-2 font-medium">
+                  {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                   Save Audio Preferences
                 </Button>
               </div>
@@ -601,17 +605,17 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           {activeTab === 'notifications' && (
             <div className="space-y-6 max-w-xl">
               <div>
-                <h3 className="text-lg font-bold text-foreground">Notification Preferences</h3>
-                <p className="text-xs text-muted-foreground">
+                <h3 className="text-lg font-semibold text-foreground">Notification Preferences</h3>
+                <p className="text-xs text-muted-foreground/70">
                   Control alert badges, desktop notifications, and incoming call sounds.
                 </p>
               </div>
 
               <div className="space-y-3">
-                <label className="flex items-center justify-between p-3 rounded-lg bg-surface-default border border-border cursor-pointer">
+                <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer">
                   <div>
                     <div className="text-xs font-medium text-foreground">Desktop Notifications</div>
-                    <div className="text-[10px] text-muted-foreground">
+                    <div className="text-[10px] text-muted-foreground/60">
                       Show popup alerts when friends send messages or call requests
                     </div>
                   </div>
@@ -632,19 +636,19 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           {activeTab === 'diagnostics' && (
             <div className="space-y-6 max-w-xl">
               <div>
-                <h3 className="text-lg font-bold text-foreground">System Diagnostics & Logs</h3>
-                <p className="text-xs text-muted-foreground">
+                <h3 className="text-lg font-semibold text-foreground">System Diagnostics & Logs</h3>
+                <p className="text-xs text-muted-foreground/70">
                   Inspect messaging pipeline, Supabase WebSocket connections, session expirations, and network latency.
                 </p>
               </div>
 
-              <div className="p-4 rounded-xl border border-primary/30 bg-primary/10 space-y-3">
-                <div className="flex items-center gap-2 text-primary font-bold text-sm">
-                  <Terminal className="w-4 h-4" />
+              <div className="p-4 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-3">
+                <div className="flex items-center gap-2 text-foreground font-semibold text-xs">
+                  <Terminal className="w-4 h-4 text-primary" />
                   <span>Interactive Real-Time Diagnostics Console</span>
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  The logs console captures all message send attempts, database queries, and WebSocket states. You can also toggle it at any time with <kbd className="px-1.5 py-0.5 rounded bg-surface-sidebar border border-border text-[11px] font-mono">Ctrl + ~</kbd>.
+                <p className="text-xs text-muted-foreground/70 leading-relaxed font-normal">
+                  The logs console captures all message send attempts, database queries, and WebSocket states. You can also toggle it at any time with <kbd className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-[10px] font-mono">Ctrl + ~</kbd>.
                 </p>
                 <div className="pt-1 flex gap-2">
                   <Button
@@ -652,9 +656,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       onOpenChange(false);
                       triggerOpenLogsWindow();
                     }}
-                    className="font-bold gap-2 text-xs"
+                    className="font-medium gap-2 text-xs"
                   >
-                    <Terminal className="w-4 h-4" />
+                    <Terminal className="w-3.5 h-3.5" />
                     Open Diagnostics Window
                   </Button>
                 </div>

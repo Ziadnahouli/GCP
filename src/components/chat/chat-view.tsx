@@ -304,15 +304,15 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       )}
 
       {/* Chat Top Header */}
-      <div className="h-13 border-b border-subtle px-4 flex items-center justify-between shrink-0 select-none bg-surface-header/60 backdrop-blur-xl">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="h-12 border-b border-white/[0.06] px-3 sm:px-4 flex items-center justify-between shrink-0 select-none bg-surface-header">
+        <div className="flex items-center gap-2.5 min-w-0">
           {onBack && (
             <button
               onClick={onBack}
-              className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground rounded-lg"
+              className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/[0.04]"
               aria-label="Back"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4" />
             </button>
           )}
 
@@ -358,10 +358,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             className={cn(
               'p-1.5 rounded-lg transition-colors',
               showSearchInput || searchQuery
-                ? 'bg-primary/20 text-primary'
+                ? 'bg-primary/15 text-primary'
                 : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
             )}
             title="Search Messages"
+            aria-label="Search Messages"
           >
             <Search className="w-4 h-4" />
           </button>
@@ -372,10 +373,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             className={cn(
               'p-1.5 rounded-lg transition-colors relative',
               showPinnedOnly
-                ? 'bg-primary/20 text-primary'
+                ? 'bg-primary/15 text-primary'
                 : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
             )}
             title="Pinned Messages"
+            aria-label="Pinned Messages"
           >
             <Pin className="w-4 h-4" />
             {pinnedCount > 0 && (
@@ -391,6 +393,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             }}
             className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
             title="Start Voice Call"
+            aria-label="Start Voice Call"
           >
             <Phone className="w-4 h-4" />
           </button>
@@ -402,6 +405,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             }}
             className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
             title="Start Video Call"
+            aria-label="Start Video Call"
           >
             <Video className="w-4 h-4" />
           </button>
@@ -836,8 +840,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       )}
 
       {/* Chat Input Bar */}
-      <div className="p-3 sm:p-4 border-t border-subtle bg-surface-header/40 backdrop-blur-xl">
-        <form onSubmit={handleSend} className="relative flex items-center gap-2">
+      <div className="p-3 sm:p-3.5 border-t border-white/[0.06] bg-surface-header/50">
+        <form onSubmit={handleSend} className="relative flex items-center gap-1.5 sm:gap-2">
           {/* Hidden File Input */}
           <input
             ref={fileInputRef}
@@ -879,7 +883,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               value={inputContent}
               onChange={(e) => setInputContent(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="w-full h-10 pl-3.5 pr-10 rounded-xl bg-surface-default/70 border border-subtle text-xs sm:text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all font-normal"
+              className="w-full h-10 pl-3.5 pr-10 rounded-xl bg-surface-default/80 border border-white/[0.08] hover:border-white/[0.14] text-xs sm:text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50 transition-colors font-normal"
             />
 
             {/* Quick Emoji Trigger */}

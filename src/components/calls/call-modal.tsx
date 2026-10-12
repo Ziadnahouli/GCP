@@ -135,14 +135,14 @@ export function CallModal({
   return (
     <div
       className={cn(
-        'fixed z-50 transition-all duration-200 flex flex-col overflow-hidden glass-panel shadow-2xl shadow-black/80 border border-subtle',
+        'fixed z-50 transition-all duration-200 flex flex-col overflow-hidden bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90',
         isFullscreen
           ? 'inset-0 rounded-none'
           : 'inset-0 sm:inset-auto sm:bottom-6 sm:right-6 sm:w-full sm:max-w-2xl sm:h-[480px] sm:rounded-2xl rounded-none'
       )}
     >
       {/* Call Header */}
-      <div className="h-11 border-b border-subtle px-4 flex items-center justify-between shrink-0 bg-surface-header/60 select-none backdrop-blur-md">
+      <div className="h-11 border-b border-white/[0.06] px-4 flex items-center justify-between shrink-0 bg-surface-header/90 select-none backdrop-blur-md">
         <div className="flex items-center gap-2">
           <span
             className={cn(
@@ -194,19 +194,19 @@ export function CallModal({
       </div>
 
       {/* Main Calling Stage */}
-      <div className="flex-1 relative overflow-hidden p-4 flex items-center justify-center bg-background/50">
+      <div className="flex-1 relative overflow-hidden p-4 flex items-center justify-center bg-background/80">
         {/* Ringing Stage */}
         {callStatus === 'outgoing_ringing' ? (
           <div className="flex flex-col items-center justify-center text-center space-y-4 animate-in fade-in">
             <div className="relative">
               <span className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
-              <div className="relative w-24 h-24 rounded-full bg-primary/10 border-2 border-primary flex items-center justify-center text-primary shadow-glow">
-                <Phone className="w-10 h-10 animate-bounce" />
+              <div className="relative w-20 h-20 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-primary">
+                <Phone className="w-8 h-8 animate-pulse" />
               </div>
             </div>
             <div>
-              <h3 className="text-base font-bold text-foreground">Connecting Media Stream</h3>
-              <p className="text-xs text-muted-foreground mt-1 font-mono">
+              <h3 className="text-sm font-semibold text-foreground">Connecting Media Stream</h3>
+              <p className="text-xs text-muted-foreground/60 mt-1 font-mono">
                 ICE Candidate gathering & WebRTC handshake...
               </p>
             </div>
@@ -217,8 +217,8 @@ export function CallModal({
             {/* Screen sharing spotlight mode */}
             {screenSharer ? (
               <div className="w-full h-full flex flex-col gap-3">
-                <div className="flex-1 rounded-xl bg-black border border-border/80 flex items-center justify-center relative overflow-hidden group">
-                  <div className="absolute top-3 left-3 flex items-center gap-2 bg-card/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-semibold text-foreground z-10 shadow-sm border border-border/60">
+                <div className="flex-1 rounded-xl bg-[#090B0E] border border-white/[0.08] flex items-center justify-center relative overflow-hidden group">
+                  <div className="absolute top-3 left-3 flex items-center gap-2 bg-surface-panel/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-medium text-foreground z-10 border border-white/[0.08]">
                     <Monitor className="w-3.5 h-3.5 text-primary" />
                     <span>
                       {screenSharer.id === user?.id
@@ -249,12 +249,12 @@ export function CallModal({
                     <div
                       key={p.id}
                       className={cn(
-                        'h-full w-24 rounded-xl bg-card border flex items-center justify-center relative p-2',
-                        p.isSpeaking ? 'border-primary shadow-glow-sm' : 'border-border'
+                        'h-full w-24 rounded-lg bg-surface-default/70 border flex items-center justify-center relative p-2 transition-colors',
+                        p.isSpeaking ? 'border-primary/60 ring-1 ring-primary/40' : 'border-white/[0.06]'
                       )}
                     >
                       <Avatar name={p.name} size="sm" />
-                      <span className="absolute bottom-1 text-[9px] font-bold text-foreground truncate px-1 max-w-[90%]">
+                      <span className="absolute bottom-1 text-[9px] font-medium text-foreground/80 truncate px-1 max-w-[90%]">
                         {p.name}
                       </span>
                     </div>
@@ -277,15 +277,15 @@ export function CallModal({
                     <div
                       key={p.id}
                       className={cn(
-                        'relative rounded-xl overflow-hidden bg-card border flex flex-col items-center justify-center h-full min-h-[160px] p-4 transition-all',
+                        'relative rounded-xl overflow-hidden bg-surface-default/60 border flex flex-col items-center justify-center h-full min-h-[160px] p-4 transition-all',
                         p.isSpeaking
-                          ? 'border-primary ring-2 ring-primary/40 shadow-glow-sm'
-                          : 'border-border/80'
+                          ? 'border-primary/60 ring-1 ring-primary/30'
+                          : 'border-white/[0.06]'
                       )}
                     >
                       {isCameraActive ? (
                         /* Live WebRTC Camera Video Feed */
-                        <div className="w-full h-full flex items-center justify-center bg-black relative rounded-xl overflow-hidden">
+                        <div className="w-full h-full flex items-center justify-center bg-black relative rounded-lg overflow-hidden">
                           {isLocalUser ? (
                             <VideoFeed
                               stream={localStream}
@@ -308,14 +308,14 @@ export function CallModal({
                             size="lg"
                             className={cn(
                               'transition-transform',
-                              p.isSpeaking && 'scale-105 ring-4 ring-primary'
+                              p.isSpeaking && 'scale-105 ring-2 ring-primary/60'
                             )}
                           />
                         </div>
                       )}
 
                       {/* Participant Name Badge */}
-                      <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-bold text-white flex items-center gap-1.5 z-10">
+                      <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-medium text-white/90 flex items-center gap-1.5 z-10 border border-white/[0.06]">
                         <span>{p.name}</span>
                         {p.isMuted && <MicOff className="w-3 h-3 text-rose-400" />}
                       </div>
@@ -340,16 +340,16 @@ export function CallModal({
       </div>
 
       {/* Control Bar Footer Dock */}
-      <div className="h-16 border-t border-subtle px-4 flex items-center justify-center shrink-0 bg-surface-header/50 backdrop-blur-xl">
-        <div className="flex items-center gap-2 sm:gap-3 bg-surface-default/80 backdrop-blur-md border border-subtle px-3 py-1.5 rounded-full shadow-lg">
+      <div className="h-16 border-t border-white/[0.06] px-4 flex items-center justify-center shrink-0 bg-surface-header/60 backdrop-blur-md">
+        <div className="flex items-center gap-2 sm:gap-2.5 bg-surface-default/90 backdrop-blur-md border border-white/[0.08] px-3 py-1.5 rounded-full shadow-lg">
           {/* Mic Toggle */}
           <button
             onClick={onToggleMic}
             className={cn(
-              'p-2.5 rounded-full transition-all',
+              'p-2 rounded-full transition-all',
               isMicMuted
-                ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
-                : 'bg-white/[0.06] text-foreground hover:bg-white/[0.1]'
+                ? 'bg-rose-500/15 text-rose-400 hover:bg-rose-500/25'
+                : 'bg-white/[0.05] text-foreground hover:bg-white/[0.08]'
             )}
             title={isMicMuted ? 'Unmute' : 'Mute'}
             aria-label={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
@@ -361,10 +361,10 @@ export function CallModal({
           <button
             onClick={onToggleCamera}
             className={cn(
-              'p-2.5 rounded-full transition-all',
+              'p-2 rounded-full transition-all',
               !isCameraOn
-                ? 'bg-white/[0.06] text-muted-foreground hover:bg-white/[0.1] hover:text-foreground'
-                : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                ? 'bg-white/[0.05] text-muted-foreground hover:bg-white/[0.08] hover:text-foreground'
+                : 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
             )}
             title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
             aria-label={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
@@ -376,10 +376,10 @@ export function CallModal({
           <button
             onClick={onToggleScreenShare}
             className={cn(
-              'p-2.5 rounded-full transition-all',
+              'p-2 rounded-full transition-all',
               isScreenSharing
                 ? 'bg-primary/20 text-primary hover:bg-primary/30'
-                : 'bg-white/[0.06] text-muted-foreground hover:bg-white/[0.1] hover:text-foreground'
+                : 'bg-white/[0.05] text-muted-foreground hover:bg-white/[0.08] hover:text-foreground'
             )}
             title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
             aria-label={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
@@ -390,7 +390,7 @@ export function CallModal({
           {/* Soundboard Button */}
           <button
             onClick={() => setShowSoundboard(true)}
-            className="p-2.5 rounded-full bg-white/[0.06] text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
+            className="p-2 rounded-full bg-white/[0.05] text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
             title="Soundboard"
             aria-label="Soundboard"
           >
@@ -402,10 +402,10 @@ export function CallModal({
             <button
               onClick={onToggleNoiseSuppression}
               className={cn(
-                'p-2.5 rounded-full transition-all',
+                'p-2 rounded-full transition-all',
                 isNoiseSuppressionEnabled
                   ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
-                  : 'bg-white/[0.06] text-muted-foreground hover:bg-white/[0.1]'
+                  : 'bg-white/[0.05] text-muted-foreground hover:bg-white/[0.08]'
               )}
               title={isNoiseSuppressionEnabled ? 'Noise Filter ON' : 'Noise Filter OFF'}
               aria-label={isNoiseSuppressionEnabled ? 'Disable noise filter' : 'Enable noise filter'}
@@ -417,7 +417,7 @@ export function CallModal({
           {/* End Call Button */}
           <button
             onClick={onEndCall}
-            className="p-2.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-medium transition-all shadow-md hover:shadow-rose-500/30 ml-1"
+            className="p-2 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-medium transition-all shadow-sm ml-1"
             title="Leave Call"
             aria-label="Leave Call"
           >

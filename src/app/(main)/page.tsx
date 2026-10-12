@@ -101,22 +101,15 @@ function HomePageContent() {
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         {/* Profile Gamer Header Banner */}
         <div className="px-2.5 sm:px-4 pt-2.5 sm:pt-4 shrink-0">
-          <div className="rounded-2xl border border-border/80 bg-surface-default overflow-hidden shadow-md">
-            <div
-              className="h-20 w-full transition-colors relative"
-              style={{
-                backgroundColor: profile?.banner_color || '#7c3aed',
-                backgroundImage:
-                  'radial-gradient(circle at 80% 20%, rgba(255,255,255,0.15) 0%, transparent 60%)',
-              }}
-            >
+          <div className="rounded-2xl border border-white/[0.06] bg-surface-default overflow-hidden shadow-subtle">
+            <div className="h-16 w-full relative bg-gradient-to-r from-surface-sidebar via-surface-panel to-surface-default border-b border-white/[0.04]">
               <div className="absolute top-2.5 right-3 flex items-center gap-2">
                 {/* Direct Presence Selector Button */}
                 <div className="relative">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 text-xs gap-1.5 bg-card/70 backdrop-blur-md border-border/60"
+                    className="h-7 text-xs gap-1.5 bg-surface-default/80 border-white/[0.08] hover:bg-surface-hover text-foreground"
                     onClick={() => setShowPresencePicker((prev) => !prev)}
                   >
                     <span
@@ -147,7 +140,7 @@ function HomePageContent() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 text-xs gap-1.5 bg-card/70 backdrop-blur-md border-border/60"
+                  className="h-7 text-xs gap-1.5 bg-surface-default/80 border-white/[0.08] hover:bg-surface-hover text-foreground"
                   onClick={() => setShowSettings(true)}
                 >
                   <Sliders className="w-3 h-3 text-primary" />
@@ -156,7 +149,7 @@ function HomePageContent() {
               </div>
             </div>
 
-            <div className="px-3 sm:px-5 pb-3 sm:pb-4 pt-0 relative flex items-end justify-between -mt-8 gap-3">
+            <div className="px-3 sm:px-5 pb-3 sm:pb-4 pt-0 relative flex items-end justify-between -mt-6 gap-3">
               <div className="flex items-end gap-3.5">
                 <div
                   className="cursor-pointer"
@@ -169,15 +162,15 @@ function HomePageContent() {
                     status={profile?.status || 'online'}
                     showStatus
                     size="lg"
-                    className="ring-4 ring-card shadow-lg hover:opacity-90 transition-opacity"
+                    className="ring-4 ring-surface-default shadow-subtle hover:opacity-90 transition-opacity"
                   />
                 </div>
                 <div className="mb-0.5 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-extrabold text-foreground tracking-tight truncate">
+                    <h2 className="text-sm font-bold text-foreground tracking-tight truncate">
                       {profile?.display_name || 'Gamer One'}
                     </h2>
-                    <Badge variant="default" className="text-[9px] uppercase font-mono tracking-wider px-1.5 py-0">
+                    <Badge variant="subtle" className="text-[9px] uppercase font-mono tracking-wider px-1.5 py-0">
                       PRO
                     </Badge>
                   </div>
@@ -191,7 +184,7 @@ function HomePageContent() {
                 <Button
                   variant="subtle"
                   size="sm"
-                  className="h-8 text-xs gap-1.5"
+                  className="h-7 text-xs gap-1.5"
                   onClick={() => {
                     toast({
                       title: 'Audio Engine',
@@ -216,18 +209,18 @@ function HomePageContent() {
       </div>
 
       {/* Right Column: Active Squad & Gaming Activity */}
-      <div className="w-72 border-l border-border bg-surface-sidebar hidden xl:flex flex-col p-4 shrink-0 overflow-y-auto select-none">
-        <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
-          <Flame className="w-4 h-4 text-rose-500" />
+      <div className="w-72 border-l border-white/[0.06] bg-surface-sidebar hidden xl:flex flex-col p-3.5 shrink-0 overflow-y-auto select-none no-scrollbar">
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2.5 flex items-center gap-1.5 px-1">
+          <Flame className="w-3.5 h-3.5 text-rose-400" />
           <span>Active Squadmates</span>
         </div>
 
-        <div className="space-y-2.5">
+        <div className="space-y-1.5">
           {friends.length === 0 ? (
-            <div className="p-4 rounded-xl border border-dashed border-border/80 bg-surface-default/40 text-center space-y-2">
-              <Gamepad2 className="w-7 h-7 text-muted-foreground/60 mx-auto" />
+            <div className="p-3.5 rounded-xl border border-dashed border-white/[0.08] bg-surface-default/40 text-center space-y-1.5">
+              <Gamepad2 className="w-6 h-6 text-muted-foreground/60 mx-auto" />
               <div className="text-xs font-semibold text-foreground">No squadmates yet</div>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
+              <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
                 Add friends using their @username in the Social Hub to party up and see their gaming activity.
               </p>
             </div>
@@ -243,7 +236,7 @@ function HomePageContent() {
                     toast({ title: 'Chat Error', description: error, type: 'error' });
                   }
                 }}
-                className="p-3 rounded-xl border border-border/60 bg-surface-default hover:bg-surface-hover/80 transition-all cursor-pointer group"
+                className="p-2.5 rounded-xl border border-white/[0.06] bg-surface-default/60 hover:bg-surface-hover/80 hover:border-white/[0.12] transition-colors cursor-pointer group"
               >
                 <div className="flex items-center gap-2.5">
                   <Avatar
@@ -254,23 +247,23 @@ function HomePageContent() {
                     size="sm"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
+                    <div className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
                       {friend.display_name}
                     </div>
-                    <div className="text-[10px] text-muted-foreground font-mono truncate">
+                    <div className="text-[10px] text-muted-foreground/70 font-mono truncate">
                       @{friend.username} • <span className="capitalize">{friend.status}</span>
                     </div>
                   </div>
                 </div>
 
                 {friend.game_activity && (
-                  <div className="mt-2.5 pt-2 border-t border-border/40 text-[11px]">
-                    <div className="font-semibold text-foreground/90 flex items-center gap-1 truncate">
+                  <div className="mt-2 pt-1.5 border-t border-white/[0.06] text-[11px]">
+                    <div className="font-medium text-foreground/90 flex items-center gap-1 truncate">
                       <Gamepad2 className="w-3 h-3 text-primary shrink-0" />
                       <span className="truncate">{friend.game_activity}</span>
                     </div>
                     {friend.custom_status && (
-                      <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                      <div className="text-[10px] text-muted-foreground/60 truncate mt-0.5">
                         {friend.custom_status}
                       </div>
                     )}
@@ -281,19 +274,19 @@ function HomePageContent() {
           )}
         </div>
 
-        {/* Quick Voice Lounge Card (Phase 5 Prep) */}
-        <div className="mt-6 p-4 rounded-xl border border-primary/30 bg-primary/10 space-y-2">
+        {/* Quick Voice Lounge Card */}
+        <div className="mt-5 p-3.5 rounded-xl border border-white/[0.08] bg-surface-default/70 space-y-2">
           <div className="flex items-center gap-2 text-xs font-bold text-foreground">
             <Radio className="w-4 h-4 text-primary" />
             <span>Voice Lounge</span>
           </div>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
             Instant low-latency voice room with WebRTC & LiveKit.
           </p>
           <Button
             size="sm"
             variant="default"
-            className="w-full text-xs font-semibold"
+            className="w-full text-xs font-semibold h-8"
             onClick={() => {
               toast({
                 title: 'Voice Lounge',

@@ -74,12 +74,12 @@ export function ServerSettingsModal({
         onClick={() => onOpenChange(false)}
       />
 
-      <div className="relative w-full max-w-3xl rounded-2xl border border-border/80 bg-surface-default shadow-2xl overflow-hidden flex flex-col md:flex-row h-[90vh] md:h-[560px] z-10 animate-in zoom-in-95 duration-150">
+      <div className="relative w-full max-w-3xl rounded-2xl border border-white/[0.08] bg-surface-panel shadow-2xl shadow-black/90 overflow-hidden flex flex-col md:flex-row h-[90vh] md:h-[560px] z-10 animate-in zoom-in-95 duration-150">
         {/* Left Settings Sidebar / Horizontal Tabs on Mobile */}
-        <div className="w-full md:w-56 bg-surface-sidebar border-b md:border-b-0 md:border-r border-border p-3 md:p-4 flex flex-row md:flex-col justify-between shrink-0 select-none overflow-x-auto gap-2 no-scrollbar">
+        <div className="w-full md:w-56 bg-surface-sidebar border-b md:border-b-0 md:border-r border-white/[0.06] p-3 md:p-4 flex flex-row md:flex-col justify-between shrink-0 select-none overflow-x-auto gap-2 no-scrollbar">
           <div className="flex flex-row md:flex-col gap-1 shrink-0 no-scrollbar">
             <div className="hidden md:block px-2 py-1 mb-2">
-              <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground truncate">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 truncate">
                 {server.name}
               </h3>
             </div>
@@ -94,14 +94,14 @@ export function ServerSettingsModal({
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
                     className={cn(
-                      'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 whitespace-nowrap',
+                      'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors shrink-0 whitespace-nowrap',
                       isActive
                         ? item.danger
-                          ? 'bg-rose-500/15 text-rose-400 font-bold'
-                          : 'bg-primary/15 text-primary font-bold'
+                          ? 'bg-rose-500/15 text-rose-400 font-medium'
+                          : 'bg-white/[0.06] text-foreground font-medium'
                         : item.danger
-                        ? 'text-rose-400/80 hover:bg-rose-500/10 hover:text-rose-400'
-                        : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+                        ? 'text-rose-400/70 hover:bg-rose-500/10 hover:text-rose-400'
+                        : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
                     )}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
@@ -112,16 +112,16 @@ export function ServerSettingsModal({
             </nav>
           </div>
 
-          <div className="hidden md:block pt-2 border-t border-border/60 text-[10px] text-muted-foreground/60 font-mono">
+          <div className="hidden md:block pt-2 border-t border-white/[0.06] text-[10px] text-muted-foreground/50 font-mono">
             Server ID: {server.id}
           </div>
         </div>
 
         {/* Right Settings Content */}
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-surface-default">
+        <div className="flex-1 flex flex-col h-full overflow-hidden bg-surface-panel">
           {/* Header */}
-          <div className="h-12 md:h-14 border-b border-border/80 px-4 md:px-6 flex items-center justify-between shrink-0">
-            <h4 className="text-sm font-bold text-foreground capitalize">
+          <div className="h-12 md:h-14 border-b border-white/[0.06] px-4 md:px-6 flex items-center justify-between shrink-0">
+            <h4 className="text-xs font-semibold text-foreground capitalize">
               {activeTab === 'overview' && 'Server Overview'}
               {activeTab === 'channels' && 'Manage Channels'}
               {activeTab === 'roles' && 'Roles & Clan Permissions'}
@@ -131,9 +131,9 @@ export function ServerSettingsModal({
               type="button"
               onClick={() => onOpenChange(false)}
               aria-label="Close settings"
-              className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-surface-hover"
+              className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-white/[0.04] transition-colors"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
 
@@ -142,7 +142,7 @@ export function ServerSettingsModal({
             {activeTab === 'overview' && (
               <div className="space-y-4 max-w-md">
                 <div>
-                  <label htmlFor="server-settings-name" className="text-xs font-bold text-foreground block mb-1">
+                  <label htmlFor="server-settings-name" className="text-xs font-medium text-foreground block mb-1">
                     Server Name
                   </label>
                   <input
@@ -151,12 +151,12 @@ export function ServerSettingsModal({
                     value={serverName}
                     onChange={(e) => setServerName(e.target.value)}
                     aria-label="Server Name"
-                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.02] text-foreground text-xs focus:outline-none focus:border-white/[0.2] transition-colors"
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="server-settings-desc" className="text-xs font-bold text-foreground block mb-1">
+                  <label htmlFor="server-settings-desc" className="text-xs font-medium text-foreground block mb-1">
                     Description
                   </label>
                   <textarea
@@ -165,12 +165,12 @@ export function ServerSettingsModal({
                     value={serverDesc}
                     onChange={(e) => setServerDesc(e.target.value)}
                     aria-label="Description"
-                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface-sidebar text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                    className="w-full px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.02] text-foreground text-xs focus:outline-none focus:border-white/[0.2] resize-none transition-colors"
                   />
                 </div>
 
                 <div className="pt-2">
-                  <Button size="sm" onClick={handleSaveOverview}>
+                  <Button size="sm" onClick={handleSaveOverview} className="font-medium text-xs">
                     Save Changes
                   </Button>
                 </div>
@@ -179,24 +179,24 @@ export function ServerSettingsModal({
 
             {activeTab === 'channels' && (
               <div className="space-y-3">
-                <div className="text-xs text-muted-foreground">
+                <div className="text-xs text-muted-foreground/70">
                   Manage the text and voice channels active on your server.
                 </div>
                 <div className="space-y-2">
                   {server.channels.map((chan) => (
                     <div
                       key={chan.id}
-                      className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-surface-sidebar/50"
+                      className="flex items-center justify-between p-3 rounded-lg border border-white/[0.06] bg-white/[0.02]"
                     >
                       <div className="flex items-center gap-2.5">
                         {chan.type === 'text' ? (
-                          <Hash className="w-4 h-4 text-muted-foreground" />
+                          <Hash className="w-4 h-4 text-muted-foreground/70" />
                         ) : (
                           <Volume2 className="w-4 h-4 text-emerald-400" />
                         )}
                         <div>
-                          <div className="text-xs font-bold text-foreground">{chan.name}</div>
-                          <div className="text-[10px] text-muted-foreground capitalize">
+                          <div className="text-xs font-medium text-foreground">{chan.name}</div>
+                          <div className="text-[10px] text-muted-foreground/60 capitalize font-mono">
                             {chan.type} Channel
                           </div>
                         </div>
@@ -205,7 +205,7 @@ export function ServerSettingsModal({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 text-xs text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 p-1.5"
+                        className="h-7 text-xs text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 p-1.5 rounded-md"
                         onClick={() => onDeleteChannel?.(chan.id)}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -218,21 +218,21 @@ export function ServerSettingsModal({
 
             {activeTab === 'roles' && (
               <div className="space-y-4">
-                <div className="text-xs text-muted-foreground">
+                <div className="text-xs text-muted-foreground/70">
                   Configured hierarchy and permission levels for this squad server.
                 </div>
 
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                   {[
                     { role: 'Clan Leader (Owner)', desc: 'Full administrative access & ownership.', color: 'text-amber-400' },
                     { role: 'Officers (Admin)', desc: 'Manage channels, invite squadmates, mute unruly players.', color: 'text-primary' },
                     { role: 'Moderator', desc: 'Delete spam messages and enforce server rules.', color: 'text-cyan-400' },
                     { role: 'Squadmate (Member)', desc: 'Chat in text channels, connect to voice lounges.', color: 'text-muted-foreground' },
                   ].map((r) => (
-                    <div key={r.role} className="p-3 rounded-xl border border-border/60 bg-surface-sidebar/50 flex items-center justify-between">
+                    <div key={r.role} className="p-3 rounded-lg border border-white/[0.06] bg-white/[0.02] flex items-center justify-between">
                       <div>
-                        <div className={cn('text-xs font-bold', r.color)}>{r.role}</div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5">{r.desc}</div>
+                        <div className={cn('text-xs font-medium', r.color)}>{r.role}</div>
+                        <div className="text-[11px] text-muted-foreground/60 mt-0.5">{r.desc}</div>
                       </div>
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                     </div>
@@ -242,18 +242,19 @@ export function ServerSettingsModal({
             )}
 
             {activeTab === 'danger' && (
-              <div className="space-y-4 p-4 rounded-xl border border-rose-500/30 bg-rose-500/10">
-                <div className="flex items-center gap-2 text-rose-400 text-sm font-bold">
+              <div className="space-y-3 p-4 rounded-xl border border-rose-500/20 bg-rose-500/10">
+                <div className="flex items-center gap-2 text-rose-400 text-xs font-semibold">
                   <AlertTriangle className="w-4 h-4" />
                   <span>Delete Server</span>
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
+                <p className="text-xs text-muted-foreground/70 leading-relaxed font-normal">
                   Permanently delete this server, all associated text channels, voice rooms, and message history. This action cannot be reversed.
                 </p>
                 <Button
                   variant="destructive"
                   size="sm"
                   onClick={handleDeleteServerConfirm}
+                  className="text-xs font-medium"
                 >
                   Delete &quot;{server.name}&quot;
                 </Button>

@@ -56,7 +56,7 @@ export function DialogContent({
   return (
     <div
       className={cn(
-        'relative bg-card border border-border/80 text-card-foreground rounded-2xl shadow-2xl p-6 overflow-hidden max-h-[90vh] flex flex-col',
+        'relative bg-surface-panel border border-white/[0.08] text-foreground rounded-2xl shadow-2xl shadow-black/90 p-6 overflow-hidden max-h-[90vh] flex flex-col',
         className
       )}
       onClick={(e) => e.stopPropagation()}
@@ -64,7 +64,7 @@ export function DialogContent({
       {onClose && (
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
+          className="absolute right-4 top-4 rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
           aria-label="Close"
         >
           <X className="w-5 h-5" />

@@ -87,17 +87,17 @@ export function RegisterForm() {
 
   if (confirmationSent) {
     return (
-      <div className="w-full max-w-md mx-auto p-8 rounded-2xl bg-card/90 border border-border shadow-2xl backdrop-blur-xl text-center">
-        <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-4">
-          <CheckCircle2 className="w-8 h-8" />
+      <div className="w-full max-w-sm mx-auto p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90 text-center">
+        <div className="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400 mx-auto mb-3">
+          <CheckCircle2 className="w-5 h-5" />
         </div>
-        <h2 className="text-2xl font-bold text-foreground mb-2">Check Your Email</h2>
-        <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-          We&apos;ve sent a confirmation link to <span className="text-foreground font-semibold">{formData.email}</span>.
+        <h2 className="text-xl font-semibold text-foreground mb-1">Check Your Email</h2>
+        <p className="text-xs text-muted-foreground/70 mb-5 leading-relaxed font-normal">
+          We&apos;ve sent a confirmation link to <span className="text-foreground font-medium">{formData.email}</span>.
           Please click the link in your email to verify your gaming account.
         </p>
         <Link href="/login">
-          <Button variant="outline" className="w-full">
+          <Button variant="outline" className="w-full border-white/[0.08] bg-white/[0.02] text-xs font-medium">
             Back to Sign In
           </Button>
         </Link>
@@ -106,26 +106,26 @@ export function RegisterForm() {
   }
 
   return (
-    <div className="w-full max-w-md mx-auto p-5 sm:p-8 rounded-2xl bg-card/90 border border-border shadow-2xl backdrop-blur-xl">
+    <div className="w-full max-w-sm mx-auto p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90">
       <div className="flex flex-col items-center text-center mb-6">
-        <div className="w-14 h-14 rounded-2xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary mb-3 shadow-glow-sm">
-          <Gamepad2 className="w-8 h-8" />
+        <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary mb-3">
+          <Gamepad2 className="w-5 h-5" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Create Nexus Account</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Create GCP Account</h1>
+        <p className="text-xs text-muted-foreground/70 mt-1">
           Join your friends in low-latency voice, video & chat
         </p>
       </div>
 
       {generalError && (
-        <div className="mb-5 p-3 rounded-xl bg-destructive/15 border border-destructive/30 text-destructive text-sm font-medium">
+        <div className="mb-5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium">
           {generalError}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-3.5">
         <div>
-          <label htmlFor="reg-displayName" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-displayName" className="block text-xs font-medium text-muted-foreground/80 mb-1">
             Display Name
           </label>
           <Input
@@ -136,12 +136,13 @@ export function RegisterForm() {
             onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
             icon={<User className="w-4 h-4" />}
             disabled={loading}
+            className="bg-white/[0.02] border-white/[0.08] text-xs"
           />
           {errors.displayName && <p className="text-xs text-rose-400 mt-1">{errors.displayName}</p>}
         </div>
 
         <div>
-          <label htmlFor="reg-username" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-username" className="block text-xs font-medium text-muted-foreground/80 mb-1">
             Unique Username (@)
           </label>
           <Input
@@ -152,28 +153,30 @@ export function RegisterForm() {
             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
             icon={<AtSign className="w-4 h-4" />}
             disabled={loading}
+            className="bg-white/[0.02] border-white/[0.08] text-xs"
           />
           {errors.username && <p className="text-xs text-rose-400 mt-1">{errors.username}</p>}
         </div>
 
         <div>
-          <label htmlFor="reg-email" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-email" className="block text-xs font-medium text-muted-foreground/80 mb-1">
             Email Address
           </label>
           <Input
             id="reg-email"
             type="email"
-            placeholder="rider@nexus.gg"
+            placeholder="rider@gcp.gg"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             icon={<Mail className="w-4 h-4" />}
             disabled={loading}
+            className="bg-white/[0.02] border-white/[0.08] text-xs"
           />
           {errors.email && <p className="text-xs text-rose-400 mt-1">{errors.email}</p>}
         </div>
 
         <div>
-          <label htmlFor="reg-password" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-password" className="block text-xs font-medium text-muted-foreground/80 mb-1">
             Password (Min 8 chars, 1 uppercase, 1 number)
           </label>
           <Input
@@ -184,12 +187,13 @@ export function RegisterForm() {
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             icon={<Lock className="w-4 h-4" />}
             disabled={loading}
+            className="bg-white/[0.02] border-white/[0.08] text-xs"
           />
           {errors.password && <p className="text-xs text-rose-400 mt-1">{errors.password}</p>}
         </div>
 
         <div>
-          <label htmlFor="reg-confirmPassword" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <label htmlFor="reg-confirmPassword" className="block text-xs font-medium text-muted-foreground/80 mb-1">
             Confirm Password
           </label>
           <Input
@@ -200,13 +204,14 @@ export function RegisterForm() {
             onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
             icon={<Lock className="w-4 h-4" />}
             disabled={loading}
+            className="bg-white/[0.02] border-white/[0.08] text-xs"
           />
           {errors.confirmPassword && (
             <p className="text-xs text-rose-400 mt-1">{errors.confirmPassword}</p>
           )}
         </div>
 
-        <Button type="submit" className="w-full mt-3" size="lg" disabled={loading}>
+        <Button type="submit" className="w-full mt-2 font-medium text-xs h-10" size="lg" disabled={loading}>
           {loading ? (
             <span className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -220,9 +225,9 @@ export function RegisterForm() {
         </Button>
       </form>
 
-      <div className="mt-6 text-center text-sm text-muted-foreground">
+      <div className="mt-6 text-center text-xs text-muted-foreground/70">
         Already have an account?{' '}
-        <Link href="/login" className="text-primary hover:underline font-semibold">
+        <Link href="/login" className="text-primary hover:underline font-medium">
           Log in
         </Link>
       </div>

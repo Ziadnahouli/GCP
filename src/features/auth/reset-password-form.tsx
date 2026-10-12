@@ -70,26 +70,26 @@ export function ResetPasswordForm() {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-8 rounded-2xl bg-card/90 border border-border shadow-2xl backdrop-blur-xl">
+    <div className="w-full max-w-sm mx-auto p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90">
       <div className="flex flex-col items-center text-center mb-6">
-        <div className="w-14 h-14 rounded-2xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary mb-3 shadow-glow-sm">
-          <KeyRound className="w-8 h-8" />
+        <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary mb-3">
+          <KeyRound className="w-5 h-5" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Set New Password</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Set New Password</h1>
+        <p className="text-xs text-muted-foreground/70 mt-1">
           Enter and confirm your new secure gaming credentials
         </p>
       </div>
 
       {generalError && (
-        <div className="mb-5 p-3 rounded-xl bg-destructive/15 border border-destructive/30 text-destructive text-sm font-medium">
+        <div className="mb-5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium">
           {generalError}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="reset-password" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+          <label htmlFor="reset-password" className="block text-xs font-medium text-muted-foreground/80 mb-1.5">
             New Password
           </label>
           <Input
@@ -100,12 +100,13 @@ export function ResetPasswordForm() {
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             icon={<Lock className="w-4 h-4" />}
             disabled={loading}
+            className="bg-white/[0.02] border-white/[0.08] text-xs"
           />
           {errors.password && <p className="text-xs text-rose-400 mt-1">{errors.password}</p>}
         </div>
 
         <div>
-          <label htmlFor="reset-confirmPassword" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+          <label htmlFor="reset-confirmPassword" className="block text-xs font-medium text-muted-foreground/80 mb-1.5">
             Confirm New Password
           </label>
           <Input
@@ -116,13 +117,14 @@ export function ResetPasswordForm() {
             onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
             icon={<Lock className="w-4 h-4" />}
             disabled={loading}
+            className="bg-white/[0.02] border-white/[0.08] text-xs"
           />
           {errors.confirmPassword && (
             <p className="text-xs text-rose-400 mt-1">{errors.confirmPassword}</p>
           )}
         </div>
 
-        <Button type="submit" className="w-full mt-2" size="lg" disabled={loading}>
+        <Button type="submit" className="w-full mt-2 font-medium text-xs h-10" size="lg" disabled={loading}>
           {loading ? (
             <span className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -139,7 +141,7 @@ export function ResetPasswordForm() {
       <div className="mt-6 text-center">
         <Link
           href="/login"
-          className="text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
+          className="text-xs text-muted-foreground/70 hover:text-foreground font-medium transition-colors"
         >
           Cancel and Return to Sign In
         </Link>

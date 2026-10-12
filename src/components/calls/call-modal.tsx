@@ -48,6 +48,46 @@ interface CallModalProps {
   onRestartConnection?: () => void;
 }
 
+interface VideoFeedProps {
+  stream: MediaStream | null | undefined;
+  muted?: boolean;
+  className?: string;
+}
+
+const VideoFeed = React.memo(function VideoFeed({
+  stream,
+  muted = true,
+  className,
+}: VideoFeedProps) {
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (stream) {
+      if (video.srcObject !== stream) {
+        video.srcObject = stream;
+      }
+      video.play().catch(() => {});
+    } else {
+      if (video.srcObject !== null) {
+        video.srcObject = null;
+      }
+    }
+  }, [stream]);
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted={muted}
+      className={className}
+    />
+  );
+});
+
 export function CallModal({
   open,
   callStatus,
@@ -73,11 +113,6 @@ export function CallModal({
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
 
-  const localVideoRef = React.useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = React.useRef<HTMLVideoElement>(null);
-  const localScreenVideoRef = React.useRef<HTMLVideoElement>(null);
-  const remoteScreenVideoRef = React.useRef<HTMLVideoElement>(null);
-
   // Identify who is actively broadcasting their screen
   const screenSharer = React.useMemo(() => {
     const found = participants.find((p) => p.isScreenSharing);
@@ -94,38 +129,6 @@ export function CallModal({
     }
     return null;
   }, [participants, isScreenSharing, user?.id, isMicMuted, isCameraOn]);
-
-  // Bind local camera stream to local video element
-  React.useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
-      localVideoRef.current.play().catch(() => {});
-    }
-  }, [localStream, isCameraOn, callStatus, participants]);
-
-  // Bind remote camera stream to remote video element
-  React.useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
-      remoteVideoRef.current.play().catch(() => {});
-    }
-  }, [remoteStream, callStatus, participants]);
-
-  // Bind local screen share stream to display video element
-  React.useEffect(() => {
-    if (localScreenVideoRef.current && screenStream) {
-      localScreenVideoRef.current.srcObject = screenStream;
-      localScreenVideoRef.current.play().catch(() => {});
-    }
-  }, [screenStream, screenSharer]);
-
-  // Bind remote screen share stream to display video element
-  React.useEffect(() => {
-    if (remoteScreenVideoRef.current && remoteStream) {
-      remoteScreenVideoRef.current.srcObject = remoteStream;
-      remoteScreenVideoRef.current.play().catch(() => {});
-    }
-  }, [remoteStream, screenSharer]);
 
   if (!open || callStatus === 'idle') return null;
 
@@ -225,18 +228,14 @@ export function CallModal({
 
                   {/* Real Live Video Display for Screen Share */}
                   {screenSharer.id === user?.id ? (
-                    <video
-                      ref={localScreenVideoRef}
-                      autoPlay
-                      playsInline
+                    <VideoFeed
+                      stream={screenStream}
                       muted
                       className="w-full h-full object-contain rounded-xl bg-black"
                     />
                   ) : (
-                    <video
-                      ref={remoteScreenVideoRef}
-                      autoPlay
-                      playsInline
+                    <VideoFeed
+                      stream={remoteStream}
                       muted
                       className="w-full h-full object-contain rounded-xl bg-black"
                     />
@@ -287,18 +286,14 @@ export function CallModal({
                         /* Live WebRTC Camera Video Feed */
                         <div className="w-full h-full flex items-center justify-center bg-black relative rounded-xl overflow-hidden">
                           {isLocalUser ? (
-                            <video
-                              ref={localVideoRef}
-                              autoPlay
-                              playsInline
+                            <VideoFeed
+                              stream={localStream}
                               muted
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <video
-                              ref={remoteVideoRef}
-                              autoPlay
-                              playsInline
+                            <VideoFeed
+                              stream={remoteStream}
                               muted
                               className="w-full h-full object-cover"
                             />

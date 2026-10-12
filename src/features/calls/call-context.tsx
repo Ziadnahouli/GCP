@@ -331,6 +331,33 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     });
   }, [isNoiseSuppressionEnabled, toast]);
 
+  // Helper to cleanly merge/update tracks into remoteStreamRef without dropping audio or video
+  const attachRemoteTrack = React.useCallback((track: MediaStreamTrack) => {
+    if (!remoteStreamRef.current) {
+      remoteStreamRef.current = new MediaStream();
+    }
+    const currentStream = remoteStreamRef.current;
+    const existingSameKind = currentStream.getTracks().find((t) => t.kind === track.kind);
+    if (existingSameKind && existingSameKind.id !== track.id) {
+      try {
+        currentStream.removeTrack(existingSameKind);
+      } catch {}
+    }
+    if (!currentStream.getTracks().some((t) => t.id === track.id)) {
+      currentStream.addTrack(track);
+    }
+    setRemoteStream(new MediaStream(currentStream.getTracks()));
+
+    // Also update remote persistent audio element if this is an audio track
+    if (track.kind === 'audio' && remoteAudioElementRef.current) {
+      if (remoteAudioElementRef.current.srcObject !== currentStream) {
+        remoteAudioElementRef.current.srcObject = currentStream;
+      }
+      remoteAudioElementRef.current.muted = false;
+      remoteAudioElementRef.current.play().catch(() => {});
+    }
+  }, []);
+
   // Update participant media state from remote signals
   const handlePeerMediaToggle = React.useCallback(
     (payload: { userId?: string; isCameraOn?: boolean; isScreenSharing?: boolean; isMuted?: boolean }) => {
@@ -348,14 +375,30 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           return p;
         })
       );
+
+      // If remote peer turned on camera or screen share, ensure their remote video transceiver track is attached
+      if ((payload.isCameraOn || payload.isScreenSharing) && pcRef.current) {
+        const videoTransceiver = pcRef.current.getTransceivers().find((t) => t.receiver?.track?.kind === 'video');
+        const recTrack = videoTransceiver?.receiver?.track;
+        if (recTrack) {
+          attachRemoteTrack(recTrack);
+        }
+      }
     },
-    [user?.id]
+    [user?.id, attachRemoteTrack]
   );
 
   // Helper to reliably find the video sender on an active peer connection
   const getVideoSender = React.useCallback((pc: RTCPeerConnection) => {
     const videoTransceiver = pc.getTransceivers().find((t) => t.receiver?.track?.kind === 'video');
-    if (videoTransceiver?.sender) return videoTransceiver.sender;
+    if (videoTransceiver) {
+      if (videoTransceiver.direction === 'recvonly') {
+        videoTransceiver.direction = 'sendrecv';
+      } else if (videoTransceiver.direction === 'inactive') {
+        videoTransceiver.direction = 'sendonly';
+      }
+      if (videoTransceiver.sender) return videoTransceiver.sender;
+    }
     return pc.getSenders().find((s) => s.track?.kind === 'video') || null;
   }, []);
 
@@ -1187,26 +1230,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     pc.ontrack = (event) => {
       console.log('[CallSignaling] Received remote media track on caller:', event.track.kind);
-      let rStream = event.streams && event.streams[0];
-      if (!rStream) {
-        if (remoteStreamRef.current) {
-          remoteStreamRef.current.addTrack(event.track);
-          rStream = remoteStreamRef.current;
-        } else {
-          rStream = new MediaStream([event.track]);
-        }
-      }
-      remoteStreamRef.current = rStream;
-      setRemoteStream(new MediaStream(rStream.getTracks()));
+      attachRemoteTrack(event.track);
       setCallStatus('in_call');
-
-      if (remoteAudioElementRef.current) {
-        if (remoteAudioElementRef.current.srcObject !== rStream) {
-          remoteAudioElementRef.current.srcObject = rStream;
-        }
-        remoteAudioElementRef.current.muted = false;
-        remoteAudioElementRef.current.play().catch(() => {});
-      }
 
       setParticipants([
         {
@@ -1227,6 +1252,20 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         },
       ]);
     };
+
+    // Hook transceiver un-mute listeners so swapped or enabled camera tracks are immediately rendered
+    pc.getTransceivers().forEach((transceiver) => {
+      const recTrack = transceiver.receiver?.track;
+      if (recTrack) {
+        recTrack.onunmute = () => {
+          console.log('[CallSignaling] Caller remote transceiver track unmuted:', recTrack.kind);
+          attachRemoteTrack(recTrack);
+        };
+        if (recTrack.readyState === 'live' && !recTrack.muted) {
+          attachRemoteTrack(recTrack);
+        }
+      }
+    });
 
     // 12-second connection watchdog: if stuck in checking/connecting, trigger automatic ICE restart
     if (iceWatchdogTimerRef.current) clearTimeout(iceWatchdogTimerRef.current);
@@ -1517,27 +1556,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     pc.ontrack = (event) => {
       console.log('[CallSignaling] Received remote media track on callee:', event.track.kind);
-      let rStream = event.streams && event.streams[0];
-      if (!rStream) {
-        if (remoteStreamRef.current) {
-          remoteStreamRef.current.addTrack(event.track);
-          rStream = remoteStreamRef.current;
-        } else {
-          rStream = new MediaStream([event.track]);
-        }
-      }
-      remoteStreamRef.current = rStream;
-      setRemoteStream(new MediaStream(rStream.getTracks()));
+      attachRemoteTrack(event.track);
       setCallStatus('in_call');
-
-      if (remoteAudioElementRef.current) {
-        if (remoteAudioElementRef.current.srcObject !== rStream) {
-          remoteAudioElementRef.current.srcObject = rStream;
-        }
-        remoteAudioElementRef.current.muted = false;
-        remoteAudioElementRef.current.play().catch(() => {});
-      }
     };
+
+    // Hook transceiver un-mute listeners so swapped or enabled camera tracks are immediately rendered
+    pc.getTransceivers().forEach((transceiver) => {
+      const recTrack = transceiver.receiver?.track;
+      if (recTrack) {
+        recTrack.onunmute = () => {
+          console.log('[CallSignaling] Callee remote transceiver track unmuted:', recTrack.kind);
+          attachRemoteTrack(recTrack);
+        };
+        if (recTrack.readyState === 'live' && !recTrack.muted) {
+          attachRemoteTrack(recTrack);
+        }
+      }
+    });
 
     // 12-second connection watchdog: if stuck in checking/connecting, trigger automatic ICE restart
     if (iceWatchdogTimerRef.current) clearTimeout(iceWatchdogTimerRef.current);
@@ -1826,11 +1861,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       try {
         let videoTrack = localStreamRef.current?.getVideoTracks().find((t) => t.readyState === 'live');
         if (!videoTrack) {
-          const camStream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-          });
+          let camStream: MediaStream;
+          try {
+            camStream = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+            });
+          } catch (firstErr) {
+            console.warn('HD camera constraints failed, attempting basic video:', firstErr);
+            camStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          }
           videoTrack = camStream.getVideoTracks()[0];
+          if (!videoTrack) throw new Error('No video track returned');
+
           if (localStreamRef.current) {
+            localStreamRef.current.getVideoTracks().forEach((oldTrack) => {
+              try { oldTrack.stop(); } catch {}
+              localStreamRef.current?.removeTrack(oldTrack);
+            });
             localStreamRef.current.addTrack(videoTrack);
             setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
           } else {
@@ -1843,11 +1890,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           setLocalStream(new MediaStream(localStreamRef.current?.getTracks() || []));
         }
 
-        // Send camera track over WebRTC via pre-negotiated video sender
-        if (pc) {
+        // Send camera track over WebRTC via pre-negotiated video sender (if not actively screen sharing)
+        if (pc && !isScreenSharing) {
           const videoSender = getVideoSender(pc);
           if (videoSender) {
             await videoSender.replaceTrack(videoTrack);
+          } else {
+            pc.addTrack(videoTrack, localStreamRef.current || new MediaStream([videoTrack]));
           }
         }
 
@@ -1862,13 +1911,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.warn('Failed to access camera:', err);
-        toast({ title: 'Camera Error', description: 'Could not access webcam.', type: 'error' });
+        toast({ title: 'Camera Error', description: 'Could not access webcam. Please check permissions.', type: 'error' });
       }
     } else {
       if (localStreamRef.current) {
         localStreamRef.current.getVideoTracks().forEach((track) => {
           track.enabled = false;
-          track.stop();
+          try { track.stop(); } catch {}
           localStreamRef.current?.removeTrack(track);
         });
         setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
@@ -1949,6 +1998,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const videoSender = getVideoSender(pc);
         if (videoSender) {
           await videoSender.replaceTrack(screenTrack);
+        } else {
+          pc.addTrack(screenTrack, displayStream);
         }
       }
 

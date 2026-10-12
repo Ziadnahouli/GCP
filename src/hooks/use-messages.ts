@@ -225,13 +225,27 @@ export function useMessages(conversationId: string | null) {
 
     if (!conversationId || !isConfigured || !user || !isUUID) return;
 
-    const channel = supabase
-      .channel(`chat-room-${conversationId}`, {
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let heartbeatTimer: NodeJS.Timeout | null = null;
+    let isCleanedUp = false;
+
+    const setupChannel = () => {
+      if (isCleanedUp) return;
+
+      if (chatChannelRef.current) {
+        try {
+          supabase.removeChannel(chatChannelRef.current);
+        } catch {}
+      }
+
+      const channelName = `chat-room-${conversationId}`;
+      const ch = supabase.channel(channelName, {
         config: {
           broadcast: { self: false },
         },
-      })
-      .on(
+      });
+
+      ch.on(
         'postgres_changes',
         {
           event: 'INSERT',
@@ -243,11 +257,9 @@ export function useMessages(conversationId: string | null) {
           const newRow = payload.new as any;
           if (!newRow?.id) return;
           if (newRow.conversation_id && newRow.conversation_id !== conversationId) return;
-          // Reconcile sender's message or fetch if from peer
           setMessages((prev) => {
             const exists = prev.some((m) => m.id === newRow.id);
             if (exists) return prev;
-            // Peer message arrived: trigger refetch
             fetchMessages();
             return prev;
           });
@@ -318,45 +330,29 @@ export function useMessages(conversationId: string | null) {
           }, 3000);
           return () => clearTimeout(timer);
         }
-      })
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-    let heartbeatTimer: NodeJS.Timeout | null = null;
+      });
 
-    channel.subscribe((status, err) => {
-      debugLogger.info('realtime', `Chat channel [chat-room-${conversationId}] status: ${status}`, err);
-      if (status === 'SUBSCRIBED') {
-        debugLogger.success('realtime', `Connected to real-time chat for conv ${conversationId}`);
-        fetchMessages();
-      } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-        debugLogger.warn('realtime', `Chat channel disconnected (${status}). Fast-polling active; auto-reconnecting in 2.5s...`);
-        // Immediately fetch messages via REST while WebSocket is down
-        fetchMessages();
-        if (!reconnectTimeout) {
-          reconnectTimeout = setTimeout(() => {
-            reconnectTimeout = null;
-            try {
-              if (chatChannelRef.current) {
-                supabase.removeChannel(chatChannelRef.current);
-              }
-              const reconnected = supabase.channel(`chat-room-${conversationId}`, {
-                config: { broadcast: { self: false } },
-              });
-              reconnected.subscribe((reStatus) => {
-                if (reStatus === 'SUBSCRIBED') {
-                  debugLogger.success('realtime', `Reconnected chat channel [chat-room-${conversationId}]`);
-                  fetchMessages();
-                }
-              });
-              chatChannelRef.current = reconnected;
-            } catch (reErr) {
-              console.warn('Realtime auto-reconnect error:', reErr);
-            }
-          }, 2500);
+      ch.subscribe((status, err) => {
+        debugLogger.info('realtime', `Chat channel [${channelName}] status: ${status}`, err);
+        if (status === 'SUBSCRIBED') {
+          debugLogger.success('realtime', `Connected to real-time chat for conv ${conversationId}`);
+          fetchMessages();
+        } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+          debugLogger.warn('realtime', `Chat channel disconnected (${status}). Fetching via REST and auto-reconnecting in 2.5s with full listeners...`);
+          fetchMessages();
+          if (!reconnectTimeout && !isCleanedUp) {
+            reconnectTimeout = setTimeout(() => {
+              reconnectTimeout = null;
+              setupChannel();
+            }, 2500);
+          }
         }
-      }
-    });
+      });
 
-    chatChannelRef.current = channel;
+      chatChannelRef.current = ch;
+    };
+
+    setupChannel();
 
     // Fast-adaptive background poll (3.5s when active tab):
     // Guarantees delivery even across strict corporate firewalls or when Supabase WebSockets idle out
@@ -365,7 +361,7 @@ export function useMessages(conversationId: string | null) {
       fetchMessages();
     }, 3500);
 
-    // Heartbeat ping every 25 seconds to keep WebSocket connection active
+    // Heartbeat ping every 20 seconds to keep WebSocket connection active and revive dropped sockets
     heartbeatTimer = setInterval(() => {
       if (chatChannelRef.current && chatChannelRef.current.state === 'joined') {
         chatChannelRef.current.send({
@@ -373,8 +369,10 @@ export function useMessages(conversationId: string | null) {
           event: 'heartbeat',
           payload: { timestamp: Date.now() },
         }).catch(() => {});
+      } else if (chatChannelRef.current && (chatChannelRef.current.state === 'closed' || chatChannelRef.current.state === 'errored')) {
+        setupChannel();
       }
-    }, 25000);
+    }, 20000);
 
     // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {
@@ -391,6 +389,7 @@ export function useMessages(conversationId: string | null) {
     }
 
     return () => {
+      isCleanedUp = true;
       clearInterval(syncInterval);
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -398,8 +397,10 @@ export function useMessages(conversationId: string | null) {
         window.removeEventListener('focus', handleFocus);
         document.removeEventListener('visibilitychange', handleVisibility);
       }
-      chatChannelRef.current = null;
-      supabase.removeChannel(channel);
+      if (chatChannelRef.current) {
+        supabase.removeChannel(chatChannelRef.current);
+        chatChannelRef.current = null;
+      }
     };
   }, [conversationId, fetchMessages, isConfigured, user, profile, supabase, isUUID]);
 
@@ -510,6 +511,20 @@ export function useMessages(conversationId: string | null) {
       };
       if (cleanReplyId) {
         insertPayload.reply_to_id = cleanReplyId;
+      }
+
+      // Proactively check session expiration
+      if (isConfigured && supabase.auth?.getSession) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.expires_at) {
+            const timeLeftSec = session.expires_at - Math.floor(Date.now() / 1000);
+            if (timeLeftSec < 120 && supabase.auth.refreshSession) {
+              debugLogger.info('auth', `Proactively refreshing session (${timeLeftSec}s remaining)...`);
+              await supabase.auth.refreshSession();
+            }
+          }
+        } catch {}
       }
 
       // Ensure user is recorded in conversation_members to satisfy RLS (cached per conversation)

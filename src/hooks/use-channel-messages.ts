@@ -130,15 +130,27 @@ export function useChannelMessages(channelId: string | null) {
 
     if (!channelId || !isConfigured || !user) return;
 
-    // Realtime postgres changes + broadcast channel
-    const channel = supabase
-      .channel(`chan-room-${channelId}`, {
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let heartbeatTimer: NodeJS.Timeout | null = null;
+    let isCleanedUp = false;
+
+    const setupChannel = () => {
+      if (isCleanedUp) return;
+
+      if (channelRef.current) {
+        try {
+          supabase.removeChannel(channelRef.current);
+        } catch {}
+      }
+
+      const channelName = `chan-room-${channelId}`;
+      const ch = supabase.channel(channelName, {
         config: { broadcast: { self: false } },
-      })
-      .on('broadcast', { event: 'new_channel_msg' }, ({ payload }) => {
+      });
+
+      ch.on('broadcast', { event: 'new_channel_msg' }, ({ payload }) => {
         if (payload?.message) {
           const incoming = payload.message as ChannelMessage;
-          // Filter strictly by current channelId to prevent cross-channel message bleeding
           if (incoming.channel_id !== channelId) return;
           setMessages((prev) => {
             if (prev.some((m) => m.id === incoming.id)) return prev;
@@ -147,75 +159,58 @@ export function useChannelMessages(channelId: string | null) {
         }
       });
 
-    if (isUUID) {
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'channel_messages',
-          filter: `channel_id=eq.${channelId}`,
-        },
-        (payload) => {
-          const newRow = payload.new as any;
-          if (!newRow?.id) return;
-          if (newRow.channel_id && newRow.channel_id !== channelId) return;
-          // Reconcile: If sent by current user, we already have it optimistically
-          setMessages((prev) => {
-            const existingIdx = prev.findIndex((m) => m.id === newRow.id);
-            if (existingIdx !== -1) {
-              const updated = [...prev];
-              updated[existingIdx] = {
-                ...updated[existingIdx],
-                ...newRow,
-                status: 'sent',
-              };
-              return updated;
-            }
-            // Message from peer: fetch full profile or append
-            fetchChannelMessages();
-            return prev;
-          });
-        }
-      );
-    }
-
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-    let heartbeatTimer: NodeJS.Timeout | null = null;
-
-    channel.subscribe((status, err) => {
-      debugLogger.info('realtime', `Server channel [channel-chat-${channelId}] status: ${status}`, err);
-      if (status === 'SUBSCRIBED') {
-        debugLogger.success('realtime', `Connected to channel chat for channel ${channelId}`);
-        if (isUUID) fetchChannelMessages();
-      } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-        debugLogger.warn('realtime', `Server channel disconnected (${status}). Fast-polling active; auto-reconnecting in 2.5s...`);
-        if (isUUID) fetchChannelMessages();
-        if (!reconnectTimeout) {
-          reconnectTimeout = setTimeout(() => {
-            reconnectTimeout = null;
-            try {
-              if (channelRef.current) {
-                supabase.removeChannel(channelRef.current);
+      if (isUUID) {
+        ch.on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'channel_messages',
+            filter: `channel_id=eq.${channelId}`,
+          },
+          (payload) => {
+            const newRow = payload.new as any;
+            if (!newRow?.id) return;
+            if (newRow.channel_id && newRow.channel_id !== channelId) return;
+            setMessages((prev) => {
+              const existingIdx = prev.findIndex((m) => m.id === newRow.id);
+              if (existingIdx !== -1) {
+                const updated = [...prev];
+                updated[existingIdx] = {
+                  ...updated[existingIdx],
+                  ...newRow,
+                  status: 'sent',
+                };
+                return updated;
               }
-              const reconnected = supabase.channel(`channel-chat-${channelId}`, {
-                config: { broadcast: { self: false } },
-              });
-              reconnected.subscribe((reStatus) => {
-                if (reStatus === 'SUBSCRIBED') {
-                  debugLogger.success('realtime', `Reconnected server channel [channel-chat-${channelId}]`);
-                  if (isUUID) fetchChannelMessages();
-                }
-              });
-              channelRef.current = reconnected;
-            } catch (reErr) {
-              console.warn('Realtime channel auto-reconnect error:', reErr);
-            }
-          }, 2500);
-        }
+              fetchChannelMessages();
+              return prev;
+            });
+          }
+        );
       }
-    });
-    channelRef.current = channel;
+
+      ch.subscribe((status, err) => {
+        debugLogger.info('realtime', `Server channel [${channelName}] status: ${status}`, err);
+        if (status === 'SUBSCRIBED') {
+          debugLogger.success('realtime', `Connected to channel chat for channel ${channelId}`);
+          if (isUUID) fetchChannelMessages();
+        } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+          debugLogger.warn('realtime', `Server channel disconnected (${status}). Auto-reconnecting in 2.5s with full listeners...`);
+          if (isUUID) fetchChannelMessages();
+          if (!reconnectTimeout && !isCleanedUp) {
+            reconnectTimeout = setTimeout(() => {
+              reconnectTimeout = null;
+              setupChannel();
+            }, 2500);
+          }
+        }
+      });
+
+      channelRef.current = ch;
+    };
+
+    setupChannel();
 
     // Fast-adaptive background poll (3.5s when active tab):
     // Guarantees real-time delivery without requiring page refresh
@@ -226,7 +221,7 @@ export function useChannelMessages(channelId: string | null) {
       }
     }, 3500);
 
-    // Heartbeat ping every 25 seconds to keep channel socket active
+    // Heartbeat ping every 20 seconds to keep channel socket active and revive dropped sockets
     heartbeatTimer = setInterval(() => {
       if (channelRef.current && channelRef.current.state === 'joined') {
         channelRef.current.send({
@@ -234,8 +229,10 @@ export function useChannelMessages(channelId: string | null) {
           event: 'heartbeat',
           payload: { timestamp: Date.now() },
         }).catch(() => {});
+      } else if (channelRef.current && (channelRef.current.state === 'closed' || channelRef.current.state === 'errored')) {
+        setupChannel();
       }
-    }, 25000);
+    }, 20000);
 
     // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {
@@ -252,6 +249,7 @@ export function useChannelMessages(channelId: string | null) {
     }
 
     return () => {
+      isCleanedUp = true;
       clearInterval(autoSyncTimer);
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -259,8 +257,10 @@ export function useChannelMessages(channelId: string | null) {
         window.removeEventListener('focus', handleFocus);
         document.removeEventListener('visibilitychange', handleVisibility);
       }
-      channelRef.current = null;
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [channelId, fetchChannelMessages, isConfigured, user, isUUID, supabase]);
 
@@ -325,6 +325,20 @@ export function useChannelMessages(channelId: string | null) {
 
       // 2. Persist to Supabase BEFORE considering delivered
       try {
+        // Proactively check session expiration
+        if (isConfigured && supabase.auth?.getSession) {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.expires_at) {
+              const timeLeftSec = session.expires_at - Math.floor(Date.now() / 1000);
+              if (timeLeftSec < 120 && supabase.auth.refreshSession) {
+                debugLogger.info('auth', `Proactively refreshing session (${timeLeftSec}s remaining)...`);
+                await supabase.auth.refreshSession();
+              }
+            }
+          } catch {}
+        }
+
         // Ensure user is in server_members to satisfy RLS (cached per channel)
         if (!serverMemberVerifiedRef.current.has(channelId)) {
           try {

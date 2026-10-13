@@ -70,11 +70,13 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
   // Support 1-click joining via invite links like /?join=UUID
   const joinParam = searchParams.get('join');
+  const processedJoinRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (joinParam && user) {
+    if (joinParam && user && processedJoinRef.current !== joinParam) {
+      processedJoinRef.current = joinParam;
       joinServer(joinParam).then((res) => {
         if (res.success && res.server) {
-          router.push(`/?s=${res.server.id}&ch=${res.server.channels[0]?.id || ''}`);
+          router.replace(`/?s=${res.server.id}&ch=${res.server.channels[0]?.id || ''}`);
         }
       });
     }

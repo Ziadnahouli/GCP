@@ -43,6 +43,11 @@ export function useServerVoice(channelId: string, serverId: string) {
   const animFrameRef = React.useRef<number | null>(null);
   const realtimeChannelRef = React.useRef<any>(null);
 
+  const isMicMutedRef = React.useRef(isMicMuted);
+  React.useEffect(() => {
+    isMicMutedRef.current = isMicMuted;
+  }, [isMicMuted]);
+
   // Broadcast state to Supabase Realtime presence channel
   const broadcastMyVoiceState = React.useCallback(
     (customState?: Partial<VoiceParticipant>) => {
@@ -67,6 +72,15 @@ export function useServerVoice(channelId: string, serverId: string) {
     },
     [user, profile, isSpeaking, isMicMuted, isDeafened, isCameraOn, isScreenSharing, audioLevel]
   );
+
+  // Sync speaking status to peers over Realtime Presence
+  const prevSpeakingRef = React.useRef(false);
+  React.useEffect(() => {
+    if (isVoiceConnected && prevSpeakingRef.current !== isSpeaking) {
+      prevSpeakingRef.current = isSpeaking;
+      broadcastMyVoiceState({ is_speaking: isSpeaking, audio_level: audioLevel });
+    }
+  }, [isSpeaking, isVoiceConnected, broadcastMyVoiceState, audioLevel]);
 
   // Stop all audio & video streams cleanly
   const stopAllMediaStreams = React.useCallback(() => {
@@ -116,35 +130,62 @@ export function useServerVoice(channelId: string, serverId: string) {
 
       setLocalStream(stream);
 
-      // 2. Set up live Web Audio API speech analyzer
+      // 2. Set up live Web Audio API speech analyzer with time-domain RMS
       const AudioCtx =
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 
       if (AudioCtx) {
         const audioCtx = new AudioCtx();
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
         audioContextRef.current = audioCtx;
+
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.3;
         source.connect(analyser);
+
+        // Keep Chrome/Edge audio processing awake without speaker feedback loop
+        const silentGain = audioCtx.createGain();
+        silentGain.gain.value = 0;
+        source.connect(silentGain);
+        silentGain.connect(audioCtx.destination);
+
         analyserRef.current = analyser;
 
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const timeData = new Uint8Array(analyser.fftSize);
 
         const checkSpeaking = () => {
           if (!analyserRef.current) return;
-          analyserRef.current.getByteFrequencyData(dataArray);
-
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
+          if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
           }
-          const average = sum / dataArray.length;
-          const normalized = Math.min(100, Math.round((average / 128) * 100));
+
+          if (isMicMutedRef.current) {
+            setAudioLevel(0);
+            setIsSpeaking(false);
+            animFrameRef.current = requestAnimationFrame(checkSpeaking);
+            return;
+          }
+
+          analyserRef.current.getByteTimeDomainData(timeData);
+
+          // Calculate Root Mean Square (RMS) of audio waveform
+          let sumSquares = 0;
+          for (let i = 0; i < timeData.length; i++) {
+            const sample = (timeData[i] - 128) / 128;
+            sumSquares += sample * sample;
+          }
+          const rms = Math.sqrt(sumSquares / timeData.length);
+          // Scale RMS to 0 - 100 percentage.
+          const normalized = Math.min(100, Math.round(rms * 350));
           setAudioLevel(normalized);
 
-          const speaking = normalized > 12 && !isMicMuted;
+          // Threshold for speaking detection (sensitivity)
+          const speaking = normalized > 5;
           setIsSpeaking(speaking);
 
           animFrameRef.current = requestAnimationFrame(checkSpeaking);

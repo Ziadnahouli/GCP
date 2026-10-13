@@ -699,27 +699,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       const source = audioCtx.createMediaStreamSource(remoteStream);
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.25;
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.3;
       source.connect(analyser);
 
-      const buffer = new Uint8Array(analyser.frequencyBinCount);
+      const timeBuffer = new Uint8Array(analyser.fftSize);
 
       const checkVolume = () => {
         if (!analyser || !audioCtx) return;
         if (audioCtx.state === 'suspended') {
           audioCtx.resume().catch(() => {});
         }
-        analyser.getByteFrequencyData(buffer);
+        analyser.getByteTimeDomainData(timeBuffer);
 
-        // Measure vocal fundamental and formant bins (approx 150 Hz to 3500 Hz, bins 2-36)
-        let speechSum = 0;
-        const speechBins = Math.min(36, buffer.length);
-        for (let i = 2; i < speechBins; i++) {
-          speechSum += buffer[i];
+        let sumSquares = 0;
+        for (let i = 0; i < timeBuffer.length; i++) {
+          const s = (timeBuffer[i] - 128) / 128;
+          sumSquares += s * s;
         }
-        const speechAvg = speechSum / (speechBins - 2);
-        const isSpeaking = speechAvg > 12;
+        const rms = Math.sqrt(sumSquares / timeBuffer.length);
+        const isSpeaking = rms > 0.02;
 
         setParticipants((prev) =>
           prev.map((p) => {
@@ -774,27 +773,32 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       const source = audioCtx.createMediaStreamSource(localStream);
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.25;
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.3;
       source.connect(analyser);
 
-      const buffer = new Uint8Array(analyser.frequencyBinCount);
+      // Keep pipeline active via silent gain node
+      const silentGain = audioCtx.createGain();
+      silentGain.gain.value = 0;
+      source.connect(silentGain);
+      silentGain.connect(audioCtx.destination);
+
+      const timeBuffer = new Uint8Array(analyser.fftSize);
 
       const checkVolume = () => {
         if (!analyser || !audioCtx) return;
         if (audioCtx.state === 'suspended') {
           audioCtx.resume().catch(() => {});
         }
-        analyser.getByteFrequencyData(buffer);
+        analyser.getByteTimeDomainData(timeBuffer);
 
-        // Measure vocal fundamental and formant bins (approx 150 Hz to 3500 Hz, bins 2-36)
-        let speechSum = 0;
-        const speechBins = Math.min(36, buffer.length);
-        for (let i = 2; i < speechBins; i++) {
-          speechSum += buffer[i];
+        let sumSquares = 0;
+        for (let i = 0; i < timeBuffer.length; i++) {
+          const s = (timeBuffer[i] - 128) / 128;
+          sumSquares += s * s;
         }
-        const speechAvg = speechSum / (speechBins - 2);
-        const isSpeaking = speechAvg > 12;
+        const rms = Math.sqrt(sumSquares / timeBuffer.length);
+        const isSpeaking = rms > 0.02;
 
         setParticipants((prev) =>
           prev.map((p) => {

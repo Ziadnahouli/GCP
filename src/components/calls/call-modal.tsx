@@ -455,8 +455,8 @@ export function CallModal({
                     <div
                       key={p.id}
                       className={cn(
-                        'h-full w-24 rounded-lg bg-surface-default/70 border flex items-center justify-center relative p-2 transition-colors',
-                        p.isSpeaking ? 'border-primary/60 ring-1 ring-primary/40' : 'border-white/[0.06]'
+                        'h-full w-24 rounded-lg bg-surface-default/70 border flex items-center justify-center relative p-2 transition-all',
+                        p.isSpeaking ? 'border-emerald-500/60 ring-2 ring-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.3)]' : 'border-white/[0.06]'
                       )}
                     >
                       <Avatar name={p.name} size="sm" />
@@ -495,7 +495,7 @@ export function CallModal({
                       className={cn(
                         'relative rounded-xl overflow-hidden bg-surface-default/60 border flex flex-col items-center justify-center h-full min-h-[160px] p-4 transition-all',
                         p.isSpeaking
-                          ? 'border-primary/60 ring-1 ring-primary/30'
+                          ? 'border-emerald-500/50 ring-2 ring-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
                           : 'border-white/[0.06]'
                       )}
                     >
@@ -526,10 +526,30 @@ export function CallModal({
                           name={p.name}
                           size="lg"
                           className={cn(
-                            'transition-transform',
-                            p.isSpeaking && 'scale-105 ring-2 ring-primary/60'
+                            'transition-all duration-150',
+                            p.isSpeaking && 'scale-105 ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.85)]'
                           )}
                         />
+
+                        {/* Equalizer Wave / Speaking Status */}
+                        <div className="flex items-end justify-center gap-1 h-4 mt-1">
+                          {!p.isMuted ? (
+                            p.isSpeaking ? (
+                              <>
+                                <span className="w-1 h-2.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                                <span className="w-1 h-3.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                                <span className="w-1 h-4 bg-emerald-300 rounded-full animate-bounce [animation-delay:300ms]" />
+                                <span className="w-1 h-3.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                                <span className="w-1 h-2.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-emerald-400/60 font-mono">Audio Active</span>
+                            )
+                          ) : (
+                            <span className="text-[10px] text-rose-400/80 font-mono">Microphone Muted</span>
+                          )}
+                        </div>
+
                         {wantsCamera && !isActivelyRendering && (
                           <div className="flex items-center gap-1.5 text-[10px] text-amber-400 font-medium bg-amber-400/10 px-2.5 py-0.5 rounded-full border border-amber-400/20 animate-pulse mt-1">
                             <Video className="w-3 h-3" />

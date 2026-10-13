@@ -7,11 +7,30 @@ import { supabase } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
 
 const STORAGE_KEY = 'nexus_gaming_servers_store';
+const DELETED_CHANS_KEY = 'nexus_deleted_channels_store';
 
 const DUMMY_SERVER_IDS = new Set([
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000002',
 ]);
+
+const getDeletedChannelIds = (): Set<string> => {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(DELETED_CHANS_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+};
+
+const markChannelDeleted = (channelId: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getDeletedChannelIds();
+    set.add(channelId);
+    localStorage.setItem(DELETED_CHANS_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+};
 
 const DEFAULT_SERVERS: Server[] = [];
 
@@ -39,6 +58,7 @@ export function useServers() {
         `);
 
       if (!error && srvData) {
+        const deletedChans = getDeletedChannelIds();
         const parsed: Server[] = srvData
           .filter((s) => !DUMMY_SERVER_IDS.has(s.id))
           .map((s) => ({
@@ -48,9 +68,9 @@ export function useServers() {
             icon_url: s.icon_url,
             owner_id: s.owner_id,
             created_at: s.created_at,
-            channels: (s.channels || []).sort(
-              (a: Channel, b: Channel) => a.position - b.position
-            ),
+            channels: (s.channels || [])
+              .filter((c: Channel) => !deletedChans.has(c.id))
+              .sort((a: Channel, b: Channel) => a.position - b.position),
             members: (s.server_members || []).map((m: any) => ({
               id: m.id,
               server_id: m.server_id,
@@ -418,6 +438,8 @@ export function useServers() {
 
   const deleteChannel = React.useCallback(
     async (serverId: string, channelId: string) => {
+      markChannelDeleted(channelId);
+
       const updated = servers.map((srv) => {
         if (srv.id === serverId) {
           return {
@@ -432,6 +454,8 @@ export function useServers() {
 
       if (user && supabase) {
         try {
+          // Delete messages first to satisfy foreign keys
+          await supabase.from('channel_messages').delete().eq('channel_id', channelId);
           await supabase.from('channels').delete().eq('id', channelId);
           notifyServersUpdate();
         } catch (e) {
@@ -465,17 +489,15 @@ export function useServers() {
         return { success: false, error: 'Please enter a valid Server ID or Invite Link.' };
       }
 
-      const cleaned = serverIdOrInvite
-        .trim()
-        .replace(/^https?:\/\/[^\/]+\/join\//i, '')
-        .replace(/^nexus:\/\/join\//i, '')
-        .trim();
+      // Robust UUID extraction from any URL format (?join=UUID, /join/UUID, or direct UUID)
+      const uuidMatch = serverIdOrInvite.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      const targetId = uuidMatch ? uuidMatch[0] : serverIdOrInvite.trim();
 
       // Check if already in servers list
       const existing = servers.find(
         (s) =>
-          s.id.toLowerCase() === cleaned.toLowerCase() ||
-          s.name.toLowerCase() === cleaned.toLowerCase()
+          s.id.toLowerCase() === targetId.toLowerCase() ||
+          s.name.toLowerCase() === targetId.toLowerCase()
       );
       if (existing) {
         return { success: true, server: existing };
@@ -483,6 +505,25 @@ export function useServers() {
 
       if (user && supabase) {
         try {
+          const memberId =
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `00000000-0000-4000-8005-${Date.now().toString(16).padStart(12, '0')}`;
+
+          // Add membership first so RLS policies allow querying the server
+          try {
+            await supabase.from('server_members').upsert({
+              id: memberId,
+              server_id: targetId,
+              user_id: user.id,
+              role: 'member',
+            });
+          } catch {}
+
+          try {
+            await supabase.rpc('join_server_by_id', { target_server_id: targetId });
+          } catch {}
+
           const { data: srvData, error: srvErr } = await supabase
             .from('servers')
             .select(`
@@ -496,34 +537,14 @@ export function useServers() {
                 )
               )
             `)
-            .eq('id', cleaned)
+            .eq('id', targetId)
             .single();
 
           if (srvErr || !srvData) {
             return { success: false, error: 'Server not found with this ID or Invite Link.' };
           }
 
-          const memberId =
-            typeof crypto !== 'undefined' && crypto.randomUUID
-              ? crypto.randomUUID()
-              : `00000000-0000-4000-8005-${Date.now().toString(16).padStart(12, '0')}`;
-
-          await supabase.from('server_members').upsert({
-            id: memberId,
-            server_id: srvData.id,
-            user_id: user.id,
-            role: 'member',
-          });
-
-          const newMember = {
-            id: memberId,
-            server_id: srvData.id,
-            user_id: user.id,
-            role: 'member' as const,
-            joined_at: new Date().toISOString(),
-            profile: profile || undefined,
-          };
-
+          const deletedChans = getDeletedChannelIds();
           const parsedServer: Server = {
             id: srvData.id,
             name: srvData.name,
@@ -531,9 +552,9 @@ export function useServers() {
             icon_url: srvData.icon_url,
             owner_id: srvData.owner_id,
             created_at: srvData.created_at,
-            channels: (srvData.channels || []).sort(
-              (a: Channel, b: Channel) => a.position - b.position
-            ),
+            channels: (srvData.channels || [])
+              .filter((c: Channel) => !deletedChans.has(c.id))
+              .sort((a: Channel, b: Channel) => a.position - b.position),
             members: [
               ...(srvData.server_members || []).map((m: any) => ({
                 id: m.id,
@@ -543,7 +564,6 @@ export function useServers() {
                 joined_at: m.joined_at,
                 profile: m.profile || undefined,
               })),
-              newMember,
             ],
           };
 
@@ -558,7 +578,7 @@ export function useServers() {
 
       return { success: false, error: 'Please sign in to join squad servers.' };
     },
-    [servers, user, profile, notifyServersUpdate]
+    [servers, user, notifyServersUpdate]
   );
 
   const leaveServer = React.useCallback(

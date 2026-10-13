@@ -97,6 +97,14 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
+  const { isVoiceConnected, isConnecting, connectVoice } = voice;
+  // Auto-connect to voice lounge when navigating to a voice channel if permitted
+  React.useEffect(() => {
+    if (channel.type === 'voice' && !isVoiceConnected && !isConnecting && canConnectVoice) {
+      connectVoice();
+    }
+  }, [channel.id, channel.type, canConnectVoice, isVoiceConnected, isConnecting, connectVoice]);
+
   // Hook up video stream to video element
   React.useEffect(() => {
     if (localVideoRef.current && voice.videoStream) {
@@ -528,8 +536,10 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                             name={profile?.display_name || 'You'}
                             size="lg"
                             className={cn(
-                              'transition-all duration-300',
-                              voice.isSpeaking && 'ring-4 ring-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.5)] animate-pulse'
+                              'transition-all duration-150',
+                              voice.isSpeaking
+                                ? 'ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.85)] scale-105'
+                                : 'ring-2 ring-emerald-500/20'
                             )}
                           />
                           {voice.isMicMuted ? (
@@ -552,29 +562,64 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         @{profile?.username || 'gamer'}
                       </div>
 
-                      {/* Equalizer animation matching real mic volume */}
-                      <div className="flex items-center gap-1 mt-3 h-3">
+                      {/* Equalizer animation dynamically matching real mic waveform volume */}
+                      <div className="flex items-end justify-center gap-1 mt-3 h-6">
                         {!voice.isMicMuted ? (
                           <>
                             <span
-                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
-                              style={{ height: `${Math.max(4, Math.min(16, (voice.audioLevel / 100) * 16))}px` }}
+                              className={cn(
+                                'w-1 rounded-full transition-all duration-75',
+                                voice.isSpeaking
+                                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                                  : 'bg-emerald-500/30'
+                              )}
+                              style={{
+                                height: `${Math.max(4, Math.min(22, Math.round(4 + (voice.audioLevel / 100) * 18 * 0.8)))}px`,
+                              }}
                             />
                             <span
-                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
-                              style={{ height: `${Math.max(3, Math.min(14, (voice.audioLevel / 100) * 14))}px` }}
+                              className={cn(
+                                'w-1 rounded-full transition-all duration-75',
+                                voice.isSpeaking
+                                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                                  : 'bg-emerald-500/30'
+                              )}
+                              style={{
+                                height: `${Math.max(4, Math.min(24, Math.round(4 + (voice.audioLevel / 100) * 20 * 1.2)))}px`,
+                              }}
                             />
                             <span
-                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
-                              style={{ height: `${Math.max(6, Math.min(18, (voice.audioLevel / 100) * 18))}px` }}
+                              className={cn(
+                                'w-1 rounded-full transition-all duration-75',
+                                voice.isSpeaking
+                                  ? 'bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,1)]'
+                                  : 'bg-emerald-500/30'
+                              )}
+                              style={{
+                                height: `${Math.max(4, Math.min(26, Math.round(4 + (voice.audioLevel / 100) * 22 * 1.0)))}px`,
+                              }}
                             />
                             <span
-                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
-                              style={{ height: `${Math.max(3, Math.min(14, (voice.audioLevel / 100) * 14))}px` }}
+                              className={cn(
+                                'w-1 rounded-full transition-all duration-75',
+                                voice.isSpeaking
+                                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                                  : 'bg-emerald-500/30'
+                              )}
+                              style={{
+                                height: `${Math.max(4, Math.min(24, Math.round(4 + (voice.audioLevel / 100) * 20 * 1.3)))}px`,
+                              }}
                             />
                             <span
-                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
-                              style={{ height: `${Math.max(4, Math.min(16, (voice.audioLevel / 100) * 16))}px` }}
+                              className={cn(
+                                'w-1 rounded-full transition-all duration-75',
+                                voice.isSpeaking
+                                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                                  : 'bg-emerald-500/30'
+                              )}
+                              style={{
+                                height: `${Math.max(4, Math.min(22, Math.round(4 + (voice.audioLevel / 100) * 18 * 0.7)))}px`,
+                              }}
                             />
                           </>
                         ) : (
@@ -598,7 +643,12 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     {voice.remoteParticipants.map((mem) => (
                       <div
                         key={mem.id}
-                        className="relative group rounded-2xl border border-white/[0.08] bg-surface-default/60 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all hover:border-white/[0.16]"
+                        className={cn(
+                          'relative group rounded-2xl border bg-surface-default/60 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all',
+                          mem.is_speaking
+                            ? 'border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+                            : 'border-white/[0.08] hover:border-white/[0.16]'
+                        )}
                       >
                         <div className="relative mb-3">
                           <Avatar
@@ -606,8 +656,10 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                             name={mem.display_name}
                             size="lg"
                             className={cn(
-                              'transition-all duration-300',
-                              mem.is_speaking && 'ring-4 ring-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.5)] animate-pulse'
+                              'transition-all duration-150',
+                              mem.is_speaking
+                                ? 'ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.85)] scale-105'
+                                : 'ring-2 ring-emerald-500/20'
                             )}
                           />
                           {mem.is_muted ? (
@@ -625,9 +677,19 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                           {mem.display_name}
                         </div>
 
-                        <div className="flex items-center gap-1 mt-3 h-3">
+                        <div className="flex items-end justify-center gap-1 mt-3 h-6">
                           {!mem.is_muted ? (
-                            <span className="text-[10px] text-emerald-400 font-mono">Live Audio Active</span>
+                            mem.is_speaking ? (
+                              <>
+                                <span className="w-1 h-3.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                                <span className="w-1 h-5 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                                <span className="w-1 h-6 bg-emerald-300 rounded-full animate-bounce [animation-delay:300ms]" />
+                                <span className="w-1 h-5 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                                <span className="w-1 h-3.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-emerald-400/80 font-mono">Live Audio Connected</span>
+                            )
                           ) : (
                             <span className="text-[10px] text-rose-400/80 font-mono">Muted</span>
                           )}
@@ -731,6 +793,30 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                       {voice.isDeafened ? 'Deafened' : 'Deafen'}
                     </span>
                   </button>
+
+                  {/* Live Mic Sensitivity VU Bar */}
+                  {!voice.isMicMuted && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] shadow-subtle">
+                      <Volume2
+                        className={cn(
+                          'w-4 h-4 transition-colors',
+                          voice.isSpeaking ? 'text-emerald-400 animate-pulse' : 'text-muted-foreground'
+                        )}
+                      />
+                      <div className="w-16 h-2 rounded-full bg-white/[0.08] overflow-hidden">
+                        <div
+                          className={cn(
+                            'h-full rounded-full transition-all duration-75',
+                            voice.isSpeaking ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-emerald-500/40'
+                          )}
+                          style={{ width: `${Math.min(100, voice.audioLevel)}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-mono text-muted-foreground w-7 text-right">
+                        {voice.audioLevel}%
+                      </span>
+                    </div>
+                  )}
 
                   {/* Camera Toggle */}
                   {canShareScreen && (

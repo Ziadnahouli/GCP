@@ -56,16 +56,9 @@ interface ChannelViewProps {
   channel: Channel;
 }
 
-const DEFAULT_COMMUNITY_MEMBERS = [
-  { id: '51a183ab-d80e-4db2-b29f-57203aca3ea0', display_name: 'Commander Rex', username: 'commander_rex', role: 'admin', status: 'online' as const },
-  { id: '8cab3f6c-1712-4a01-9b98-1f41676ef501', display_name: 'zorkos', username: 'zzorkoss', role: 'member', status: 'online' as const },
-  { id: '3b4668f6-f241-4a90-9c98-3aba096e9705', display_name: 'Test1', username: 'test', role: 'member', status: 'idle' as const },
-];
-
 export function ChannelView({ server, channel }: ChannelViewProps) {
   const router = useRouter();
   const { user, profile } = useAuth();
-  const { friends } = useSocial();
   const { getOrCreateDirectConversation } = useConversations();
   const { messages, sendMessage, retryMessage } = useChannelMessages(channel.id);
   const voice = useServerVoice(channel.id, server.id);
@@ -79,7 +72,6 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   const [showInviteModal, setShowInviteModal] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showSearch, setShowSearch] = React.useState(false);
-  const [communityProfiles, setCommunityProfiles] = React.useState<UserProfile[]>([]);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   // Video and Screen Share elements
@@ -119,37 +111,9 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
     }
   }, [voice.screenStream]);
 
-  // Load real community member profiles from database
-  React.useEffect(() => {
-    if (!user) return;
-    try {
-      const supabase = getBrowserClient();
-      supabase
-        .from('profiles')
-        .select('*')
-        .neq('id', user.id)
-        .limit(10)
-        .then(({ data }) => {
-          if (data && data.length > 0) {
-            setCommunityProfiles(data as UserProfile[]);
-          }
-        });
-    } catch {}
-  }, [user]);
-
   const handleStartDirectChat = async (targetUserId: string, targetName: string) => {
     if (!targetUserId || targetUserId === user?.id) {
       toast({ title: 'You', description: 'This is your own profile.', type: 'info' });
-      return;
-    }
-
-    const isMock = DEFAULT_COMMUNITY_MEMBERS.some((d) => d.id === targetUserId);
-    if (isMock) {
-      toast({
-        title: 'Demo Squadmate',
-        description: `${targetName} is an automated bot. Add registered friends to start private chats!`,
-        type: 'info',
-      });
       return;
     }
 
@@ -234,76 +198,41 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
     const seenIds = new Set<string>();
 
-    // 1. Server members
+    // 1. Server members only
     if (server.members && server.members.length > 0) {
       for (const m of server.members) {
         if (!seenIds.has(m.user_id)) {
           seenIds.add(m.user_id);
+          const isCurrentUser = m.user_id === user?.id;
+          const memberProfile = isCurrentUser ? (profile || m.profile) : m.profile;
           list.push({
             id: m.user_id,
-            display_name: m.profile?.display_name || 'Squad Member',
-            username: m.profile?.username || 'member',
-            avatar_url: m.profile?.avatar_url || null,
-            role: m.role || 'member',
-            status: (m.profile?.status as any) || 'offline',
-            game_activity: m.profile?.game_activity || null,
+            display_name: memberProfile?.display_name || (isCurrentUser ? (profile?.display_name || 'You') : 'Squad Member'),
+            username: memberProfile?.username || (isCurrentUser ? (profile?.username || 'you') : 'member'),
+            avatar_url: memberProfile?.avatar_url || null,
+            role: m.role || (m.user_id === server.owner_id ? 'owner' : 'member'),
+            status: (memberProfile?.status as any) || (isCurrentUser ? 'online' : 'offline'),
+            game_activity: memberProfile?.game_activity || null,
           });
         }
       }
     }
 
-    // 2. Add friends
-    for (const f of friends) {
-      if (!seenIds.has(f.friend.id)) {
-        seenIds.add(f.friend.id);
-        list.push({
-          id: f.friend.id,
-          display_name: f.friend.display_name,
-          username: f.friend.username,
-          avatar_url: f.friend.avatar_url || null,
-          role: 'friend',
-          status: (f.friend.status as any) || 'offline',
-          game_activity: f.friend.game_activity || null,
-        });
-      }
-    }
-
-    // 3. Registered Community Profiles
-    for (const cp of communityProfiles) {
-      if (!seenIds.has(cp.id)) {
-        seenIds.add(cp.id);
-        list.push({
-          id: cp.id,
-          display_name: cp.display_name || cp.username,
-          username: cp.username,
-          avatar_url: cp.avatar_url || null,
-          role: 'member',
-          status: (cp.status as any) || 'offline',
-          game_activity: cp.game_activity || null,
-        });
-      }
-    }
-
-    // 4. Fallback mock community profiles only if list is empty
-    if (list.length === 0) {
-      for (const cm of DEFAULT_COMMUNITY_MEMBERS) {
-        if (!seenIds.has(cm.id)) {
-          seenIds.add(cm.id);
-          list.push({
-            id: cm.id,
-            display_name: cm.display_name,
-            username: cm.username,
-            avatar_url: null,
-            role: cm.role,
-            status: cm.status,
-            game_activity: null,
-          });
-        }
-      }
+    // Fallback: if server.members hasn't loaded yet, show the current user / owner
+    if (list.length === 0 && user) {
+      list.push({
+        id: user.id,
+        display_name: profile?.display_name || 'You',
+        username: profile?.username || 'you',
+        avatar_url: profile?.avatar_url || null,
+        role: server.owner_id === user.id ? 'owner' : 'member',
+        status: 'online',
+        game_activity: profile?.game_activity || null,
+      });
     }
 
     return list;
-  }, [server.members, friends, communityProfiles]);
+  }, [server.members, server.owner_id, user, profile]);
 
   const isVoiceChannel = channel.type === 'voice';
 

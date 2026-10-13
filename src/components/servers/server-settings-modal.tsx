@@ -75,7 +75,7 @@ export function ServerSettingsModal({
   onDeleteRole,
   onUpdateRolePermissions,
 }: ServerSettingsModalProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState<'overview' | 'channels' | 'roles' | 'members' | 'danger'>('overview');
   const [serverName, setServerName] = React.useState(server.name);
@@ -840,27 +840,46 @@ export function ServerSettingsModal({
 
                 <div className="space-y-2">
                   {/* Owner Row */}
-                  <div className="flex items-center justify-between p-3 rounded-xl border border-amber-500/20 bg-amber-500/5">
-                    <div className="flex items-center gap-3">
-                      <Avatar name="Owner" size="sm" />
-                      <div>
-                        <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                          <span>Server Creator</span>
-                          <span className="text-[9px] text-muted-foreground font-mono">
-                            {isOwner ? '(You)' : ''}
-                          </span>
+                  {(() => {
+                    const ownerMember = server.members.find((m) => m.user_id === server.owner_id);
+                    const ownerProfile = ownerMember?.profile || (isOwner ? profile : null);
+                    return (
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-amber-500/20 bg-amber-500/5">
+                        <div className="flex items-center gap-3">
+                          <Avatar
+                            src={ownerProfile?.avatar_url || null}
+                            name={ownerProfile?.display_name || 'Owner'}
+                            size="sm"
+                          />
+                          <div>
+                            <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                              <span>{ownerProfile?.display_name || 'Server Creator'}</span>
+                              <span className="text-[9px] text-muted-foreground font-mono">
+                                {isOwner ? '(You)' : ownerProfile?.username ? `@${ownerProfile.username}` : ''}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-amber-400 font-mono">All Permissions Granted</div>
+                          </div>
                         </div>
-                        <div className="text-[10px] text-amber-400 font-mono">All Permissions Granted</div>
+                        <Badge variant="default" className="text-[10px] bg-amber-500/20 text-amber-300 border-amber-500/30 gap-1">
+                          <Crown className="w-3 h-3" /> Owner
+                        </Badge>
                       </div>
-                    </div>
-                    <Badge variant="default" className="text-[10px] bg-amber-500/20 text-amber-300 border-amber-500/30 gap-1">
-                      <Crown className="w-3 h-3" /> Owner
-                    </Badge>
-                  </div>
+                    );
+                  })()}
 
                   {/* Other Members */}
-                  {server.members.map((mem) => {
-                    return (
+                  {(() => {
+                    const otherMembers = server.members.filter((mem) => mem.user_id !== server.owner_id);
+                    if (otherMembers.length === 0) {
+                      return (
+                        <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                          No other squad members have joined yet. Share your invite link to assemble your squad!
+                        </div>
+                      );
+                    }
+
+                    return otherMembers.map((mem) => (
                       <div
                         key={mem.id}
                         className="flex items-center justify-between p-3 rounded-xl border border-white/[0.06] bg-surface-panel/40"
@@ -929,8 +948,8 @@ export function ServerSettingsModal({
                           )}
                         </div>
                       </div>
-                    );
-                  })}
+                    ));
+                  })()}
                 </div>
               </div>
             )}

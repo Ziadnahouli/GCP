@@ -191,8 +191,8 @@ export function useSocial() {
 
     if (!isConfigured || !user) return;
 
-    // Supabase Realtime channel with active presence tracking
-    const channel = supabase.channel('social-realtime', {
+    // Supabase Realtime channel with active presence tracking aligned to nexus-global-presence
+    const channel = supabase.channel('nexus-global-presence', {
       config: {
         broadcast: { self: false },
         presence: { key: user.id },

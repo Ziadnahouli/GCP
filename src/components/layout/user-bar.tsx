@@ -26,7 +26,7 @@ export function UserBar() {
   const [showSoundboard, setShowSoundboard] = React.useState(false);
   const [hasErrors, setHasErrors] = React.useState(false);
 
-  const isInCall = call.callStatus === 'in_call' || call.callStatus === 'outgoing_ringing';
+  const isInCall = call.callStatus !== 'idle' || Boolean(call.activeConversationId);
   const isMuted = isInCall ? call.isMicMuted : localMuted;
   const isDeafened = isInCall ? call.isDeafened : localDeafened;
 
@@ -39,8 +39,9 @@ export function UserBar() {
   }, []);
 
   const handleToggleMic = () => {
-    if (isInCall) {
+    if (call.callStatus !== 'idle' || call.activeConversationId) {
       call.toggleMic();
+      setLocalMuted(!call.isMicMuted);
       return;
     }
     const next = !localMuted;
@@ -54,8 +55,9 @@ export function UserBar() {
   };
 
   const handleToggleDeafen = () => {
-    if (isInCall) {
+    if (call.callStatus !== 'idle' || call.activeConversationId) {
       call.toggleDeafen();
+      setLocalDeafened(!call.isDeafened);
       return;
     }
     const next = !localDeafened;

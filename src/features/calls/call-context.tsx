@@ -400,6 +400,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           recTrack.enabled = true;
           attachRemoteTrack(recTrack);
         }
+      } else if (payload.isCameraOn === false && !payload.isScreenSharing) {
+        // Clean up remote video track if remote peer turns camera off
+        if (remoteStreamRef.current) {
+          remoteStreamRef.current.getVideoTracks().forEach((vt) => {
+            try { vt.stop(); } catch {}
+            remoteStreamRef.current?.removeTrack(vt);
+          });
+          setRemoteStream(new MediaStream(remoteStreamRef.current.getTracks()));
+        }
       }
     },
     [user?.id, attachRemoteTrack]
@@ -2047,6 +2056,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (peerUserId) {
       sendSignalToUser(peerUserId, 'peer_media_toggle', { userId: user?.id, isMuted: nextMuted });
     }
+
+    toast({
+      title: nextMuted ? 'Microphone Muted' : 'Microphone Active',
+      description: nextMuted ? 'You are muted' : 'Microphone unmuted',
+      type: nextMuted ? 'error' : 'success',
+      duration: 1500,
+    });
   };
 
   const toggleDeafen = () => {
@@ -2135,6 +2151,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           if (videoTransceiver && videoTransceiver.direction !== 'sendrecv') {
             videoTransceiver.direction = 'sendrecv';
           }
+
+          // Trigger WebRTC SDP renegotiation so remote peer decodes incoming camera RTP stream
+          restartIceConnection().catch(() => {});
         }
 
         setIsCameraOn(true);

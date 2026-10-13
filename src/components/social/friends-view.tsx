@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
 import { useCallContext } from '@/features/calls/call-context';
+import { usePresence } from '@/features/presence/presence-context';
 
 interface FriendsViewProps {
   onOpenConversation?: (conversationId: string) => void;
@@ -51,6 +52,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
   const { getOrCreateDirectConversation } = useConversations();
   const { toast } = useToast();
+  const { getUserStatus, isUserOnline } = usePresence();
 
   const [activeTab, setActiveTab] = React.useState<'online' | 'all' | 'pending' | 'blocked' | 'add'>('all');
   const [searchFilter, setSearchFilter] = React.useState('');
@@ -58,11 +60,9 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
   const [isSendingRequest, setIsSendingRequest] = React.useState(false);
   const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
 
-  const onlineCount = friends.filter(
-    (f) => f.friend.status === 'online' || f.friend.status === 'idle' || f.friend.status === 'dnd'
-  ).length;
+  const onlineCount = friends.filter((f) => isUserOnline(f.friend.id)).length;
 
-  // Filter friends based on search
+  // Filter friends based on search and live online presence
   const filteredFriends = React.useMemo(() => {
     return friends.filter((item) => {
       const matchSearch =
@@ -71,11 +71,11 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
       if (!matchSearch) return false;
       if (activeTab === 'online') {
-        return item.friend.status === 'online' || item.friend.status === 'idle' || item.friend.status === 'dnd';
+        return isUserOnline(item.friend.id);
       }
       return true;
     });
-  }, [friends, searchFilter, activeTab]);
+  }, [friends, searchFilter, activeTab, isUserOnline]);
 
   const call = useCallContext();
 
@@ -295,7 +295,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                       <div className="flex items-center gap-3">
                         <Avatar
                           name={req.sender?.display_name || 'Gamer'}
-                          status={req.sender?.status || 'offline'}
+                          status={getUserStatus(req.sender?.id)}
                           showStatus
                           size="md"
                         />
@@ -468,6 +468,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
               <div className="space-y-1">
                 {filteredFriends.map((item) => {
                   const isMenuOpen = activeMenuId === item.id;
+                  const liveStatus = getUserStatus(item.friend.id);
 
                   return (
                     <div
@@ -480,7 +481,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         <Avatar
                           src={item.friend.avatar_url}
                           name={item.friend.display_name}
-                          status={item.friend.status}
+                          status={liveStatus}
                           showStatus
                           size="md"
                         />
@@ -502,7 +503,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                             ) : item.friend.custom_status ? (
                               <span>{item.friend.custom_status}</span>
                             ) : (
-                              <span className="capitalize">{item.friend.status}</span>
+                              <span className="capitalize">{liveStatus}</span>
                             )}
                           </div>
                         </div>

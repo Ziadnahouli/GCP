@@ -245,29 +245,50 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   };
 
-  // Start live camera test
+  // Start live camera test with fallback and auto-attach
   const startCamTest = async () => {
     if (isTestingCam) {
       stopCamTest();
       return;
     }
     try {
-      const constraints: MediaStreamConstraints = {
-        video: selectedCamDevice ? { deviceId: { exact: selectedCamDevice } } : true,
-      };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      let stream: MediaStream;
+      try {
+        const constraints: MediaStreamConstraints = {
+          video: selectedCamDevice ? { deviceId: { exact: selectedCamDevice } } : true,
+        };
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (deviceErr) {
+        console.warn('Specific camera constraint failed, attempting generic video: true', deviceErr);
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
       camTestStreamRef.current = stream;
+      setIsTestingCam(true);
       if (camVideoRef.current) {
         camVideoRef.current.srcObject = stream;
         camVideoRef.current.play().catch(() => {});
       }
-      setIsTestingCam(true);
     } catch (e) {
       console.warn('Webcam test access error:', e);
-      toast({ title: 'Webcam Inaccessible', description: 'Could not access the selected video device.', type: 'error' });
+      toast({
+        title: 'Webcam Inaccessible',
+        description: 'Could not access camera. Please check camera permissions in your browser or ensure no other app is using it.',
+        type: 'error',
+      });
       stopCamTest();
     }
   };
+
+  // Synchronize webcam test stream to video element whenever test state changes
+  React.useEffect(() => {
+    if (isTestingCam && camVideoRef.current && camTestStreamRef.current) {
+      camVideoRef.current.srcObject = camTestStreamRef.current;
+      camVideoRef.current.play().catch((err) => {
+        console.warn('Webcam test preview play interrupted:', err);
+      });
+    }
+  }, [isTestingCam]);
 
   // Sync state from profile & settings on mount/open
   React.useEffect(() => {
@@ -347,7 +368,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-4xl p-0 h-[660px] max-h-[92vh] flex flex-col md:flex-row overflow-hidden border border-white/[0.08] bg-[#090a0f] text-foreground w-[96vw] md:w-full shadow-2xl shadow-black/95 rounded-2xl"
+        className="max-w-5xl lg:max-w-6xl md:w-[980px] lg:w-[1100px] h-[720px] max-h-[94vh] p-0 flex flex-col md:flex-row overflow-hidden border border-white/[0.08] bg-[#090a0f] text-foreground w-[96vw] shadow-2xl shadow-black/95 rounded-2xl"
         onClose={() => onOpenChange(false)}
       >
         {/* Modern Gaming Navigation Sidebar */}
@@ -499,7 +520,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-[#090a0f] relative custom-scrollbar">
           {/* TAB 1: GAMER PROFILE */}
           {activeTab === 'profile' && (
-            <div className="space-y-6 max-w-xl pb-16">
+            <div className="space-y-6 max-w-3xl w-full pb-16">
               <div>
                 <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
                   <span>Gamer Identity & Profile</span>
@@ -715,7 +736,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
           {/* TAB 2: APPEARANCE & THEMES */}
           {activeTab === 'appearance' && (
-            <div className="space-y-6 max-w-xl pb-16">
+            <div className="space-y-6 max-w-3xl w-full pb-16">
               <div>
                 <h3 className="text-lg font-bold text-foreground">Themes & Accents</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -773,7 +794,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
           {/* TAB 3: VOICE & VIDEO STUDIO */}
           {activeTab === 'studio' && (
-            <div className="space-y-6 max-w-xl pb-16">
+            <div className="space-y-6 max-w-3xl w-full pb-16">
               <div>
                 <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
                   <span>Voice & Video Studio</span>
@@ -917,6 +938,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       autoPlay
                       playsInline
                       muted
+                      onLoadedMetadata={(e) => {
+                        (e.currentTarget as HTMLVideoElement).play().catch(() => {});
+                      }}
                       className={cn('w-full h-full object-cover', !isTestingCam && 'hidden')}
                     />
                     {!isTestingCam && (
@@ -962,7 +986,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
           {/* TAB 4: AUDIO PROCESSING */}
           {activeTab === 'audio' && (
-            <div className="space-y-6 max-w-xl pb-16">
+            <div className="space-y-6 max-w-3xl w-full pb-16">
               <div>
                 <h3 className="text-lg font-bold text-foreground">Audio Processing & DSP</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -1085,7 +1109,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
           {/* TAB 5: SHORTCUTS & KEYBINDS */}
           {activeTab === 'shortcuts' && (
-            <div className="space-y-6 max-w-xl pb-16">
+            <div className="space-y-6 max-w-3xl w-full pb-16">
               <div>
                 <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
                   <span>Gaming Keybinds & Shortcuts</span>
@@ -1126,7 +1150,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
           {/* TAB 6: NOTIFICATIONS */}
           {activeTab === 'notifs' && (
-            <div className="space-y-6 max-w-xl pb-16">
+            <div className="space-y-6 max-w-3xl w-full pb-16">
               <div>
                 <h3 className="text-lg font-bold text-foreground">Notifications & Sounds</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -1186,7 +1210,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
           {/* TAB 7: DIAGNOSTICS & LOGS */}
           {activeTab === 'diagnostics' && (
-            <div className="space-y-6 max-w-xl pb-16">
+            <div className="space-y-6 max-w-3xl w-full pb-16">
               <div>
                 <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
                   <Terminal className="w-5 h-5 text-primary" />

@@ -14,6 +14,7 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
+import { usePresence } from '@/features/presence/presence-context';
 import { useConversations } from '@/hooks/use-conversations';
 import { useServers } from '@/hooks/use-servers';
 import { Avatar } from '@/components/ui/avatar';
@@ -36,6 +37,7 @@ export function Sidebar({
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useAuth();
+  const { getUserStatus } = usePresence();
   const { conversations } = useConversations();
   const { servers } = useServers();
 
@@ -151,8 +153,9 @@ export function Sidebar({
               )
             ) : (
               conversations.map((conv) => {
-                const otherMember =
-                  conv.members.find((m) => m.user_id !== user?.id)?.profile || null;
+                const otherMemberRow = conv.members.find((m) => m.user_id !== user?.id);
+                const otherMember = otherMemberRow?.profile || null;
+                const otherMemberId = otherMemberRow?.user_id || otherMember?.id;
                 const isSelected = selectedConversationId === conv.id;
                 const title = otherMember?.display_name || conv.name || 'Chat';
 
@@ -172,7 +175,7 @@ export function Sidebar({
                     <Avatar
                       src={otherMember?.avatar_url}
                       name={title}
-                      status={otherMember?.status || 'offline'}
+                      status={getUserStatus(otherMemberId)}
                       showStatus
                       size="sm"
                     />

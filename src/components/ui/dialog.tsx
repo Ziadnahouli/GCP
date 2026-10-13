@@ -39,7 +39,9 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
         onClick={() => onOpenChange(false)}
       />
       {/* Dialog content wrapper */}
-      <div className="relative z-50 w-full max-w-lg">{children}</div>
+      <div className="relative z-50 w-full flex items-center justify-center pointer-events-auto">
+        {children}
+      </div>
     </div>
   );
 }

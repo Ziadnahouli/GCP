@@ -11,6 +11,7 @@ import { CreateServerModal } from '@/components/servers/create-server-modal';
 import { ServerSettingsModal } from '@/components/servers/server-settings-modal';
 import { SettingsModal } from '@/components/layout/settings-modal';
 import { CallProvider, useCallContext } from '@/features/calls/call-context';
+import { PresenceProvider } from '@/features/presence/presence-context';
 import { IncomingCallModal } from '@/components/calls/incoming-call-modal';
 import { CallModal } from '@/components/calls/call-modal';
 import { PermissionsModal } from '@/components/layout/permissions-modal';
@@ -336,9 +337,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         </div>
       }
     >
-      <CallProvider>
-        <MainLayoutContent>{children}</MainLayoutContent>
-      </CallProvider>
+      <PresenceProvider>
+        <CallProvider>
+          <MainLayoutContent>{children}</MainLayoutContent>
+        </CallProvider>
+      </PresenceProvider>
     </React.Suspense>
   );
 }

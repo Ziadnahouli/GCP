@@ -74,9 +74,9 @@ const VideoFeed = React.memo(function VideoFeed({
     video.muted = muted;
     video.defaultMuted = muted;
 
-    if (stream) {
-      const currentTrackIds = stream
-        .getTracks()
+    const videoTracks = stream ? stream.getVideoTracks() : [];
+    if (stream && videoTracks.length > 0) {
+      const currentTrackIds = videoTracks
         .map((t) => `${t.id}-${t.readyState}`)
         .sort()
         .join(',');
@@ -94,7 +94,7 @@ const VideoFeed = React.memo(function VideoFeed({
         if (playPromise !== undefined) {
           playPromise.catch((err: unknown) => {
             const errObj = err as { name?: string; message?: string };
-            // Benign browser interruptions (e.g. rapid track changes, user gestures)
+            // Benign browser interruptions (e.g. rapid track changes, element removal)
             if (
               errObj?.name === 'AbortError' ||
               errObj?.name === 'NotAllowedError' ||
@@ -109,7 +109,6 @@ const VideoFeed = React.memo(function VideoFeed({
 
       playVideo();
 
-      const videoTracks = stream.getVideoTracks();
       videoTracks.forEach((vt) => {
         vt.enabled = true;
         vt.onunmute = playVideo;
@@ -135,6 +134,9 @@ const VideoFeed = React.memo(function VideoFeed({
       autoPlay
       playsInline
       muted={muted}
+      onLoadedMetadata={(e) => {
+        (e.currentTarget as HTMLVideoElement).play().catch(() => {});
+      }}
       className={className}
     />
   );
@@ -428,10 +430,13 @@ export function CallModal({
               >
                 {participants.map((p) => {
                   const isLocalUser = p.id === user?.id;
+                  const hasLocalVideo = isLocalUser && Boolean(
+                    localStream?.getVideoTracks().some((t) => t.readyState === 'live')
+                  );
                   const hasRemoteVideo = !isLocalUser && Boolean(
                     remoteStream?.getVideoTracks().some((t) => t.readyState === 'live')
                   );
-                  const isCameraActive = isLocalUser ? isCameraOn : Boolean(p.isCameraOn || hasRemoteVideo);
+                  const isCameraActive = isLocalUser ? (isCameraOn && hasLocalVideo) : Boolean(p.isCameraOn || hasRemoteVideo);
 
                   return (
                     <div

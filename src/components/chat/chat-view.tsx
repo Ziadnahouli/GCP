@@ -35,6 +35,7 @@ import { validateFile, formatFileSize } from '@/lib/storage/upload';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
 import { useCallContext } from '@/features/calls/call-context';
+import { usePresence } from '@/features/presence/presence-context';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
@@ -70,6 +71,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
   const call = useCallContext();
   const { toast } = useToast();
+  const { getUserStatus } = usePresence();
 
   const [inputContent, setInputContent] = React.useState('');
   const [replyingTo, setReplyingTo] = React.useState<Message | null>(null);
@@ -316,10 +318,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             </button>
           )}
 
+          {/* Member / Chat Avatar */}
           <Avatar
             src={targetMember?.avatar_url || null}
             name={targetMember?.display_name || currentConversation?.name || 'Chat'}
-            status={targetMember?.status || 'offline'}
+            status={getUserStatus(targetUserId || targetMember?.id)}
             showStatus
             size="sm"
           />
@@ -344,7 +347,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               ) : targetMember?.custom_status ? (
                 <span>{targetMember.custom_status}</span>
               ) : (
-                <span className="capitalize">{targetMember?.status || 'offline'}</span>
+                <span className="capitalize">{getUserStatus(targetUserId || targetMember?.id)}</span>
               )}
             </div>
           </div>

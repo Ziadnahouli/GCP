@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   Mic,
   MicOff,
+  Headphones,
   Video,
   VideoOff,
   Monitor,
@@ -18,6 +19,8 @@ import {
   Phone,
   Sparkles,
   ShieldCheck,
+  GripHorizontal,
+  RotateCcw,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +35,7 @@ interface CallModalProps {
   callStatus: CallStatus;
   isVideo: boolean;
   isMicMuted: boolean;
+  isDeafened?: boolean;
   isCameraOn: boolean;
   isScreenSharing: boolean;
   isNoiseSuppressionEnabled?: boolean;
@@ -42,6 +46,7 @@ interface CallModalProps {
   screenStream?: MediaStream | null;
   onEndCall: () => void;
   onToggleMic: () => void;
+  onToggleDeafen?: () => void;
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
   onToggleNoiseSuppression?: () => void;
@@ -65,17 +70,35 @@ const VideoFeed = React.memo(function VideoFeed({
     const video = videoRef.current;
     if (!video) return;
 
+    // Explicitly set DOM properties so browser doesn't block autoplay
+    video.muted = muted;
+    video.defaultMuted = muted;
+
     if (stream) {
       if (video.srcObject !== stream) {
         video.srcObject = stream;
       }
-      video.play().catch(() => {});
+      const playVideo = () => {
+        if (!video) return;
+        video.play().catch((err) => {
+          console.warn('[VideoFeed] Autoplay video play failed/waiting:', err);
+        });
+      };
+      playVideo();
+
+      stream.getVideoTracks().forEach((vt) => {
+        vt.enabled = true;
+        vt.onunmute = playVideo;
+      });
+
+      stream.onaddtrack = () => playVideo();
+      stream.onremovetrack = () => playVideo();
     } else {
       if (video.srcObject !== null) {
         video.srcObject = null;
       }
     }
-  }, [stream]);
+  }, [stream, muted]);
 
   return (
     <video
@@ -93,6 +116,7 @@ export function CallModal({
   callStatus,
   isVideo,
   isMicMuted,
+  isDeafened = false,
   isCameraOn,
   isScreenSharing,
   isNoiseSuppressionEnabled = true,
@@ -103,6 +127,7 @@ export function CallModal({
   screenStream,
   onEndCall,
   onToggleMic,
+  onToggleDeafen,
   onToggleCamera,
   onToggleScreenShare,
   onToggleNoiseSuppression,
@@ -112,6 +137,69 @@ export function CallModal({
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
+
+  // Drag-and-move window state
+  const [position, setPosition] = React.useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const dragStartRef = React.useRef<{
+    startX: number;
+    startY: number;
+    initialPosX: number;
+    initialPosY: number;
+  }>({ startX: 0, startY: 0, initialPosX: 0, initialPosY: 0 });
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isFullscreen) return;
+    if ((e.target as HTMLElement).closest('button, a, input, [role="button"]')) return;
+
+    const el = containerRef.current;
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
+    const currentPosX = position ? position.x : rect.left;
+    const currentPosY = position ? position.y : rect.top;
+
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialPosX: currentPosX,
+      initialPosY: currentPosY,
+    };
+
+    setIsDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging || isFullscreen) return;
+
+    const deltaX = e.clientX - dragStartRef.current.startX;
+    const deltaY = e.clientY - dragStartRef.current.startY;
+
+    const el = containerRef.current;
+    const width = el ? el.offsetWidth : 672;
+    const height = el ? el.offsetHeight : 480;
+
+    const minX = 8;
+    const maxX = Math.max(8, (typeof window !== 'undefined' ? window.innerWidth : 1200) - width - 8);
+    const minY = 8;
+    const maxY = Math.max(8, (typeof window !== 'undefined' ? window.innerHeight : 800) - height - 8);
+
+    const nextX = Math.min(Math.max(dragStartRef.current.initialPosX + deltaX, minX), maxX);
+    const nextY = Math.min(Math.max(dragStartRef.current.initialPosY + deltaY, minY), maxY);
+
+    setPosition({ x: Math.round(nextX), y: Math.round(nextY) });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDragging) {
+      setIsDragging(false);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+  };
 
   // Identify who is actively broadcasting their screen
   const screenSharer = React.useMemo(() => {
@@ -134,16 +222,44 @@ export function CallModal({
 
   return (
     <div
+      ref={containerRef}
+      style={
+        !isFullscreen && position
+          ? {
+              left: `${position.x}px`,
+              top: `${position.y}px`,
+              right: 'auto',
+              bottom: 'auto',
+            }
+          : undefined
+      }
       className={cn(
-        'fixed z-50 transition-all duration-200 flex flex-col overflow-hidden bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90',
+        'fixed z-50 flex flex-col overflow-hidden bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90',
+        isDragging ? 'select-none transition-none shadow-primary/20' : 'transition-all duration-150',
         isFullscreen
           ? 'inset-0 rounded-none'
+          : position
+          ? 'w-[94vw] sm:w-[672px] h-[480px] rounded-2xl'
           : 'inset-0 sm:inset-auto sm:bottom-6 sm:right-6 sm:w-full sm:max-w-2xl sm:h-[480px] sm:rounded-2xl rounded-none'
       )}
     >
-      {/* Call Header */}
-      <div className="h-11 border-b border-white/[0.06] px-4 flex items-center justify-between shrink-0 bg-surface-header/90 select-none backdrop-blur-md">
+      {/* Call Header with Drag Handle */}
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        className={cn(
+          'h-11 border-b border-white/[0.06] px-4 flex items-center justify-between shrink-0 bg-surface-header/90 select-none backdrop-blur-md',
+          !isFullscreen && 'cursor-grab active:cursor-grabbing'
+        )}
+      >
         <div className="flex items-center gap-2">
+          {!isFullscreen && (
+            <div className="text-muted-foreground/40 hover:text-muted-foreground transition-colors mr-0.5" title="Drag header to move call window">
+              <GripHorizontal className="w-4 h-4" />
+            </div>
+          )}
           <span
             className={cn(
               'w-2 h-2 rounded-full',
@@ -165,6 +281,18 @@ export function CallModal({
         </div>
 
         <div className="flex items-center gap-1">
+          {/* Dock Reset Button if user dragged modal */}
+          {!isFullscreen && position && (
+            <button
+              onClick={() => setPosition(null)}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
+              title="Snap back to default corner"
+              aria-label="Snap back to default corner"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           {/* Telemetry diagnostics button */}
           <button
             onClick={() => setShowDiagnostics((prev) => !prev)}
@@ -271,7 +399,10 @@ export function CallModal({
               >
                 {participants.map((p) => {
                   const isLocalUser = p.id === user?.id;
-                  const isCameraActive = isLocalUser ? isCameraOn : p.isCameraOn;
+                  const hasRemoteVideo = !isLocalUser && Boolean(
+                    remoteStream?.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted)
+                  );
+                  const isCameraActive = isLocalUser ? isCameraOn : (p.isCameraOn || hasRemoteVideo);
 
                   return (
                     <div
@@ -356,6 +487,23 @@ export function CallModal({
           >
             {isMicMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
+
+          {/* Deafen Toggle */}
+          {onToggleDeafen && (
+            <button
+              onClick={onToggleDeafen}
+              className={cn(
+                'p-2 rounded-full transition-all',
+                isDeafened
+                  ? 'bg-rose-500/15 text-rose-400 hover:bg-rose-500/25'
+                  : 'bg-white/[0.05] text-foreground hover:bg-white/[0.08]'
+              )}
+              title={isDeafened ? 'Undeafen' : 'Deafen'}
+              aria-label={isDeafened ? 'Undeafen audio' : 'Deafen audio'}
+            >
+              <Headphones className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Camera Toggle */}
           <button

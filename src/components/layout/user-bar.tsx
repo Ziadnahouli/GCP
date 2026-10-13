@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Mic, MicOff, Headphones, Settings, ChevronUp, Sparkles, LogOut, Terminal } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
+import { useCallContext } from '@/features/calls/call-context';
 import { Avatar } from '@/components/ui/avatar';
 import { StatusSelector } from './status-selector';
 import { SettingsModal } from './settings-modal';
@@ -16,13 +17,18 @@ import { debugLogger } from '@/lib/logger/debug-logger';
 export function UserBar() {
   const { profile, updateProfile, signOut } = useAuth();
   const { toast } = useToast();
+  const call = useCallContext();
 
-  const [isMuted, setIsMuted] = React.useState(false);
-  const [isDeafened, setIsDeafened] = React.useState(false);
+  const [localMuted, setLocalMuted] = React.useState(false);
+  const [localDeafened, setLocalDeafened] = React.useState(false);
   const [showStatusPicker, setShowStatusPicker] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
   const [hasErrors, setHasErrors] = React.useState(false);
+
+  const isInCall = call.callStatus === 'in_call' || call.callStatus === 'outgoing_ringing';
+  const isMuted = isInCall ? call.isMicMuted : localMuted;
+  const isDeafened = isInCall ? call.isDeafened : localDeafened;
 
   React.useEffect(() => {
     setHasErrors(debugLogger.getLogs().some((l) => l.level === 'error'));
@@ -32,9 +38,13 @@ export function UserBar() {
     return () => unsub();
   }, []);
 
-  const toggleMic = () => {
-    const next = !isMuted;
-    setIsMuted(next);
+  const handleToggleMic = () => {
+    if (isInCall) {
+      call.toggleMic();
+      return;
+    }
+    const next = !localMuted;
+    setLocalMuted(next);
     toast({
       title: next ? 'Microphone Muted' : 'Microphone Active',
       description: next ? 'You are muted' : 'Microphone unmuted',
@@ -43,11 +53,15 @@ export function UserBar() {
     });
   };
 
-  const toggleDeafen = () => {
-    const next = !isDeafened;
-    setIsDeafened(next);
-    if (next && !isMuted) {
-      setIsMuted(true);
+  const handleToggleDeafen = () => {
+    if (isInCall) {
+      call.toggleDeafen();
+      return;
+    }
+    const next = !localDeafened;
+    setLocalDeafened(next);
+    if (next && !localMuted) {
+      setLocalMuted(true);
     }
     toast({
       title: next ? 'Deafened' : 'Undeafened',
@@ -105,7 +119,7 @@ export function UserBar() {
         <div className="flex items-center gap-0.5">
           {/* Mic */}
           <button
-            onClick={toggleMic}
+            onClick={handleToggleMic}
             className={cn(
               'p-1.5 rounded-md transition-colors',
               isMuted
@@ -120,7 +134,7 @@ export function UserBar() {
 
           {/* Deafen */}
           <button
-            onClick={toggleDeafen}
+            onClick={handleToggleDeafen}
             className={cn(
               'p-1.5 rounded-md transition-colors',
               isDeafened

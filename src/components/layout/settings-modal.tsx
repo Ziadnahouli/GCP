@@ -20,6 +20,12 @@ import {
   Activity,
   Radio,
   Database,
+  Video,
+  Keyboard,
+  Play,
+  Square,
+  Sliders,
+  Monitor,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { AccentTheme, UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
@@ -75,6 +81,147 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
     return true;
   });
+
+  // Hardware device enumeration & selection
+  const [audioInputDevices, setAudioInputDevices] = React.useState<MediaDeviceInfo[]>([]);
+  const [audioOutputDevices, setAudioOutputDevices] = React.useState<MediaDeviceInfo[]>([]);
+  const [videoDevices, setVideoDevices] = React.useState<MediaDeviceInfo[]>([]);
+  const [selectedInputDevice, setSelectedInputDevice] = React.useState('');
+  const [selectedOutputDevice, setSelectedOutputDevice] = React.useState('');
+  const [selectedCamDevice, setSelectedCamDevice] = React.useState('');
+
+  // Live microphone testing state
+  const [isTestingMic, setIsTestingMic] = React.useState(false);
+  const [micLevel, setMicLevel] = React.useState(0);
+  const micTestStreamRef = React.useRef<MediaStream | null>(null);
+  const micTestAudioCtxRef = React.useRef<AudioContext | null>(null);
+  const micTestAnimRef = React.useRef<number | null>(null);
+
+  // Live webcam preview testing state
+  const [isTestingCam, setIsTestingCam] = React.useState(false);
+  const camTestStreamRef = React.useRef<MediaStream | null>(null);
+  const camVideoRef = React.useRef<HTMLVideoElement>(null);
+
+  // Enumerate hardware devices
+  React.useEffect(() => {
+    if (open && typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
+      navigator.mediaDevices
+        .enumerateDevices()
+        .then((devices) => {
+          const inputs = devices.filter((d) => d.kind === 'audioinput');
+          const outputs = devices.filter((d) => d.kind === 'audiooutput');
+          const videos = devices.filter((d) => d.kind === 'videoinput');
+          setAudioInputDevices(inputs);
+          setAudioOutputDevices(outputs);
+          setVideoDevices(videos);
+          if (inputs.length > 0 && !selectedInputDevice) setSelectedInputDevice(inputs[0].deviceId);
+          if (outputs.length > 0 && !selectedOutputDevice) setSelectedOutputDevice(outputs[0].deviceId);
+          if (videos.length > 0 && !selectedCamDevice) setSelectedCamDevice(videos[0].deviceId);
+        })
+        .catch(() => {});
+    }
+  }, [open, selectedInputDevice, selectedOutputDevice, selectedCamDevice]);
+
+  // Clean up media tests when modal closes or unmounts
+  const stopMicTest = React.useCallback(() => {
+    if (micTestAnimRef.current) {
+      cancelAnimationFrame(micTestAnimRef.current);
+      micTestAnimRef.current = null;
+    }
+    if (micTestStreamRef.current) {
+      micTestStreamRef.current.getTracks().forEach((t) => t.stop());
+      micTestStreamRef.current = null;
+    }
+    if (micTestAudioCtxRef.current) {
+      micTestAudioCtxRef.current.close().catch(() => {});
+      micTestAudioCtxRef.current = null;
+    }
+    setIsTestingMic(false);
+    setMicLevel(0);
+  }, []);
+
+  const stopCamTest = React.useCallback(() => {
+    if (camTestStreamRef.current) {
+      camTestStreamRef.current.getTracks().forEach((t) => t.stop());
+      camTestStreamRef.current = null;
+    }
+    if (camVideoRef.current) {
+      camVideoRef.current.srcObject = null;
+    }
+    setIsTestingCam(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) {
+      stopMicTest();
+      stopCamTest();
+    }
+  }, [open, stopMicTest, stopCamTest]);
+
+  const startMicTest = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: selectedInputDevice ? { deviceId: { exact: selectedInputDevice } } : true,
+      });
+      micTestStreamRef.current = stream;
+
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+
+      const ctx = new AudioCtx();
+      micTestAudioCtxRef.current = ctx;
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      setIsTestingMic(true);
+
+      const checkLevel = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        const normalized = Math.min(100, Math.round((avg / 64) * 100));
+        setMicLevel(normalized);
+        micTestAnimRef.current = requestAnimationFrame(checkLevel);
+      };
+      checkLevel();
+    } catch {
+      toast({
+        title: 'Microphone Error',
+        description: 'Could not access microphone for testing. Check device permissions.',
+        type: 'error',
+      });
+    }
+  };
+
+  const startCamTest = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: selectedCamDevice ? { deviceId: { exact: selectedCamDevice } } : true,
+      });
+      camTestStreamRef.current = stream;
+      setIsTestingCam(true);
+      setTimeout(() => {
+        if (camVideoRef.current) {
+          camVideoRef.current.srcObject = stream;
+          camVideoRef.current.play().catch(() => {});
+        }
+      }, 50);
+    } catch {
+      toast({
+        title: 'Camera Error',
+        description: 'Could not access webcam for preview. Check device permissions.',
+        type: 'error',
+      });
+    }
+  };
 
   // Sync state when profile/settings change or modal opens
   React.useEffect(() => {
@@ -209,7 +356,20 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               )}
             >
               <Volume2 className="w-4 h-4 shrink-0" />
-              <span>Voice</span>
+              <span>Voice & Video</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('shortcuts')}
+              className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
+                activeTab === 'shortcuts'
+                  ? 'bg-white/[0.06] text-foreground font-medium'
+                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
+              )}
+            >
+              <Keyboard className="w-4 h-4 shrink-0" />
+              <span>Keybinds</span>
             </button>
 
             <button
@@ -504,13 +664,197 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           {activeTab === 'audio' && (
             <div className="space-y-6 max-w-xl">
               <div>
-                <h3 className="text-lg font-semibold text-foreground">Voice & Audio Settings</h3>
+                <h3 className="text-lg font-semibold text-foreground">Voice & Video Settings</h3>
                 <p className="text-xs text-muted-foreground/70">
-                  Configure default input and output levels, sound effects, and push-to-talk.
+                  Select input/output hardware, test your mic & camera in real time, and customize audio filters.
                 </p>
               </div>
 
-              <div className="space-y-5">
+              {/* Hardware Device Selectors */}
+              <div className="space-y-3.5">
+                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  Hardware Devices
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="settings-inputDevice" className="block text-xs font-medium text-muted-foreground mb-1">
+                      Microphone (Input Device)
+                    </label>
+                    <select
+                      id="settings-inputDevice"
+                      value={selectedInputDevice}
+                      onChange={(e) => setSelectedInputDevice(e.target.value)}
+                      className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] text-foreground text-xs p-2 focus-visible:outline-none focus-visible:border-white/[0.2] transition-colors cursor-pointer"
+                    >
+                      {audioInputDevices.length > 0 ? (
+                        audioInputDevices.map((d, i) => (
+                          <option key={d.deviceId || i} value={d.deviceId} className="bg-surface-panel text-foreground">
+                            {d.label || `Microphone ${i + 1}`}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" className="bg-surface-panel text-foreground">Default System Microphone</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="settings-outputDevice" className="block text-xs font-medium text-muted-foreground mb-1">
+                      Headset / Speakers (Output Device)
+                    </label>
+                    <select
+                      id="settings-outputDevice"
+                      value={selectedOutputDevice}
+                      onChange={(e) => setSelectedOutputDevice(e.target.value)}
+                      className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] text-foreground text-xs p-2 focus-visible:outline-none focus-visible:border-white/[0.2] transition-colors cursor-pointer"
+                    >
+                      {audioOutputDevices.length > 0 ? (
+                        audioOutputDevices.map((d, i) => (
+                          <option key={d.deviceId || i} value={d.deviceId} className="bg-surface-panel text-foreground">
+                            {d.label || `Speaker ${i + 1}`}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" className="bg-surface-panel text-foreground">Default System Output</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="settings-cameraDevice" className="block text-xs font-medium text-muted-foreground mb-1">
+                    Webcam / Camera (Video Input)
+                  </label>
+                  <select
+                    id="settings-cameraDevice"
+                    value={selectedCamDevice}
+                    onChange={(e) => setSelectedCamDevice(e.target.value)}
+                    className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] text-foreground text-xs p-2 focus-visible:outline-none focus-visible:border-white/[0.2] transition-colors cursor-pointer"
+                  >
+                    {videoDevices.length > 0 ? (
+                      videoDevices.map((d, i) => (
+                        <option key={d.deviceId || i} value={d.deviceId} className="bg-surface-panel text-foreground">
+                          {d.label || `Camera ${i + 1}`}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="" className="bg-surface-panel text-foreground">Default Webcam</option>
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              {/* Interactive Microphone Test */}
+              <div className="p-4 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Mic className="w-4 h-4 text-primary" />
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">Microphone Test</div>
+                      <div className="text-[10px] text-muted-foreground/60">
+                        Speak into your mic to verify sound input and sensitivity.
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={isTestingMic ? 'destructive' : 'subtle'}
+                    onClick={isTestingMic ? stopMicTest : startMicTest}
+                    className="gap-1.5 text-xs h-7 px-3"
+                  >
+                    {isTestingMic ? (
+                      <>
+                        <Square className="w-3 h-3 fill-current" />
+                        <span>Stop Test</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>Test Mic</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Animated Level Bar */}
+                <div className="space-y-1.5">
+                  <div className="h-2 w-full rounded-full bg-white/[0.04] overflow-hidden border border-white/[0.04] relative">
+                    <div
+                      className={cn(
+                        'h-full transition-all duration-75 rounded-full',
+                        micLevel > 75
+                          ? 'bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500'
+                          : micLevel > 30
+                          ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+                          : 'bg-emerald-500/80'
+                      )}
+                      style={{ width: `${isTestingMic ? Math.max(3, micLevel) : 0}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground/60 font-mono">
+                    <span>
+                      {isTestingMic
+                        ? micLevel > 15
+                          ? `Signal detected (${micLevel}%)`
+                          : 'Listening... speak now'
+                        : 'Click Test Mic to check signal'}
+                    </span>
+                    <span>{isTestingMic ? `${micLevel}%` : '0%'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive Camera Preview Test */}
+              <div className="p-4 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Video className="w-4 h-4 text-emerald-400" />
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">Webcam Self Preview</div>
+                      <div className="text-[10px] text-muted-foreground/60">
+                        Check your lighting, framing, and camera feed before joining calls.
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={isTestingCam ? 'destructive' : 'subtle'}
+                    onClick={isTestingCam ? stopCamTest : startCamTest}
+                    className="gap-1.5 text-xs h-7 px-3"
+                  >
+                    {isTestingCam ? (
+                      <>
+                        <Square className="w-3 h-3 fill-current" />
+                        <span>Close Preview</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>Preview Camera</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {isTestingCam && (
+                  <div className="relative rounded-lg overflow-hidden bg-black aspect-video max-h-48 flex items-center justify-center border border-white/[0.08]">
+                    <video
+                      ref={camVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-medium text-emerald-400 flex items-center gap-1.5 border border-white/[0.08]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Live Camera Feed</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Volume Sliders */}
+              <div className="space-y-4 pt-1">
                 <div>
                   <div className="flex items-center justify-between text-xs font-medium mb-2">
                     <span className="flex items-center gap-1.5 text-foreground">
@@ -546,58 +890,132 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     className="w-full accent-primary h-1.5 bg-white/[0.06] rounded-lg cursor-pointer"
                   />
                 </div>
+              </div>
 
-                <div className="pt-2 border-t border-white/[0.06] space-y-2.5">
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer">
-                    <div>
-                      <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                        AI Noise Suppression & Acoustic Filtering
-                      </div>
-                      <div className="text-[10px] text-muted-foreground/60 mt-0.5">
-                        Filters background mechanical keyboard clicks, fan hum, and room noise in voice calls.
-                      </div>
+              {/* Advanced Voice Toggles */}
+              <div className="pt-2 border-t border-white/[0.06] space-y-2.5">
+                <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer hover:bg-white/[0.04] transition-colors">
+                  <div>
+                    <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      AI Noise Suppression & Acoustic Filtering
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={noiseSuppression}
-                      onChange={(e) => setNoiseSuppression(e.target.checked)}
-                      className="accent-primary w-4 h-4 rounded cursor-pointer"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer">
-                    <span className="text-xs font-medium text-foreground">
-                      Enable Soundboard & System Sound Effects
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={soundEffects}
-                      onChange={(e) => setSoundEffects(e.target.checked)}
-                      className="accent-primary w-4 h-4 rounded cursor-pointer"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer">
-                    <div>
-                      <div className="text-xs font-medium text-foreground">Push To Talk Mode</div>
-                      <div className="text-[10px] text-muted-foreground/60">
-                        Default trigger key: [V]
-                      </div>
+                    <div className="text-[10px] text-muted-foreground/60 mt-0.5">
+                      Filters background mechanical keyboard clicks, fan hum, and room noise in voice calls.
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={pushToTalk}
-                      onChange={(e) => setPushToTalk(e.target.checked)}
-                      className="accent-primary w-4 h-4 rounded cursor-pointer"
-                    />
-                  </label>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={noiseSuppression}
+                    onChange={(e) => setNoiseSuppression(e.target.checked)}
+                    className="accent-primary w-4 h-4 rounded cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer hover:bg-white/[0.04] transition-colors">
+                  <span className="text-xs font-medium text-foreground">
+                    Enable Soundboard & System Sound Effects
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={soundEffects}
+                    onChange={(e) => setSoundEffects(e.target.checked)}
+                    className="accent-primary w-4 h-4 rounded cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer hover:bg-white/[0.04] transition-colors">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">Push To Talk Mode</div>
+                    <div className="text-[10px] text-muted-foreground/60">
+                      Default trigger key: [V]
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={pushToTalk}
+                    onChange={(e) => setPushToTalk(e.target.checked)}
+                    className="accent-primary w-4 h-4 rounded cursor-pointer"
+                  />
+                </label>
+              </div>
+
+              <Button onClick={handleSaveAudio} disabled={isSaving} className="gap-2 font-medium">
+                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Save Audio Preferences
+              </Button>
+            </div>
+          )}
+
+          {activeTab === 'shortcuts' && (
+            <div className="space-y-6 max-w-xl">
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">Keyboard Shortcuts & Hotkeys</h3>
+                <p className="text-xs text-muted-foreground/70">
+                  Quick hotkeys to control communications, voice channels, and overlays during gaming sessions.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">Toggle Microphone Mute</div>
+                    <div className="text-[10px] text-muted-foreground/60">Mute or unmute during voice and video calls</div>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-[11px]">
+                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Ctrl</kbd>
+                    <span className="text-muted-foreground">+</span>
+                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Shift</kbd>
+                    <span className="text-muted-foreground">+</span>
+                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">M</kbd>
+                  </div>
                 </div>
 
-                <Button onClick={handleSaveAudio} disabled={isSaving} className="gap-2 font-medium">
-                  {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                  Save Audio Preferences
-                </Button>
+                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">Toggle Deafen Audio</div>
+                    <div className="text-[10px] text-muted-foreground/60">Silence all incoming call audio and mute mic</div>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-[11px]">
+                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Ctrl</kbd>
+                    <span className="text-muted-foreground">+</span>
+                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Shift</kbd>
+                    <span className="text-muted-foreground">+</span>
+                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">D</kbd>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">Live Telemetry & Diagnostics Window</div>
+                    <div className="text-[10px] text-muted-foreground/60">Toggle the debug console and real-time logs</div>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-[11px]">
+                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Ctrl</kbd>
+                    <span className="text-muted-foreground">+</span>
+                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">~</kbd>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">Push To Talk Default Key</div>
+                    <div className="text-[10px] text-muted-foreground/60">Hold while speaking when Push-To-Talk is enabled</div>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-[11px]">
+                    <kbd className="px-2.5 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground font-semibold">V</kbd>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-medium text-foreground">Close Modals / Exit Fullscreen</div>
+                    <div className="text-[10px] text-muted-foreground/60">Dismiss active dialogs or exit call fullscreen</div>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-[11px]">
+                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Esc</kbd>
+                  </div>
+                </div>
               </div>
             </div>
           )}

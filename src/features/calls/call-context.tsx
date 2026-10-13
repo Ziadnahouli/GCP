@@ -44,6 +44,7 @@ interface CallContextType {
   activeConversationId: string | null;
   isVideoCall: boolean;
   isMicMuted: boolean;
+  isDeafened: boolean;
   isCameraOn: boolean;
   isScreenSharing: boolean;
   incomingCall: IncomingCallData | null;
@@ -58,6 +59,7 @@ interface CallContextType {
   endCall: () => void;
   restartConnection: () => Promise<void>;
   toggleMic: () => void;
+  toggleDeafen: () => void;
   toggleCamera: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
   broadcastSoundboardClip: (clip: SoundboardClip) => void;
@@ -142,6 +144,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Media toggles
   const [isMicMuted, setIsMicMuted] = React.useState(false);
+  const [isDeafened, setIsDeafened] = React.useState(false);
   const [isCameraOn, setIsCameraOn] = React.useState(false);
   const [isScreenSharing, setIsScreenSharing] = React.useState(false);
   const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = React.useState<boolean>(() => {
@@ -336,6 +339,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Helper to cleanly merge/update tracks into remoteStreamRef without dropping audio or video
   const attachRemoteTrack = React.useCallback((track: MediaStreamTrack) => {
+    track.enabled = true;
     if (!remoteStreamRef.current) {
       remoteStreamRef.current = new MediaStream();
     }
@@ -356,10 +360,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (remoteAudioElementRef.current.srcObject !== currentStream) {
         remoteAudioElementRef.current.srcObject = currentStream;
       }
-      remoteAudioElementRef.current.muted = false;
+      remoteAudioElementRef.current.muted = isDeafened;
       remoteAudioElementRef.current.play().catch(() => {});
     }
-  }, []);
+  }, [isDeafened]);
 
   // Update participant media state from remote signals
   const handlePeerMediaToggle = React.useCallback(
@@ -381,9 +385,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       // If remote peer turned on camera or screen share, ensure their remote video transceiver track is attached
       if ((payload.isCameraOn || payload.isScreenSharing) && pcRef.current) {
-        const videoTransceiver = pcRef.current.getTransceivers().find((t) => t.receiver?.track?.kind === 'video');
+        const videoTransceiver = pcRef.current.getTransceivers().find(
+          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
+        );
         const recTrack = videoTransceiver?.receiver?.track;
         if (recTrack) {
+          recTrack.enabled = true;
           attachRemoteTrack(recTrack);
         }
       }
@@ -393,7 +400,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Helper to reliably find the video sender on an active peer connection
   const getVideoSender = React.useCallback((pc: RTCPeerConnection) => {
-    const videoTransceiver = pc.getTransceivers().find((t) => t.receiver?.track?.kind === 'video');
+    const videoTransceiver = pc.getTransceivers().find(
+      (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
+    );
     if (videoTransceiver) {
       if (videoTransceiver.direction === 'recvonly') {
         videoTransceiver.direction = 'sendrecv';
@@ -468,6 +477,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     seenCandidatesRef.current.clear();
     setParticipants([]);
     setIsCameraOn(false);
+    setIsDeafened(false);
     setIsScreenSharing(false);
     setStats({
       connectionState: 'disconnected',
@@ -504,7 +514,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (audioEl.srcObject !== remoteStream) {
         audioEl.srcObject = remoteStream;
       }
-      audioEl.muted = false;
+      audioEl.muted = isDeafened;
       audioEl.volume = 1.0;
 
       remoteStream.getAudioTracks().forEach((track) => {
@@ -531,7 +541,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       audioEl.pause();
       audioEl.srcObject = null;
     }
-  }, [remoteStream]);
+  }, [remoteStream, isDeafened]);
+
+  // Synchronize deafen toggle instantly to persistent audio element
+  React.useEffect(() => {
+    if (remoteAudioElementRef.current) {
+      remoteAudioElementRef.current.muted = isDeafened;
+    }
+  }, [isDeafened]);
 
   // Web Audio RMS Speech Activity Monitoring for remote audio
   React.useEffect(() => {
@@ -1240,24 +1257,28 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       attachRemoteTrack(event.track);
       setCallStatus('in_call');
 
-      setParticipants([
-        {
-          id: user.id,
-          name: profile?.display_name || 'You',
-          isSpeaking: false,
-          isMuted: false,
-          isCameraOn: video,
-          isScreenSharing: false,
-        },
-        {
-          id: recipientId,
-          name: peerName,
-          isSpeaking: false,
-          isMuted: false,
-          isCameraOn: video,
-          isScreenSharing: false,
-        },
-      ]);
+      setParticipants((prev) => {
+        const local = prev.find((p) => p.id === user.id);
+        const remote = prev.find((p) => p.id === recipientId);
+        return [
+          {
+            id: user.id,
+            name: profile?.display_name || 'You',
+            isSpeaking: local?.isSpeaking || false,
+            isMuted: local?.isMuted || false,
+            isCameraOn: local?.isCameraOn ?? video,
+            isScreenSharing: local?.isScreenSharing || false,
+          },
+          {
+            id: recipientId,
+            name: peerName,
+            isSpeaking: remote?.isSpeaking || false,
+            isMuted: remote?.isMuted || false,
+            isCameraOn: remote?.isCameraOn ?? (event.track.kind === 'video' ? true : video),
+            isScreenSharing: remote?.isScreenSharing || false,
+          },
+        ];
+      });
     };
 
     // Hook transceiver un-mute listeners so swapped or enabled camera tracks are immediately rendered
@@ -1266,10 +1287,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (recTrack) {
         recTrack.onunmute = () => {
           console.log('[CallSignaling] Caller remote transceiver track unmuted:', recTrack.kind);
+          recTrack.enabled = true;
           attachRemoteTrack(recTrack);
+          if (recTrack.kind === 'video') {
+            setParticipants((prev) =>
+              prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
+            );
+          }
         };
         if (recTrack.readyState === 'live' && !recTrack.muted) {
+          recTrack.enabled = true;
           attachRemoteTrack(recTrack);
+          if (recTrack.kind === 'video') {
+            setParticipants((prev) =>
+              prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
+            );
+          }
         }
       }
     });
@@ -1565,6 +1598,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       console.log('[CallSignaling] Received remote media track on callee:', event.track.kind);
       attachRemoteTrack(event.track);
       setCallStatus('in_call');
+      if (event.track.kind === 'video') {
+        setParticipants((prev) =>
+          prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
+        );
+      }
     };
 
     // Hook transceiver un-mute listeners so swapped or enabled camera tracks are immediately rendered
@@ -1573,10 +1611,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (recTrack) {
         recTrack.onunmute = () => {
           console.log('[CallSignaling] Callee remote transceiver track unmuted:', recTrack.kind);
+          recTrack.enabled = true;
           attachRemoteTrack(recTrack);
+          if (recTrack.kind === 'video') {
+            setParticipants((prev) =>
+              prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
+            );
+          }
         };
         if (recTrack.readyState === 'live' && !recTrack.muted) {
+          recTrack.enabled = true;
           attachRemoteTrack(recTrack);
+          if (recTrack.kind === 'video') {
+            setParticipants((prev) =>
+              prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
+            );
+          }
         }
       }
     });
@@ -1844,6 +1894,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const nextMuted = !isMicMuted;
     setIsMicMuted(nextMuted);
 
+    // If unmuting while deafened, automatically undeafen
+    if (!nextMuted && isDeafened) {
+      setIsDeafened(false);
+      if (remoteAudioElementRef.current) {
+        remoteAudioElementRef.current.muted = false;
+      }
+    }
+
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track) => {
         track.enabled = !nextMuted;
@@ -1858,6 +1916,41 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (peerUserId) {
       sendSignalToUser(peerUserId, 'peer_media_toggle', { userId: user?.id, isMuted: nextMuted });
     }
+  };
+
+  const toggleDeafen = () => {
+    const nextDeafened = !isDeafened;
+    setIsDeafened(nextDeafened);
+
+    if (remoteAudioElementRef.current) {
+      remoteAudioElementRef.current.muted = nextDeafened;
+    }
+
+    if (nextDeafened) {
+      // Deafening automatically mutes microphone
+      setIsMicMuted(true);
+      if (localStreamRef.current) {
+        localStreamRef.current.getAudioTracks().forEach((track) => {
+          track.enabled = false;
+        });
+      }
+      setParticipants((prev) =>
+        prev.map((p) => (p.id === user?.id ? { ...p, isMuted: true } : p))
+      );
+      sendSignalToRoom('peer_media_toggle', { userId: user?.id, isMuted: true });
+      if (peerUserId) {
+        sendSignalToUser(peerUserId, 'peer_media_toggle', { userId: user?.id, isMuted: true });
+      }
+    }
+
+    toast({
+      title: nextDeafened ? 'Deafened' : 'Undeafened',
+      description: nextDeafened
+        ? 'Incoming call audio and microphone muted.'
+        : 'Incoming call audio restored.',
+      type: nextDeafened ? 'error' : 'success',
+      duration: 1500,
+    });
   };
 
   const toggleCamera = async () => {
@@ -1904,6 +1997,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             await videoSender.replaceTrack(videoTrack);
           } else {
             pc.addTrack(videoTrack, localStreamRef.current || new MediaStream([videoTrack]));
+          }
+          const videoTransceiver = pc.getTransceivers().find(
+            (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
+          );
+          if (videoTransceiver && videoTransceiver.direction !== 'sendrecv') {
+            videoTransceiver.direction = 'sendrecv';
           }
         }
 
@@ -2091,6 +2190,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const toggleDeafenRef = React.useRef(toggleDeafen);
+  toggleDeafenRef.current = toggleDeafen;
+  const stableToggleDeafen = React.useCallback(
+    (...args: Parameters<typeof toggleDeafen>) => toggleDeafenRef.current(...args),
+    []
+  );
+
   const toggleCameraRef = React.useRef(toggleCamera);
   toggleCameraRef.current = toggleCamera;
   const stableToggleCamera = React.useCallback(
@@ -2111,6 +2217,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       activeConversationId,
       isVideoCall,
       isMicMuted,
+      isDeafened,
       isCameraOn,
       isScreenSharing,
       incomingCall,
@@ -2125,6 +2232,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       endCall: stableEndCall,
       restartConnection: restartIceConnection,
       toggleMic: stableToggleMic,
+      toggleDeafen: stableToggleDeafen,
       toggleCamera: stableToggleCamera,
       toggleScreenShare: stableToggleScreenShare,
       broadcastSoundboardClip,
@@ -2138,6 +2246,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       activeConversationId,
       isVideoCall,
       isMicMuted,
+      isDeafened,
       isCameraOn,
       isScreenSharing,
       incomingCall,
@@ -2152,6 +2261,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       stableEndCall,
       restartIceConnection,
       stableToggleMic,
+      stableToggleDeafen,
       stableToggleCamera,
       stableToggleScreenShare,
       broadcastSoundboardClip,

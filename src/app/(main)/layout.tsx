@@ -303,6 +303,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         callStatus={call.callStatus}
         isVideo={call.isVideoCall}
         isMicMuted={call.isMicMuted}
+        isDeafened={call.isDeafened}
         isCameraOn={call.isCameraOn}
         isScreenSharing={call.isScreenSharing}
         isNoiseSuppressionEnabled={call.isNoiseSuppressionEnabled}
@@ -313,6 +314,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         screenStream={call.screenStream}
         onEndCall={call.endCall}
         onToggleMic={call.toggleMic}
+        onToggleDeafen={call.toggleDeafen}
         onToggleCamera={call.toggleCamera}
         onToggleScreenShare={call.toggleScreenShare}
         onToggleNoiseSuppression={call.toggleNoiseSuppression}

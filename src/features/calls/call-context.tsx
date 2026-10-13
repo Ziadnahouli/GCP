@@ -174,6 +174,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const outboundQueueRef = React.useRef<Map<string, Array<{ event: string; payload: unknown }>>>(new Map());
   const roomQueueRef = React.useRef<Array<{ event: string; payload: unknown }>>([]);
   const remoteAudioElementRef = React.useRef<HTMLAudioElement | null>(null);
+  const activeConversationIdRef = React.useRef<string | null>(null);
+  activeConversationIdRef.current = activeConversationId;
+  const peerUserIdRef = React.useRef<string | null>(null);
+  peerUserIdRef.current = peerUserId;
+  const seenSignalIdsRef = React.useRef<Set<string>>(new Set());
 
   // ZeroTier Virtual LAN IP states
   const [peerZeroTierIp, setPeerZeroTierIpState] = React.useState<string | null>(() => getPeerZeroTierIp());
@@ -404,7 +409,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         // Clean up remote video track if remote peer turns camera off
         if (remoteStreamRef.current) {
           remoteStreamRef.current.getVideoTracks().forEach((vt) => {
-            try { vt.stop(); } catch {}
             remoteStreamRef.current?.removeTrack(vt);
           });
           setRemoteStream(new MediaStream(remoteStreamRef.current.getTracks()));
@@ -510,6 +514,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       transportPath: 'unknown',
       isZeroTierActive: false,
     });
+    if (ringingBeaconRef.current) {
+      clearInterval(ringingBeaconRef.current);
+      ringingBeaconRef.current = null;
+    }
+    activeCallPayloadRef.current = null;
+    activeConversationIdRef.current = null;
+    peerUserIdRef.current = null;
+    callStatusRef.current = 'idle';
     prevStatsRef.current = null;
   }, [supabase]);
 
@@ -1029,6 +1041,126 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     [restartIceConnection, toast]
   );
 
+  // Lightweight WebRTC media renegotiation for dynamic camera/screen toggle (no ICE teardown)
+  const renegotiateMedia = React.useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    if (pc.signalingState !== 'stable') {
+      console.log('[CallMedia] Skipping renegotiation; signalingState is:', pc.signalingState);
+      return;
+    }
+    try {
+      console.log('[CallMedia] Initiating SDP renegotiation for media track change...');
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const targetId = peerUserIdRef.current;
+      const messageId = `reneg-off-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const payload = {
+        messageId,
+        sdp: offer,
+        senderId: user?.id,
+        conversationId: activeConversationIdRef.current,
+      };
+
+      const room = roomChannelRef.current;
+      if (room && room.state === 'joined') {
+        room.send({ type: 'broadcast', event: 'media_renegotiate_offer', payload }).catch(() => {});
+      } else if (targetId) {
+        sendSignalToUser(targetId, 'media_renegotiate_offer', payload);
+      }
+    } catch (err) {
+      console.warn('[CallMedia] SDP renegotiation offer error:', err);
+    }
+  }, [user?.id, sendSignalToUser]);
+
+  const handleIncomingRenegotiateOffer = React.useCallback(
+    async (payload: any) => {
+      if (!payload?.sdp || payload.senderId === user?.id) return;
+      if (payload.messageId && seenSignalIdsRef.current.has(payload.messageId)) return;
+      if (payload.messageId) seenSignalIdsRef.current.add(payload.messageId);
+
+      const activePc = pcRef.current;
+      if (!activePc) return;
+      if (activePc.signalingState !== 'stable') {
+        console.log('[CallMedia] Ignoring renegotiate offer; signaling state is:', activePc.signalingState);
+        return;
+      }
+
+      try {
+        console.log('[CallMedia] Handling media renegotiation offer from:', payload.senderId);
+        await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        await drainPendingRemoteCandidates();
+
+        const answer = await activePc.createAnswer();
+        await activePc.setLocalDescription(answer);
+
+        const ansMessageId = `reneg-ans-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const ansPayload = {
+          messageId: ansMessageId,
+          sdp: answer,
+          senderId: user?.id,
+          conversationId: activeConversationIdRef.current,
+        };
+
+        const room = roomChannelRef.current;
+        if (room && room.state === 'joined') {
+          room.send({ type: 'broadcast', event: 'media_renegotiate_answer', payload: ansPayload }).catch(() => {});
+        } else if (payload.senderId) {
+          sendSignalToUser(payload.senderId, 'media_renegotiate_answer', ansPayload);
+        }
+
+        const videoTransceiver = activePc.getTransceivers().find(
+          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
+        );
+        const recTrack = videoTransceiver?.receiver?.track;
+        if (recTrack) {
+          recTrack.enabled = true;
+          attachRemoteTrack(recTrack);
+          setParticipants((prev) =>
+            prev.map((p) => (p.id !== user?.id ? { ...p, isCameraOn: true } : p))
+          );
+        }
+      } catch (e) {
+        console.warn('[CallMedia] Error processing media_renegotiate_offer:', e);
+      }
+    },
+    [user?.id, drainPendingRemoteCandidates, sendSignalToUser, attachRemoteTrack]
+  );
+
+  const handleIncomingRenegotiateAnswer = React.useCallback(
+    async (payload: any) => {
+      if (!payload?.sdp || payload.senderId === user?.id) return;
+      if (payload.messageId && seenSignalIdsRef.current.has(payload.messageId)) return;
+      if (payload.messageId) seenSignalIdsRef.current.add(payload.messageId);
+
+      const activePc = pcRef.current;
+      if (!activePc) return;
+      if (activePc.signalingState !== 'have-local-offer') {
+        console.log('[CallMedia] Ignoring renegotiate answer; signaling state is:', activePc.signalingState);
+        return;
+      }
+
+      try {
+        console.log('[CallMedia] Applying media renegotiation answer from:', payload.senderId);
+        await activePc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        await drainPendingRemoteCandidates();
+
+        const videoTransceiver = activePc.getTransceivers().find(
+          (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
+        );
+        const recTrack = videoTransceiver?.receiver?.track;
+        if (recTrack) {
+          recTrack.enabled = true;
+          attachRemoteTrack(recTrack);
+        }
+      } catch (e) {
+        console.warn('[CallMedia] Error applying media_renegotiate_answer:', e);
+      }
+    },
+    [user?.id, drainPendingRemoteCandidates, attachRemoteTrack]
+  );
+
   // Helper to apply incoming answer SDP
   const applyAnswerSdp = React.useCallback(
     async (sdp: RTCSessionDescriptionInit) => {
@@ -1043,6 +1175,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(ringingTimerRef.current);
         ringingTimerRef.current = null;
       }
+      if (ringingBeaconRef.current) {
+        clearInterval(ringingBeaconRef.current);
+        ringingBeaconRef.current = null;
+      }
+      activeCallPayloadRef.current = null;
+      callStatusRef.current = 'in_call';
 
       try {
         if (pc.signalingState === 'have-local-offer') {
@@ -1081,6 +1219,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     myChannel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
         if (!payload || payload.callerId === user.id) return;
+        if (
+          callStatusRef.current === 'in_call' ||
+          callStatusRef.current === 'outgoing_ringing' ||
+          (activeConversationIdRef.current && activeConversationIdRef.current === payload.conversationId)
+        ) {
+          console.log('[CallSignaling] Ignoring redundant incoming call beacon while already active or dialing');
+          return;
+        }
         if (payload.callerZeroTierIp) {
           peerZeroTierIpRef.current = payload.callerZeroTierIp;
           setPeerZeroTierIpState(payload.callerZeroTierIp);
@@ -1191,15 +1337,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           console.warn('[CallNAT] Error applying ice_restart_answer in mailbox:', e);
         }
       })
+      .on('broadcast', { event: 'media_renegotiate_offer' }, ({ payload }) => {
+        handleIncomingRenegotiateOffer(payload);
+      })
+      .on('broadcast', { event: 'media_renegotiate_answer' }, ({ payload }) => {
+        handleIncomingRenegotiateAnswer(payload);
+      })
       .on('broadcast', { event: 'request_incoming_call_beacon' }, ({ payload }) => {
-        if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
+        if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current && activeCallPayloadRef.current.targetUserId === payload?.calleeId) {
           console.log('[CallSignaling] Re-dispatching active call offer beacon on demand:', payload);
-          if (activeCallPayloadRef.current.targetUserId) {
-            sendSignalToUser(activeCallPayloadRef.current.targetUserId, 'incoming_call', activeCallPayloadRef.current);
-          }
+          sendSignalToUser(activeCallPayloadRef.current.targetUserId, 'incoming_call', activeCallPayloadRef.current);
         }
       })
       .on('broadcast', { event: 'call_ended' }, () => {
+        if (ringingBeaconRef.current) {
+          clearInterval(ringingBeaconRef.current);
+          ringingBeaconRef.current = null;
+        }
+        activeCallPayloadRef.current = null;
         stopMediaTracks();
         setCallStatus('idle');
         setIncomingCall(null);
@@ -1209,6 +1364,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (status === 'SUBSCRIBED') {
           // If newly connecting / opening the app, query recent ringing calls for late joiners
           const checkActiveRingingCalls = async () => {
+            if (callStatusRef.current !== 'idle' || activeConversationIdRef.current) return;
             try {
               const thirtyFiveSecondsAgo = new Date(Date.now() - 35000).toISOString();
               const { data: recentCalls } = await supabase
@@ -1254,7 +1410,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       myChannel.unsubscribe();
       supabase.removeChannel(myChannel);
     };
-  }, [user, supabase, stopMediaTracks, toast, applyAnswerSdp, applyRemoteCandidate, handlePeerMediaToggle, activeConversationId, drainPendingRemoteCandidates, sendSignalToRoom, sendSignalToUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, supabase, stopMediaTracks, toast, applyAnswerSdp, applyRemoteCandidate, handlePeerMediaToggle, handleIncomingRenegotiateOffer, handleIncomingRenegotiateAnswer, drainPendingRemoteCandidates, sendSignalToRoom, sendSignalToUser]);
 
   // 2. START OUTGOING CALL
   const startCall = async (targetUserId: string, conversationId: string, video = false) => {
@@ -1292,11 +1449,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     stopMediaTracks();
     setActiveConversationId(conversationId);
+    activeConversationIdRef.current = conversationId;
     setPeerUserId(recipientId);
+    peerUserIdRef.current = recipientId;
     setIsVideoCall(video);
     setIsCameraOn(video);
     setIsMicMuted(false);
     setCallStatus('outgoing_ringing');
+    callStatusRef.current = 'outgoing_ringing';
 
     // Acquire microphone & optional camera
     const stream = await getMedia(video);
@@ -1529,6 +1689,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           console.warn('[CallNAT] Error applying ice_restart_answer in caller room:', e);
         }
       })
+      .on('broadcast', { event: 'media_renegotiate_offer' }, ({ payload }) => {
+        handleIncomingRenegotiateOffer(payload);
+      })
+      .on('broadcast', { event: 'media_renegotiate_answer' }, ({ payload }) => {
+        handleIncomingRenegotiateAnswer(payload);
+      })
       .on('broadcast', { event: 'peer_media_toggle' }, ({ payload }) => {
         handlePeerMediaToggle(payload);
       })
@@ -1670,6 +1836,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     const { callerId, callerName, conversationId, isVideo, sdp } = incomingCall;
 
+    // Immediately dismiss incoming call modal and transition call status
+    setIncomingCall(null);
+    callStatusRef.current = 'in_call';
+    activeConversationIdRef.current = conversationId;
+    peerUserIdRef.current = callerId;
+    setCallStatus('in_call');
+
     // Pre-unlock the audio element under the user click gesture
     if (remoteAudioElementRef.current) {
       remoteAudioElementRef.current.muted = false;
@@ -1682,7 +1855,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setIsVideoCall(isVideo);
     setIsCameraOn(isVideo);
     setIsMicMuted(false);
-    setCallStatus('in_call');
 
     // Acquire microphone & optional camera
     const stream = await getMedia(isVideo);
@@ -1884,6 +2056,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         } catch (e) {
           console.warn('[CallNAT] Error applying ice_restart_answer in callee room:', e);
         }
+      })
+      .on('broadcast', { event: 'media_renegotiate_offer' }, ({ payload }) => {
+        handleIncomingRenegotiateOffer(payload);
+      })
+      .on('broadcast', { event: 'media_renegotiate_answer' }, ({ payload }) => {
+        handleIncomingRenegotiateAnswer(payload);
       })
       .on('broadcast', { event: 'peer_media_toggle' }, ({ payload }) => {
         handlePeerMediaToggle(payload);
@@ -2152,8 +2330,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             videoTransceiver.direction = 'sendrecv';
           }
 
-          // Trigger WebRTC SDP renegotiation so remote peer decodes incoming camera RTP stream
-          restartIceConnection().catch(() => {});
+          // Trigger lightweight SDP renegotiation so remote peer decodes incoming camera RTP stream
+          renegotiateMedia().catch(() => {});
         }
 
         setIsCameraOn(true);
@@ -2185,6 +2363,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (videoSender) {
           await videoSender.replaceTrack(null);
         }
+        renegotiateMedia().catch(() => {});
       }
 
       setIsCameraOn(false);

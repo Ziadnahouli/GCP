@@ -63,10 +63,6 @@ export function useSocial() {
         .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
 
       if (!friendsErr && friendshipsData) {
-        const currentChannel = socialChannelRef.current;
-        const presenceState = currentChannel?.presenceState ? currentChannel.presenceState() : null;
-        const activePresenceKeys = presenceState ? new Set(Object.keys(presenceState)) : null;
-
         const uniqueFriendsMap = new Map<string, FriendItem>();
         for (const row of friendshipsData) {
           const prof =
@@ -75,23 +71,12 @@ export function useSocial() {
               : (row.sender_profile as unknown as UserProfile);
 
           if (prof && prof.id && prof.id !== user.id) {
-            // If presence channel is active, cross-reference whether peer is currently connected
-            let effectiveStatus = prof.status || 'offline';
-            if (activePresenceKeys) {
-              if (activePresenceKeys.has(prof.id)) {
-                const presenceArr = presenceState[prof.id] as Array<{ status?: string }> | undefined;
-                effectiveStatus = (presenceArr && presenceArr[presenceArr.length - 1]?.status as any) || prof.status || 'online';
-              } else {
-                effectiveStatus = 'offline';
-              }
-            }
-
             uniqueFriendsMap.set(prof.id, {
               id: row.id,
               created_at: row.created_at,
               friend: {
                 ...prof,
-                status: effectiveStatus,
+                status: prof.status || 'offline',
               },
             });
           }
@@ -191,50 +176,10 @@ export function useSocial() {
 
     if (!isConfigured || !user) return;
 
-    // Supabase Realtime channel with active presence tracking aligned to nexus-global-presence
-    const channel = supabase.channel('nexus-global-presence', {
-      config: {
-        broadcast: { self: false },
-        presence: { key: user.id },
-      },
-    });
-
-    const syncPresenceState = () => {
-      const state = channel.presenceState();
-      const onlineKeys = new Set(Object.keys(state));
-
-      setFriends((prevFriends) =>
-        prevFriends.map((f) => {
-          const isPeerPresent = onlineKeys.has(f.friend.id);
-          if (isPeerPresent) {
-            const presences = state[f.friend.id] as Array<{ status?: string }> | undefined;
-            const liveStatus = (presences && presences.length > 0)
-              ? (presences[presences.length - 1].status as any)
-              : 'online';
-            return {
-              ...f,
-              friend: {
-                ...f.friend,
-                status: liveStatus,
-              },
-            };
-          } else {
-            return {
-              ...f,
-              friend: {
-                ...f.friend,
-                status: 'offline',
-              },
-            };
-          }
-        })
-      );
-    };
+    // Realtime Postgres database updates listener for social data
+    const channel = supabase.channel('nexus-social-db');
 
     channel
-      .on('presence', { event: 'sync' }, syncPresenceState)
-      .on('presence', { event: 'join' }, syncPresenceState)
-      .on('presence', { event: 'leave' }, syncPresenceState)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'friend_requests' },
@@ -258,15 +203,7 @@ export function useSocial() {
       .on('broadcast', { event: 'social_update' }, () => {
         fetchSocialData();
       })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({
-            user_id: user.id,
-            status: profile?.status || 'online',
-            online_at: new Date().toISOString(),
-          });
-        }
-      });
+      .subscribe();
 
     socialChannelRef.current = channel;
 
@@ -282,15 +219,8 @@ export function useSocial() {
       }
     };
 
-    const handleBeforeUnload = () => {
-      try {
-        channel.untrack();
-      } catch {}
-    };
-
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', handleResume);
-      window.addEventListener('beforeunload', handleBeforeUnload);
       document.addEventListener('visibilitychange', handleResume);
     }
 
@@ -298,13 +228,12 @@ export function useSocial() {
       clearInterval(autoSyncTimer);
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', handleResume);
-        window.removeEventListener('beforeunload', handleBeforeUnload);
         document.removeEventListener('visibilitychange', handleResume);
       }
       socialChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [fetchSocialData, isConfigured, user, supabase, profile?.status]);
+  }, [fetchSocialData, isConfigured, user, supabase]);
 
   // Send a friend request by username
   const sendFriendRequest = async (targetUsername: string) => {

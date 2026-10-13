@@ -436,7 +436,9 @@ export function CallModal({
                   const hasRemoteVideo = !isLocalUser && Boolean(
                     remoteStream?.getVideoTracks().some((t) => t.readyState === 'live')
                   );
-                  const isCameraActive = isLocalUser ? (isCameraOn && hasLocalVideo) : Boolean(p.isCameraOn || hasRemoteVideo);
+                  const isCameraActive = isLocalUser
+                    ? Boolean(isCameraOn && hasLocalVideo)
+                    : Boolean(p.isCameraOn);
 
                   return (
                     <div
@@ -457,7 +459,7 @@ export function CallModal({
                       >
                         <VideoFeed
                           stream={isLocalUser ? localStream : remoteStream}
-                          muted={isLocalUser}
+                          muted={true}
                           className="w-full h-full object-cover"
                         />
                       </div>

@@ -58,6 +58,7 @@ interface VideoFeedProps {
   muted?: boolean;
   active?: boolean;
   className?: string;
+  onRenderChange?: (isRendering: boolean) => void;
 }
 
 const VideoFeed = React.memo(function VideoFeed({
@@ -65,9 +66,11 @@ const VideoFeed = React.memo(function VideoFeed({
   muted = true,
   active = true,
   className,
+  onRenderChange,
 }: VideoFeedProps) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
-  const trackIdsRef = React.useRef<string>('');
+  const onRenderChangeRef = React.useRef(onRenderChange);
+  onRenderChangeRef.current = onRenderChange;
 
   React.useEffect(() => {
     const video = videoRef.current;
@@ -77,35 +80,45 @@ const VideoFeed = React.memo(function VideoFeed({
     video.defaultMuted = muted;
 
     const videoTracks = stream ? stream.getVideoTracks() : [];
-    if (stream && videoTracks.length > 0) {
-      const currentTrackIds = videoTracks
-        .map((t) => `${t.id}-${t.readyState}-${t.muted}`)
-        .sort()
-        .join(',');
+    const activeTrack = videoTracks[0] ?? null;
 
-      if (video.srcObject !== stream || trackIdsRef.current !== currentTrackIds) {
-        trackIdsRef.current = currentTrackIds;
+    if (stream && activeTrack) {
+      const currentSrcObject = video.srcObject as MediaStream | null;
+      const currentTrack = currentSrcObject?.getVideoTracks()[0] ?? null;
+
+      // Only assign srcObject if the underlying video track has changed or not yet assigned.
+      // This is the critical fix preventing the infinite decoder reset loop!
+      if (currentTrack?.id !== activeTrack.id || !video.srcObject) {
         video.srcObject = stream;
       }
 
       let isCancelled = false;
 
+      const notifyRenderStatus = () => {
+        if (!video || isCancelled) return;
+        const isRendering = video.videoWidth > 0 && video.readyState >= 2 && !video.paused;
+        onRenderChangeRef.current?.(isRendering);
+      };
+
       const playVideo = () => {
         if (!video || isCancelled) return;
         const playPromise = video.play();
         if (playPromise !== undefined) {
-          playPromise.catch((err: unknown) => {
-            const errObj = err as { name?: string; message?: string };
-            // Benign browser interruptions
-            if (
-              errObj?.name === 'AbortError' ||
-              errObj?.name === 'NotAllowedError' ||
-              errObj?.message?.includes('interrupted')
-            ) {
-              return;
-            }
-            console.warn('[VideoFeed] Autoplay video play notice:', err);
-          });
+          playPromise
+            .then(() => {
+              notifyRenderStatus();
+            })
+            .catch((err: unknown) => {
+              const errObj = err as { name?: string; message?: string };
+              if (
+                errObj?.name === 'AbortError' ||
+                errObj?.name === 'NotAllowedError' ||
+                errObj?.message?.includes('interrupted')
+              ) {
+                return;
+              }
+              console.warn('[VideoFeed] Autoplay video play notice:', err);
+            });
         }
       };
 
@@ -115,17 +128,21 @@ const VideoFeed = React.memo(function VideoFeed({
 
       const handleReady = () => {
         if (active) playVideo();
+        notifyRenderStatus();
       };
 
       video.addEventListener('loadeddata', handleReady);
       video.addEventListener('canplay', handleReady);
       video.addEventListener('playing', handleReady);
+      video.addEventListener('resize', handleReady);
+      video.addEventListener('timeupdate', handleReady);
 
-      videoTracks.forEach((vt) => {
-        vt.enabled = true;
-        vt.addEventListener('unmute', handleReady);
-      });
+      const handleUnmute = () => {
+        activeTrack.enabled = true;
+        handleReady();
+      };
 
+      activeTrack.addEventListener('unmute', handleUnmute);
       stream.addEventListener('addtrack', handleReady);
       stream.addEventListener('removetrack', handleReady);
 
@@ -134,16 +151,16 @@ const VideoFeed = React.memo(function VideoFeed({
         video.removeEventListener('loadeddata', handleReady);
         video.removeEventListener('canplay', handleReady);
         video.removeEventListener('playing', handleReady);
-        videoTracks.forEach((vt) => {
-          vt.removeEventListener('unmute', handleReady);
-        });
+        video.removeEventListener('resize', handleReady);
+        video.removeEventListener('timeupdate', handleReady);
+        activeTrack.removeEventListener('unmute', handleUnmute);
         stream.removeEventListener('addtrack', handleReady);
         stream.removeEventListener('removetrack', handleReady);
       };
     } else {
       if (video.srcObject !== null) {
-        trackIdsRef.current = '';
         video.srcObject = null;
+        onRenderChangeRef.current?.(false);
       }
     }
   }, [stream, muted, active]);
@@ -190,6 +207,14 @@ export function CallModal({
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
+  const [renderedFeeds, setRenderedFeeds] = React.useState<Record<string, boolean>>({});
+
+  const handleRenderChange = React.useCallback((participantId: string, isRendering: boolean) => {
+    setRenderedFeeds((prev) => {
+      if (prev[participantId] === isRendering) return prev;
+      return { ...prev, [participantId]: isRendering };
+    });
+  }, []);
 
   // Drag-and-move window state
   const [position, setPosition] = React.useState<{ x: number; y: number } | null>(null);
@@ -458,9 +483,11 @@ export function CallModal({
                   const hasRemoteVideo = !isLocalUser && Boolean(
                     remoteStream?.getVideoTracks().some((t) => t.readyState === 'live')
                   );
-                  const isCameraActive = isLocalUser
+                  const wantsCamera = isLocalUser
                     ? Boolean(isCameraOn && hasLocalVideo)
                     : Boolean(p.isCameraOn && (hasRemoteVideo || remoteStream?.getVideoTracks().length));
+
+                  const isActivelyRendering = wantsCamera && Boolean(renderedFeeds[p.id]);
 
                   return (
                     <div
@@ -472,26 +499,27 @@ export function CallModal({
                           : 'border-white/[0.06]'
                       )}
                     >
-                      {/* Live WebRTC Camera Video Feed (Always mounted to protect media pipeline) */}
+                      {/* Live WebRTC Camera Video Feed (fades in only when frames are actively verified rendering) */}
                       <div
                         className={cn(
-                          'w-full h-full absolute inset-0 flex items-center justify-center bg-black transition-opacity duration-200',
-                          isCameraActive ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'
+                          'w-full h-full absolute inset-0 flex items-center justify-center bg-black transition-opacity duration-300',
+                          isActivelyRendering ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'
                         )}
                       >
                         <VideoFeed
                           stream={isLocalUser ? localStream : remoteStream}
                           muted={true}
-                          active={isCameraActive}
+                          active={wantsCamera}
+                          onRenderChange={(rendering) => handleRenderChange(p.id, rendering)}
                           className="w-full h-full object-cover"
                         />
                       </div>
 
-                      {/* Fallback Avatar with speaking ring */}
+                      {/* Fallback Avatar with speaking ring (never covered by a black screen) */}
                       <div
                         className={cn(
-                          'flex flex-col items-center justify-center space-y-2 transition-opacity duration-200',
-                          isCameraActive ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                          'flex flex-col items-center justify-center space-y-2 transition-opacity duration-300',
+                          isActivelyRendering ? 'opacity-0 pointer-events-none' : 'opacity-100'
                         )}
                       >
                         <Avatar
@@ -502,6 +530,12 @@ export function CallModal({
                             p.isSpeaking && 'scale-105 ring-2 ring-primary/60'
                           )}
                         />
+                        {wantsCamera && !isActivelyRendering && (
+                          <div className="flex items-center gap-1.5 text-[10px] text-amber-400 font-medium bg-amber-400/10 px-2.5 py-0.5 rounded-full border border-amber-400/20 animate-pulse mt-1">
+                            <Video className="w-3 h-3" />
+                            <span>Connecting camera...</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Participant Name Badge */}

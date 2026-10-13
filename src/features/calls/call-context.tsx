@@ -384,21 +384,27 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
     const currentStream = remoteStreamRef.current;
     const existingSameKind = currentStream.getTracks().find((t) => t.kind === track.kind);
+    let trackListChanged = false;
+
     if (existingSameKind && existingSameKind.id !== track.id) {
       try {
         currentStream.removeTrack(existingSameKind);
+        trackListChanged = true;
       } catch {}
     }
     if (!currentStream.getTracks().some((t) => t.id === track.id)) {
       currentStream.addTrack(track);
+      trackListChanged = true;
     }
-    setRemoteStream(new MediaStream(currentStream.getTracks()));
+
+    if (trackListChanged) {
+      setRemoteStream(new MediaStream(currentStream.getTracks()));
+    }
 
     // Attach unmute listener to ensure camera active state activates immediately on first packet
     if (track.kind === 'video') {
       track.onunmute = () => {
         track.enabled = true;
-        setRemoteStream(new MediaStream(currentStream.getTracks()));
         setParticipants((prev) =>
           prev.map((p) => (p.id !== user?.id ? { ...p, isCameraOn: true } : p))
         );
@@ -643,7 +649,34 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isDeafened]);
 
-  // Web Audio RMS Speech Activity Monitoring for remote audio
+  // Global user interaction unblocker for browser audio context and media autoplay policies
+  React.useEffect(() => {
+    const unlockAudio = async () => {
+      if (dspAudioCtxRef.current && dspAudioCtxRef.current.state === 'suspended') {
+        try {
+          await dspAudioCtxRef.current.resume();
+        } catch {}
+      }
+      const audioEl = remoteAudioElementRef.current;
+      if (audioEl && audioEl.paused && remoteStream && remoteStream.getAudioTracks().length > 0) {
+        try {
+          await audioEl.play();
+        } catch {}
+      }
+    };
+
+    window.addEventListener('click', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio, { passive: true });
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, [remoteStream]);
+
+  // Web Audio Speech Activity Monitoring for remote audio
   React.useEffect(() => {
     if (callStatus !== 'in_call' || !remoteStream) return;
 
@@ -660,22 +693,33 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (audioTracks.length === 0) return;
 
       audioCtx = new AudioCtx();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+
       const source = audioCtx.createMediaStreamSource(remoteStream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.25;
       source.connect(analyser);
 
       const buffer = new Uint8Array(analyser.frequencyBinCount);
 
       const checkVolume = () => {
-        if (!analyser) return;
-        analyser.getByteFrequencyData(buffer);
-        let sum = 0;
-        for (let i = 0; i < buffer.length; i++) {
-          sum += buffer[i];
+        if (!analyser || !audioCtx) return;
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
         }
-        const avg = sum / buffer.length;
-        const isSpeaking = avg > 20;
+        analyser.getByteFrequencyData(buffer);
+
+        // Measure vocal fundamental and formant bins (approx 150 Hz to 3500 Hz, bins 2-36)
+        let speechSum = 0;
+        const speechBins = Math.min(36, buffer.length);
+        for (let i = 2; i < speechBins; i++) {
+          speechSum += buffer[i];
+        }
+        const speechAvg = speechSum / (speechBins - 2);
+        const isSpeaking = speechAvg > 12;
 
         setParticipants((prev) =>
           prev.map((p) => {
@@ -702,7 +746,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
   }, [callStatus, remoteStream, user?.id]);
 
-  // Web Audio RMS Speech Activity Monitoring for local mic
+  // Web Audio Speech Activity Monitoring for local mic
   React.useEffect(() => {
     if (callStatus !== 'in_call' || !localStream || isMicMuted) {
       setParticipants((prev) =>
@@ -724,22 +768,33 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (audioTracks.length === 0) return;
 
       audioCtx = new AudioCtx();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+
       const source = audioCtx.createMediaStreamSource(localStream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.25;
       source.connect(analyser);
 
       const buffer = new Uint8Array(analyser.frequencyBinCount);
 
       const checkVolume = () => {
-        if (!analyser) return;
-        analyser.getByteFrequencyData(buffer);
-        let sum = 0;
-        for (let i = 0; i < buffer.length; i++) {
-          sum += buffer[i];
+        if (!analyser || !audioCtx) return;
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
         }
-        const avg = sum / buffer.length;
-        const isSpeaking = avg > 20;
+        analyser.getByteFrequencyData(buffer);
+
+        // Measure vocal fundamental and formant bins (approx 150 Hz to 3500 Hz, bins 2-36)
+        let speechSum = 0;
+        const speechBins = Math.min(36, buffer.length);
+        for (let i = 2; i < speechBins; i++) {
+          speechSum += buffer[i];
+        }
+        const speechAvg = speechSum / (speechBins - 2);
+        const isSpeaking = speechAvg > 12;
 
         setParticipants((prev) =>
           prev.map((p) => {
@@ -952,6 +1007,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (AudioCtx && finalAudioTrack) {
           const ctx = new AudioCtx({ latencyHint: 'interactive' });
           dspAudioCtxRef.current = ctx;
+          if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+          }
 
           const source = ctx.createMediaStreamSource(new MediaStream([finalAudioTrack]));
 
@@ -1002,15 +1060,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           compressor.connect(destination);
           highshelf.connect(analyser);
 
-          // Adaptive Voice Activity Noise Gate
+          // Adaptive Voice Activity Noise Gate with soft downward expansion (prevents quiet voice cut-off)
           const pcmBuffer = new Float32Array(analyser.fftSize);
           let isGateOpen = false;
           let lastSpeechTime = performance.now();
-          const GATE_THRESHOLD = 0.015;
-          const GATE_HOLD_MS = 240;
+          const GATE_THRESHOLD = 0.003; // Calibrated for quiet mics and soft voices
+          const GATE_HOLD_MS = 300; // Extra speech tail hold time to prevent clipping word endings
 
           const updateGate = () => {
             if (ctx.state === 'closed') return;
+            if (ctx.state === 'suspended') {
+              ctx.resume().catch(() => {});
+            }
             analyser.getFloatTimeDomainData(pcmBuffer);
             let sumSq = 0;
             for (let i = 0; i < pcmBuffer.length; i++) {
@@ -1031,10 +1092,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 if (isGateOpen && now - lastSpeechTime > GATE_HOLD_MS) {
                   isGateOpen = false;
                   gateGain.gain.cancelScheduledValues(ctx.currentTime);
-                  gateGain.gain.linearRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+                  // Soft downward expansion (-14 dB floor) so quiet speech is never muted completely
+                  gateGain.gain.linearRampToValueAtTime(0.20, ctx.currentTime + 0.06);
                 }
               }
             } else {
+              gateGain.gain.cancelScheduledValues(ctx.currentTime);
               gateGain.gain.setValueAtTime(1.0, ctx.currentTime);
             }
 
@@ -2288,6 +2351,28 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               if (t.direction !== 'sendrecv') {
                 t.direction = 'sendrecv';
               }
+              const recTrack = t.receiver?.track;
+              if (recTrack) {
+                recTrack.onunmute = () => {
+                  console.log('[CallSignaling] Callee transceiver track unmuted:', recTrack.kind);
+                  recTrack.enabled = true;
+                  attachRemoteTrack(recTrack);
+                  if (recTrack.kind === 'video') {
+                    setParticipants((prev) =>
+                      prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
+                    );
+                  }
+                };
+                if (recTrack.readyState === 'live' && !recTrack.muted) {
+                  recTrack.enabled = true;
+                  attachRemoteTrack(recTrack);
+                  if (recTrack.kind === 'video') {
+                    setParticipants((prev) =>
+                      prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
+                    );
+                  }
+                }
+              }
             });
 
             const answer = await pc.createAnswer();
@@ -2529,20 +2614,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         // Send camera track over WebRTC via pre-negotiated video sender (if not actively screen sharing)
         if (pc && !isScreenSharing) {
           const videoSender = getVideoSender(pc);
-          if (videoSender) {
-            await videoSender.replaceTrack(videoTrack);
-          } else {
-            pc.addTrack(videoTrack, localStreamRef.current || new MediaStream([videoTrack]));
-          }
           const videoTransceiver = pc.getTransceivers().find(
             (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
           );
-          if (videoTransceiver && videoTransceiver.direction !== 'sendrecv') {
-            videoTransceiver.direction = 'sendrecv';
+          let needsRenegotiation = false;
+
+          if (videoSender) {
+            await videoSender.replaceTrack(videoTrack);
+            if (videoTransceiver && videoTransceiver.direction !== 'sendrecv') {
+              videoTransceiver.direction = 'sendrecv';
+              needsRenegotiation = true;
+            }
+          } else {
+            pc.addTrack(videoTrack, localStreamRef.current || new MediaStream([videoTrack]));
+            needsRenegotiation = true;
           }
 
-          // Trigger lightweight SDP renegotiation so remote peer decodes incoming camera RTP stream
-          renegotiateMedia().catch(() => {});
+          if (needsRenegotiation) {
+            renegotiateMedia().catch(() => {});
+          }
         }
 
         setIsCameraOn(true);
@@ -2574,7 +2664,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (videoSender) {
           await videoSender.replaceTrack(null);
         }
-        renegotiateMedia().catch(() => {});
       }
 
       setIsCameraOn(false);
@@ -2818,6 +2907,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       <audio
         ref={remoteAudioElementRef}
         autoPlay
+        playsInline
         aria-hidden="true"
         className="fixed -top-[9999px] -left-[9999px] w-1 h-1 opacity-0 pointer-events-none"
       />

@@ -180,6 +180,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   peerUserIdRef.current = peerUserId;
   const seenSignalIdsRef = React.useRef<Set<string>>(new Set());
 
+  // Web Audio Studio-Grade DSP Noise Suppression references
+  const rawMicStreamRef = React.useRef<MediaStream | null>(null);
+  const dspAudioCtxRef = React.useRef<AudioContext | null>(null);
+  const dspFilterNodesRef = React.useRef<{
+    source: MediaStreamAudioSourceNode;
+    highpass: BiquadFilterNode;
+    notch: BiquadFilterNode;
+    highshelf: BiquadFilterNode;
+    gateGain: GainNode;
+    compressor: DynamicsCompressorNode;
+    destination: MediaStreamAudioDestinationNode;
+    analyser: AnalyserNode;
+    animFrame: number | null;
+  } | null>(null);
+
   // ZeroTier Virtual LAN IP states
   const [peerZeroTierIp, setPeerZeroTierIpState] = React.useState<string | null>(() => getPeerZeroTierIp());
   const peerZeroTierIpRef = React.useRef<string | null>(null);
@@ -321,9 +336,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('nexus_noise_suppression', String(nextState));
     } catch {}
 
-    // Apply updated constraints to all active microphone audio tracks
-    if (localStreamRef.current) {
-      const audioTracks = localStreamRef.current.getAudioTracks();
+    // 1. Update live DSP audio graph nodes immediately
+    if (dspFilterNodesRef.current && dspAudioCtxRef.current) {
+      const ctx = dspAudioCtxRef.current;
+      const { notch, highshelf, gateGain } = dspFilterNodesRef.current;
+      try {
+        notch.gain.setValueAtTime(nextState ? 2.5 : 0, ctx.currentTime);
+        highshelf.gain.setValueAtTime(nextState ? -4.5 : 0, ctx.currentTime);
+        if (!nextState) {
+          gateGain.gain.cancelScheduledValues(ctx.currentTime);
+          gateGain.gain.setValueAtTime(1.0, ctx.currentTime);
+        }
+      } catch {}
+    }
+
+    // 2. Apply updated constraints to all active raw microphone audio tracks
+    if (rawMicStreamRef.current) {
+      const audioTracks = rawMicStreamRef.current.getAudioTracks();
       for (const track of audioTracks) {
         try {
           await track.applyConstraints({
@@ -338,9 +367,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     toast({
-      title: nextState ? 'Noise Suppression Active' : 'Noise Suppression Off',
+      title: nextState ? 'Studio Noise Cancellation Active' : 'Noise Suppression Off',
       description: nextState
-        ? 'AI & acoustic filtering active: keyboard clatter and ambient fan noise removed.'
+        ? 'Acoustic DSP active: room rumble, keyboard clicks, and fan hiss removed.'
         : 'Raw microphone pass-through active.',
       type: nextState ? 'success' : 'info',
       duration: 2500,
@@ -365,6 +394,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
     setRemoteStream(new MediaStream(currentStream.getTracks()));
 
+    // Attach unmute listener to ensure camera active state activates immediately on first packet
+    if (track.kind === 'video') {
+      track.onunmute = () => {
+        track.enabled = true;
+        setRemoteStream(new MediaStream(currentStream.getTracks()));
+        setParticipants((prev) =>
+          prev.map((p) => (p.id !== user?.id ? { ...p, isCameraOn: true } : p))
+        );
+      };
+    }
+
     // Also update remote persistent audio element if this is an audio track
     if (track.kind === 'audio' && remoteAudioElementRef.current) {
       if (remoteAudioElementRef.current.srcObject !== currentStream) {
@@ -373,7 +413,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       remoteAudioElementRef.current.muted = isDeafened;
       remoteAudioElementRef.current.play().catch(() => {});
     }
-  }, [isDeafened]);
+  }, [isDeafened, user?.id]);
 
   // Update participant media state from remote signals
   const handlePeerMediaToggle = React.useCallback(
@@ -456,6 +496,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     iceRestartingRef.current = false;
     outboundQueueRef.current.clear();
     roomQueueRef.current = [];
+
+    // Clean up DSP noise cancellation pipeline
+    if (dspFilterNodesRef.current?.animFrame) {
+      cancelAnimationFrame(dspFilterNodesRef.current.animFrame);
+    }
+    dspFilterNodesRef.current = null;
+    if (dspAudioCtxRef.current) {
+      try {
+        dspAudioCtxRef.current.close();
+      } catch {}
+      dspAudioCtxRef.current = null;
+    }
+    if (rawMicStreamRef.current) {
+      rawMicStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {}
+      });
+      rawMicStreamRef.current = null;
+    }
 
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
@@ -848,14 +908,32 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
   }, [callStatus]);
 
-  // Acquire local microphone and optional camera stream
+  // Acquire local microphone with studio-grade Web Audio DSP noise cancellation and optional camera
   const getMedia = async (video: boolean): Promise<MediaStream | null> => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       return null;
     }
 
+    // Clean up existing DSP audio pipeline if refreshing media
+    if (dspFilterNodesRef.current?.animFrame) {
+      cancelAnimationFrame(dspFilterNodesRef.current.animFrame);
+    }
+    dspFilterNodesRef.current = null;
+    if (dspAudioCtxRef.current) {
+      try {
+        dspAudioCtxRef.current.close();
+      } catch {}
+      dspAudioCtxRef.current = null;
+    }
+    if (rawMicStreamRef.current) {
+      rawMicStreamRef.current.getTracks().forEach((t) => {
+        try { t.stop(); } catch {}
+      });
+      rawMicStreamRef.current = null;
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const rawStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: isNoiseSuppressionEnabled,
@@ -863,32 +941,150 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         },
         video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
       });
-      stream.getAudioTracks().forEach((track) => {
-        track.enabled = true;
+      rawMicStreamRef.current = rawStream;
+
+      // Construct multi-stage studio voice DSP pipeline
+      let finalAudioTrack = rawStream.getAudioTracks()[0];
+      try {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx && finalAudioTrack) {
+          const ctx = new AudioCtx({ latencyHint: 'interactive' });
+          dspAudioCtxRef.current = ctx;
+
+          const source = ctx.createMediaStreamSource(new MediaStream([finalAudioTrack]));
+
+          // 1. High-Pass Filter (85 Hz) - removes desk thumps, AC hum, sub-bass rumble
+          const highpass = ctx.createBiquadFilter();
+          highpass.type = 'highpass';
+          highpass.frequency.setValueAtTime(85, ctx.currentTime);
+          highpass.Q.setValueAtTime(0.707, ctx.currentTime);
+
+          // 2. Vocal Formant Peaking Filter (2.8 kHz, +2.5 dB) - sharpens voice clarity
+          const notch = ctx.createBiquadFilter();
+          notch.type = 'peaking';
+          notch.frequency.setValueAtTime(2800, ctx.currentTime);
+          notch.gain.setValueAtTime(isNoiseSuppressionEnabled ? 2.5 : 0, ctx.currentTime);
+          notch.Q.setValueAtTime(1.1, ctx.currentTime);
+
+          // 3. High-Shelf Filter (7.5 kHz, -4.5 dB) - tames mic preamp hiss, fan whine
+          const highshelf = ctx.createBiquadFilter();
+          highshelf.type = 'highshelf';
+          highshelf.frequency.setValueAtTime(7500, ctx.currentTime);
+          highshelf.gain.setValueAtTime(isNoiseSuppressionEnabled ? -4.5 : 0, ctx.currentTime);
+
+          // 4. Downward Expander / Noise Gate Gain Node
+          const gateGain = ctx.createGain();
+          gateGain.gain.setValueAtTime(1.0, ctx.currentTime);
+
+          // 5. Studio Vocal Dynamics Compressor
+          const compressor = ctx.createDynamicsCompressor();
+          compressor.threshold.setValueAtTime(-24, ctx.currentTime);
+          compressor.knee.setValueAtTime(10, ctx.currentTime);
+          compressor.ratio.setValueAtTime(4, ctx.currentTime);
+          compressor.attack.setValueAtTime(0.003, ctx.currentTime);
+          compressor.release.setValueAtTime(0.12, ctx.currentTime);
+
+          // 6. Analyser Node for voice activity level measurement
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 512;
+          analyser.smoothingTimeConstant = 0.2;
+
+          // 7. Destination
+          const destination = ctx.createMediaStreamDestination();
+
+          source.connect(highpass);
+          highpass.connect(notch);
+          notch.connect(highshelf);
+          highshelf.connect(gateGain);
+          gateGain.connect(compressor);
+          compressor.connect(destination);
+          highshelf.connect(analyser);
+
+          // Adaptive Voice Activity Noise Gate
+          const pcmBuffer = new Float32Array(analyser.fftSize);
+          let isGateOpen = false;
+          let lastSpeechTime = performance.now();
+          const GATE_THRESHOLD = 0.015;
+          const GATE_HOLD_MS = 240;
+
+          const updateGate = () => {
+            if (ctx.state === 'closed') return;
+            analyser.getFloatTimeDomainData(pcmBuffer);
+            let sumSq = 0;
+            for (let i = 0; i < pcmBuffer.length; i++) {
+              sumSq += pcmBuffer[i] * pcmBuffer[i];
+            }
+            const rms = Math.sqrt(sumSq / pcmBuffer.length);
+            const now = performance.now();
+
+            if (isNoiseSuppressionEnabled) {
+              if (rms > GATE_THRESHOLD) {
+                lastSpeechTime = now;
+                if (!isGateOpen) {
+                  isGateOpen = true;
+                  gateGain.gain.cancelScheduledValues(ctx.currentTime);
+                  gateGain.gain.linearRampToValueAtTime(1.0, ctx.currentTime + 0.008);
+                }
+              } else {
+                if (isGateOpen && now - lastSpeechTime > GATE_HOLD_MS) {
+                  isGateOpen = false;
+                  gateGain.gain.cancelScheduledValues(ctx.currentTime);
+                  gateGain.gain.linearRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+                }
+              }
+            } else {
+              gateGain.gain.setValueAtTime(1.0, ctx.currentTime);
+            }
+
+            if (dspFilterNodesRef.current) {
+              dspFilterNodesRef.current.animFrame = requestAnimationFrame(updateGate);
+            }
+          };
+
+          const animFrame = requestAnimationFrame(updateGate);
+          dspFilterNodesRef.current = {
+            source,
+            highpass,
+            notch,
+            highshelf,
+            gateGain,
+            compressor,
+            destination,
+            analyser,
+            animFrame,
+          };
+
+          const dspTrack = destination.stream.getAudioTracks()[0];
+          if (dspTrack) {
+            finalAudioTrack = dspTrack;
+          }
+        }
+      } catch (dspErr) {
+        console.warn('[CallAudio] Web Audio DSP initialization fallback:', dspErr);
+      }
+
+      // Assemble final stream
+      const tracks: MediaStreamTrack[] = [];
+      if (finalAudioTrack) {
+        finalAudioTrack.enabled = true;
+        tracks.push(finalAudioTrack);
+      }
+      rawStream.getVideoTracks().forEach((vt) => {
+        vt.enabled = true;
+        tracks.push(vt);
       });
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-      return stream;
+
+      const finalStream = new MediaStream(tracks);
+      localStreamRef.current = finalStream;
+      setLocalStream(finalStream);
+      return finalStream;
     } catch (videoErr) {
       if (video) {
         console.warn('Video stream acquisition failed, falling back to audio only:', videoErr);
         try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: isNoiseSuppressionEnabled,
-              autoGainControl: isNoiseSuppressionEnabled,
-            },
-            video: false,
-          });
-          audioStream.getAudioTracks().forEach((track) => {
-            track.enabled = true;
-          });
-          localStreamRef.current = audioStream;
-          setLocalStream(audioStream);
-          setIsCameraOn(false);
-          setIsVideoCall(false);
-          return audioStream;
+          return await getMedia(false);
         } catch (audioErr) {
           console.warn('Microphone access not granted:', audioErr);
         }
@@ -1066,7 +1262,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const room = roomChannelRef.current;
       if (room && room.state === 'joined') {
         room.send({ type: 'broadcast', event: 'media_renegotiate_offer', payload }).catch(() => {});
-      } else if (targetId) {
+      }
+      if (targetId) {
         sendSignalToUser(targetId, 'media_renegotiate_offer', payload);
       }
     } catch (err) {
@@ -1106,7 +1303,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const room = roomChannelRef.current;
         if (room && room.state === 'joined') {
           room.send({ type: 'broadcast', event: 'media_renegotiate_answer', payload: ansPayload }).catch(() => {});
-        } else if (payload.senderId) {
+        }
+        if (payload.senderId) {
           sendSignalToUser(payload.senderId, 'media_renegotiate_answer', ansPayload);
         }
 
@@ -1486,6 +1684,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       attachRemoteTrack(event.track);
       setCallStatus('in_call');
 
+      const isRemoteVideoActive = event.track.kind === 'video' && (video || (!event.track.muted && event.track.readyState === 'live'));
+
       setParticipants((prev) => {
         const local = prev.find((p) => p.id === user.id);
         const remote = prev.find((p) => p.id === recipientId);
@@ -1503,7 +1703,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             name: peerName,
             isSpeaking: remote?.isSpeaking || false,
             isMuted: remote?.isMuted || false,
-            isCameraOn: remote?.isCameraOn ?? (event.track.kind === 'video' ? true : video),
+            isCameraOn: remote?.isCameraOn ?? isRemoteVideoActive,
             isScreenSharing: remote?.isScreenSharing || false,
           },
         ];
@@ -1527,7 +1727,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (recTrack.readyState === 'live' && !recTrack.muted) {
           recTrack.enabled = true;
           attachRemoteTrack(recTrack);
-          if (recTrack.kind === 'video') {
+          if (recTrack.kind === 'video' && video) {
             setParticipants((prev) =>
               prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
             );
@@ -1873,17 +2073,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    // Pre-negotiate both audio AND video transceivers
-    const hasAudio = pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'audio');
-    const hasVideo = pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'video');
-    if (!hasAudio) pc.addTransceiver('audio', { direction: 'sendrecv' });
-    if (!hasVideo) pc.addTransceiver('video', { direction: 'sendrecv' });
-
     pc.ontrack = (event) => {
       console.log('[CallSignaling] Received remote media track on callee:', event.track.kind);
       attachRemoteTrack(event.track);
       setCallStatus('in_call');
-      if (event.track.kind === 'video') {
+      if (event.track.kind === 'video' && (isVideo || (!event.track.muted && event.track.readyState === 'live'))) {
         setParticipants((prev) =>
           prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
         );
@@ -1907,7 +2101,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (recTrack.readyState === 'live' && !recTrack.muted) {
           recTrack.enabled = true;
           attachRemoteTrack(recTrack);
-          if (recTrack.kind === 'video') {
+          if (recTrack.kind === 'video' && isVideo) {
             setParticipants((prev) =>
               prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
             );
@@ -2090,6 +2284,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             await pc.setRemoteDescription(new RTCSessionDescription(sdp));
             await drainPendingRemoteCandidates();
 
+            pc.getTransceivers().forEach((t) => {
+              if (t.direction !== 'sendrecv') {
+                t.direction = 'sendrecv';
+              }
+            });
+
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
 
@@ -2220,6 +2420,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    if (rawMicStreamRef.current) {
+      rawMicStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !nextMuted;
+      });
+    }
+
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track) => {
         track.enabled = !nextMuted;
@@ -2254,6 +2460,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (nextDeafened) {
       // Deafening automatically mutes microphone
       setIsMicMuted(true);
+      if (rawMicStreamRef.current) {
+        rawMicStreamRef.current.getAudioTracks().forEach((track) => {
+          track.enabled = false;
+        });
+      }
       if (localStreamRef.current) {
         localStreamRef.current.getAudioTracks().forEach((track) => {
           track.enabled = false;

@@ -56,12 +56,14 @@ interface CallModalProps {
 interface VideoFeedProps {
   stream: MediaStream | null | undefined;
   muted?: boolean;
+  active?: boolean;
   className?: string;
 }
 
 const VideoFeed = React.memo(function VideoFeed({
   stream,
   muted = true,
+  active = true,
   className,
 }: VideoFeedProps) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
@@ -77,7 +79,7 @@ const VideoFeed = React.memo(function VideoFeed({
     const videoTracks = stream ? stream.getVideoTracks() : [];
     if (stream && videoTracks.length > 0) {
       const currentTrackIds = videoTracks
-        .map((t) => `${t.id}-${t.readyState}`)
+        .map((t) => `${t.id}-${t.readyState}-${t.muted}`)
         .sort()
         .join(',');
 
@@ -94,7 +96,7 @@ const VideoFeed = React.memo(function VideoFeed({
         if (playPromise !== undefined) {
           playPromise.catch((err: unknown) => {
             const errObj = err as { name?: string; message?: string };
-            // Benign browser interruptions (e.g. rapid track changes, element removal)
+            // Benign browser interruptions
             if (
               errObj?.name === 'AbortError' ||
               errObj?.name === 'NotAllowedError' ||
@@ -107,18 +109,36 @@ const VideoFeed = React.memo(function VideoFeed({
         }
       };
 
-      playVideo();
+      if (active) {
+        playVideo();
+      }
+
+      const handleReady = () => {
+        if (active) playVideo();
+      };
+
+      video.addEventListener('loadeddata', handleReady);
+      video.addEventListener('canplay', handleReady);
+      video.addEventListener('playing', handleReady);
 
       videoTracks.forEach((vt) => {
         vt.enabled = true;
-        vt.onunmute = playVideo;
+        vt.addEventListener('unmute', handleReady);
       });
 
-      stream.onaddtrack = () => playVideo();
-      stream.onremovetrack = () => playVideo();
+      stream.addEventListener('addtrack', handleReady);
+      stream.addEventListener('removetrack', handleReady);
 
       return () => {
         isCancelled = true;
+        video.removeEventListener('loadeddata', handleReady);
+        video.removeEventListener('canplay', handleReady);
+        video.removeEventListener('playing', handleReady);
+        videoTracks.forEach((vt) => {
+          vt.removeEventListener('unmute', handleReady);
+        });
+        stream.removeEventListener('addtrack', handleReady);
+        stream.removeEventListener('removetrack', handleReady);
       };
     } else {
       if (video.srcObject !== null) {
@@ -126,7 +146,7 @@ const VideoFeed = React.memo(function VideoFeed({
         video.srcObject = null;
       }
     }
-  }, [stream, muted]);
+  }, [stream, muted, active]);
 
   return (
     <video
@@ -135,7 +155,9 @@ const VideoFeed = React.memo(function VideoFeed({
       playsInline
       muted={muted}
       onLoadedMetadata={(e) => {
-        (e.currentTarget as HTMLVideoElement).play().catch(() => {});
+        if (active) {
+          (e.currentTarget as HTMLVideoElement).play().catch(() => {});
+        }
       }}
       className={className}
     />
@@ -438,7 +460,7 @@ export function CallModal({
                   );
                   const isCameraActive = isLocalUser
                     ? Boolean(isCameraOn && hasLocalVideo)
-                    : Boolean(p.isCameraOn);
+                    : Boolean(p.isCameraOn && (hasRemoteVideo || remoteStream?.getVideoTracks().length));
 
                   return (
                     <div
@@ -460,6 +482,7 @@ export function CallModal({
                         <VideoFeed
                           stream={isLocalUser ? localStream : remoteStream}
                           muted={true}
+                          active={isCameraActive}
                           className="w-full h-full object-cover"
                         />
                       </div>

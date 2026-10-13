@@ -57,18 +57,23 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         if (Array.isArray(presences) && presences.length > 0) {
           const latest: any = presences[presences.length - 1];
           const st = (latest?.status as UserStatus) || 'online';
-          currentMap.set(key, st);
-          if (latest?.user_id) currentMap.set(latest.user_id, st);
+          if (st !== 'offline') {
+            currentMap.set(key, st);
+            if (latest?.user_id) currentMap.set(latest.user_id, st);
+          }
         } else {
           currentMap.set(key, 'online');
         }
       });
 
-      // Retain peers whose broadcast ping arrived within the last 45s
+      // Retain peers whose broadcast ping arrived within the last 16s (if not marked offline)
       const now = Date.now();
       pingsRef.current.forEach((timestamp, peerId) => {
-        if (now - timestamp < 45000 && !currentMap.has(peerId)) {
-          currentMap.set(peerId, pingsStatusRef.current.get(peerId) || 'online');
+        if (now - timestamp < 16000 && !currentMap.has(peerId)) {
+          const st = pingsStatusRef.current.get(peerId) || 'online';
+          if (st !== 'offline') {
+            currentMap.set(peerId, st);
+          }
         }
       });
 
@@ -77,24 +82,84 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
     channel
       .on('presence', { event: 'sync' }, updatePresenceState)
-      .on('presence', { event: 'join' }, updatePresenceState)
-      .on('presence', { event: 'leave' }, updatePresenceState)
+      .on('presence', { event: 'join' }, ({ key, newPresences }: any) => {
+        if (Array.isArray(newPresences) && newPresences.length > 0) {
+          const latest: any = newPresences[newPresences.length - 1];
+          const st = (latest?.status as UserStatus) || 'online';
+          const targetId = latest?.user_id || key;
+          if (targetId && targetId !== user.id) {
+            pingsRef.current.set(targetId, Date.now());
+            pingsStatusRef.current.set(targetId, st);
+          }
+        }
+        updatePresenceState();
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }: any) => {
+        if (key) {
+          pingsRef.current.delete(key);
+          pingsStatusRef.current.delete(key);
+        }
+        if (Array.isArray(leftPresences)) {
+          leftPresences.forEach((lp: any) => {
+            const uid = lp?.user_id || lp?.key;
+            if (uid) {
+              pingsRef.current.delete(uid);
+              pingsStatusRef.current.delete(uid);
+            }
+          });
+        }
+        updatePresenceState();
+      })
       .on('broadcast', { event: 'presence_ping' }, ({ payload }) => {
         if (!payload?.userId || payload.userId === user.id) return;
         const st = (payload.status as UserStatus) || 'online';
-        pingsRef.current.set(payload.userId, Date.now());
-        pingsStatusRef.current.set(payload.userId, st);
-        setOnlineUsers((prev) => {
-          const next = new Map(prev);
-          next.set(payload.userId, st);
-          return next;
-        });
+        if (st === 'offline') {
+          pingsRef.current.delete(payload.userId);
+          pingsStatusRef.current.delete(payload.userId);
+          setOnlineUsers((prev) => {
+            if (!prev.has(payload.userId)) return prev;
+            const next = new Map(prev);
+            next.delete(payload.userId);
+            return next;
+          });
+        } else {
+          pingsRef.current.set(payload.userId, Date.now());
+          pingsStatusRef.current.set(payload.userId, st);
+          setOnlineUsers((prev) => {
+            const next = new Map(prev);
+            next.set(payload.userId, st);
+            return next;
+          });
+        }
+      })
+      .on('broadcast', { event: 'presence_status_change' }, ({ payload }) => {
+        if (!payload?.userId || payload.userId === user.id) return;
+        const st = (payload.status as UserStatus) || 'offline';
+        if (st === 'offline') {
+          pingsRef.current.delete(payload.userId);
+          pingsStatusRef.current.delete(payload.userId);
+          setOnlineUsers((prev) => {
+            if (!prev.has(payload.userId)) return prev;
+            const next = new Map(prev);
+            next.delete(payload.userId);
+            return next;
+          });
+        } else {
+          pingsRef.current.set(payload.userId, Date.now());
+          pingsStatusRef.current.set(payload.userId, st);
+          setOnlineUsers((prev) => {
+            const next = new Map(prev);
+            next.set(payload.userId, st);
+            return next;
+          });
+        }
       })
       .on('broadcast', { event: 'presence_leave' }, ({ payload }) => {
         if (!payload?.userId || payload.userId === user.id) return;
         pingsRef.current.delete(payload.userId);
         pingsStatusRef.current.delete(payload.userId);
         setOnlineUsers((prev) => {
+          if (!prev.has(payload.userId)) return prev;
           const next = new Map(prev);
           next.delete(payload.userId);
           return next;
@@ -117,27 +182,38 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         { event: 'UPDATE', schema: 'public', table: 'profiles' },
         (payload: any) => {
           const updatedProfile = payload?.new;
-          if (updatedProfile?.id) {
+          if (updatedProfile?.id && updatedProfile.id !== user.id) {
             const newStatus = (updatedProfile.status as UserStatus) || 'offline';
-            pingsStatusRef.current.set(updatedProfile.id, newStatus);
-            setOnlineUsers((prev) => {
-              if (prev.has(updatedProfile.id)) {
+            if (newStatus === 'offline') {
+              pingsRef.current.delete(updatedProfile.id);
+              pingsStatusRef.current.delete(updatedProfile.id);
+              setOnlineUsers((prev) => {
+                if (!prev.has(updatedProfile.id)) return prev;
+                const next = new Map(prev);
+                next.delete(updatedProfile.id);
+                return next;
+              });
+            } else {
+              pingsRef.current.set(updatedProfile.id, Date.now());
+              pingsStatusRef.current.set(updatedProfile.id, newStatus);
+              setOnlineUsers((prev) => {
                 const next = new Map(prev);
                 next.set(updatedProfile.id, newStatus);
                 return next;
-              }
-              return prev;
-            });
+              });
+            }
           }
         }
       )
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await channel.track({
-            user_id: user.id,
-            status: profileStatusRef.current,
-            online_at: new Date().toISOString(),
-          }).catch(() => {});
+          if (profileStatusRef.current !== 'offline') {
+            await channel.track({
+              user_id: user.id,
+              status: profileStatusRef.current,
+              online_at: new Date().toISOString(),
+            }).catch(() => {});
+          }
 
           channel.send({
             type: 'broadcast',
@@ -153,7 +229,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         }
       });
 
-    // 15-second lightweight presence heartbeat
+    // 8-second lightweight presence heartbeat
     const heartbeatTimer = setInterval(() => {
       if (channel.state === 'joined') {
         channel.send({
@@ -162,15 +238,33 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           payload: { userId: user.id, status: profileStatusRef.current },
         }).catch(() => {});
       }
-    }, 15000);
+    }, 8000);
+
+    // 2.5-second live sweep timer to evict disconnected peers immediately without requiring refresh
+    const sweepTimer = setInterval(() => {
+      const now = Date.now();
+      let hasExpired = false;
+      pingsRef.current.forEach((timestamp, peerId) => {
+        if (now - timestamp >= 16000) {
+          pingsRef.current.delete(peerId);
+          pingsStatusRef.current.delete(peerId);
+          hasExpired = true;
+        }
+      });
+      if (hasExpired) {
+        updatePresenceState();
+      }
+    }, 2500);
 
     const handleWindowFocus = () => {
       if (channel.state === 'joined') {
-        channel.track({
-          user_id: user.id,
-          status: profileStatusRef.current,
-          online_at: new Date().toISOString(),
-        }).catch(() => {});
+        if (profileStatusRef.current !== 'offline') {
+          channel.track({
+            user_id: user.id,
+            status: profileStatusRef.current,
+            online_at: new Date().toISOString(),
+          }).catch(() => {});
+        }
         channel.send({
           type: 'broadcast',
           event: 'presence_ping',
@@ -198,6 +292,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       clearInterval(heartbeatTimer);
+      clearInterval(sweepTimer);
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', handleWindowFocus);
         document.removeEventListener('visibilitychange', handleWindowFocus);
@@ -222,10 +317,19 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     if (!user || !profile?.status) return;
     const channel = channelRef.current;
     if (channel && channel.state === 'joined') {
-      channel.track({
-        user_id: user.id,
-        status: profile.status,
-        online_at: new Date().toISOString(),
+      if (profile.status === 'offline') {
+        channel.untrack().catch(() => {});
+      } else {
+        channel.track({
+          user_id: user.id,
+          status: profile.status,
+          online_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
+      channel.send({
+        type: 'broadcast',
+        event: 'presence_status_change',
+        payload: { userId: user.id, status: profile.status },
       }).catch(() => {});
       channel.send({
         type: 'broadcast',

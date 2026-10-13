@@ -12,6 +12,7 @@ import {
   Sparkles,
   Users,
   MessageSquare,
+  Radio,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Server, Channel, ChannelType } from '@/lib/types/server';
@@ -19,6 +20,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
+import { InviteModal } from './invite-modal';
 
 interface ServerSidebarProps {
   server: Server;
@@ -26,6 +28,7 @@ interface ServerSidebarProps {
   onSelectChannel: (channel: Channel) => void;
   onOpenServerSettings?: () => void;
   onCreateChannel: (name: string, type: ChannelType, topic?: string) => Promise<unknown>;
+  onUpdateChannel?: (channelId: string, updates: { name?: string; topic?: string | null }) => Promise<unknown>;
   onDeleteChannel?: (channelId: string) => Promise<unknown>;
   onConnectVoiceChannel?: (channel: Channel) => void;
 }
@@ -36,6 +39,7 @@ export function ServerSidebar({
   onSelectChannel,
   onOpenServerSettings,
   onCreateChannel,
+  onUpdateChannel,
   onDeleteChannel,
   onConnectVoiceChannel,
 }: ServerSidebarProps) {
@@ -43,6 +47,7 @@ export function ServerSidebar({
   const { toast } = useToast();
   const [showMenu, setShowMenu] = React.useState(false);
   const [showAddChannel, setShowAddChannel] = React.useState(false);
+  const [showInviteModal, setShowInviteModal] = React.useState(false);
   const [newChannelName, setNewChannelName] = React.useState('');
   const [newChannelType, setNewChannelType] = React.useState<ChannelType>('text');
 
@@ -63,6 +68,8 @@ export function ServerSidebar({
     setShowAddChannel(false);
   };
 
+  const memberCount = (server.members?.length || 0) + 1;
+
   return (
     <aside className="w-60 h-full bg-surface-sidebar border-r border-white/[0.06] flex flex-col justify-between select-none shrink-0 z-20">
       <div className="overflow-y-auto flex-1 no-scrollbar">
@@ -77,7 +84,7 @@ export function ServerSidebar({
                 <span className="truncate">{server.name}</span>
               </h2>
               <div className="text-[10px] text-muted-foreground/60 truncate font-mono">
-                {server.members.length + 3} squad members
+                {memberCount} {memberCount === 1 ? 'member' : 'members'} online
               </div>
             </div>
 
@@ -117,11 +124,7 @@ export function ServerSidebar({
               <button
                 onClick={() => {
                   setShowMenu(false);
-                  toast({
-                    title: 'Invite Link Copied',
-                    description: `Share https://nexus.gg/join/${server.id} with your squad.`,
-                    type: 'success',
-                  });
+                  setShowInviteModal(true);
                 }}
                 className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
               >
@@ -193,11 +196,23 @@ export function ServerSidebar({
                     <span className="truncate">{channel.name}</span>
                   </div>
 
-                  {channel.topic && (
-                    <span className="text-[10px] text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity truncate max-w-[50px]">
-                      topic
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {onDeleteChannel && textChannels.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Delete #${channel.name}?`)) {
+                            onDeleteChannel(channel.id);
+                          }
+                        }}
+                        className="p-1 hover:text-destructive text-muted-foreground/50 rounded transition-colors"
+                        title="Delete Channel"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
 
                   {isActive && (
                     <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-primary rounded-r" />
@@ -209,60 +224,93 @@ export function ServerSidebar({
         </div>
 
         {/* Voice Channels Category */}
-        <div className="p-3 pt-0">
-          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 px-2 py-1">
+        <div className="p-2 pt-1">
+          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 px-2 py-1">
             <span className="flex items-center gap-1">
-              <span>Voice Channels</span>
+              <span>Voice Lounges</span>
             </span>
             <button
               onClick={() => {
                 setNewChannelType('voice');
                 setShowAddChannel(true);
               }}
-              className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
+              className="text-muted-foreground/60 hover:text-foreground p-0.5 rounded transition-colors"
               title="Add Voice Channel"
               aria-label="Add Voice Channel"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
             </button>
           </div>
 
-          <div className="space-y-1 mt-1">
+          <div className="space-y-1 mt-0.5">
             {voiceChannels.map((channel) => {
+              const isActive = activeChannelId === channel.id;
+
               return (
-                <div key={channel.id} className="space-y-1">
+                <div key={channel.id} className="space-y-0.5">
                   <div
                     onClick={() => {
+                      onSelectChannel(channel);
                       onConnectVoiceChannel?.(channel);
-                      toast({
-                        title: `Voice Connected: ${channel.name}`,
-                        description: 'WebRTC encrypted voice room active.',
-                        type: 'success',
-                      });
                     }}
-                    className="group flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:bg-emerald-500/10 hover:text-emerald-400 text-muted-foreground border border-transparent hover:border-emerald-500/20"
+                    className={cn(
+                      'group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all border',
+                      isActive
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'hover:bg-emerald-500/10 hover:text-emerald-400 text-muted-foreground border-transparent hover:border-emerald-500/20'
+                    )}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <Volume2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <Volume2
+                        className={cn(
+                          'w-3.5 h-3.5 shrink-0 transition-colors',
+                          isActive ? 'text-emerald-400 animate-pulse' : 'text-emerald-400/80'
+                        )}
+                      />
                       <span className="truncate">{channel.name}</span>
                     </div>
 
-                    <Badge
-                      variant="outline"
-                      className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 font-mono"
-                    >
-                      Join
-                    </Badge>
-                  </div>
+                    <div className="flex items-center gap-1">
+                      {isActive ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] px-1.5 py-0 border-emerald-500/50 text-emerald-300 bg-emerald-500/20 font-mono"
+                        >
+                          Connected
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] px-1.5 py-0 border-white/[0.08] text-muted-foreground group-hover:border-emerald-500/30 group-hover:text-emerald-400 font-mono"
+                        >
+                          Join
+                        </Badge>
+                      )}
 
-                  {/* Connected squad members under voice channel */}
-                  <div className="pl-6 space-y-1">
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-0.5">
-                      <Avatar name="Viper Leader" size="sm" className="w-4 h-4" />
-                      <span className="truncate">Viper Leader</span>
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-auto" />
+                      {onDeleteChannel && voiceChannels.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Delete voice channel ${channel.name}?`)) {
+                              onDeleteChannel(channel.id);
+                            }
+                          }}
+                          className="p-1 opacity-0 group-hover:opacity-100 hover:text-destructive text-muted-foreground/50 rounded transition-colors"
+                          title="Delete Voice Channel"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   </div>
+
+                  {isActive && (
+                    <div className="pl-6 py-0.5 flex items-center gap-1.5 text-[10px] text-emerald-400/90">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="font-mono">Live Voice Stage</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -343,6 +391,13 @@ export function ServerSidebar({
           </div>
         </div>
       )}
+
+      {/* Invite Squadmates Modal */}
+      <InviteModal
+        open={showInviteModal}
+        onOpenChange={setShowInviteModal}
+        server={server}
+      />
     </aside>
   );
 }

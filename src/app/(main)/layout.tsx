@@ -48,15 +48,33 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const {
     servers,
     createServer,
-    createChannel,
-    deleteChannel,
+    updateServer,
     deleteServer,
+    createChannel,
+    updateChannel,
+    deleteChannel,
+    joinServer,
+    leaveServer,
+    updateMemberRole,
+    kickMember,
   } = useServers();
 
   const activeServer = React.useMemo(() => {
     if (!selectedServerId) return null;
     return servers.find((s) => s.id === selectedServerId) || null;
   }, [servers, selectedServerId]);
+
+  // Support 1-click joining via invite links like /?join=UUID
+  const joinParam = searchParams.get('join');
+  React.useEffect(() => {
+    if (joinParam && user) {
+      joinServer(joinParam).then((res) => {
+        if (res.success && res.server) {
+          router.push(`/?s=${res.server.id}&ch=${res.server.channels[0]?.id || ''}`);
+        }
+      });
+    }
+  }, [joinParam, user, joinServer, router]);
 
   if (isLoading) {
     return (
@@ -101,11 +119,36 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleCreateServerSubmit = async (name: string, description?: string) => {
-    const created = await createServer(name, description);
+  const handleCreateServerSubmit = async (
+    name: string,
+    description?: string,
+    iconUrl?: string,
+    template?: 'competitive' | 'hangout' | 'custom'
+  ) => {
+    const created = await createServer(name, description, iconUrl, template);
     if (created) {
-      router.push(`/?s=${created.id}&ch=${created.channels[0]?.id}`);
+      router.push(`/?s=${created.id}&ch=${created.channels[0]?.id || ''}`);
     }
+  };
+
+  const handleJoinServerSubmit = async (serverIdOrInvite: string) => {
+    const res = await joinServer(serverIdOrInvite);
+    if (res.success && res.server) {
+      router.push(`/?s=${res.server.id}&ch=${res.server.channels[0]?.id || ''}`);
+    }
+    return res;
+  };
+
+  const handleDeleteServer = async (srvId: string) => {
+    await deleteServer(srvId);
+    setShowServerSettings(false);
+    router.push('/');
+  };
+
+  const handleLeaveServer = async (srvId: string) => {
+    await leaveServer(srvId);
+    setShowServerSettings(false);
+    router.push('/');
   };
 
   return (
@@ -129,6 +172,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
                 onOpenServerSettings={() => setShowServerSettings(true)}
                 onCreateChannel={async (name, type, topic) => {
                   await createChannel(activeServer.id, name, type, topic);
+                }}
+                onUpdateChannel={async (chanId, updates) => {
+                  await updateChannel(activeServer.id, chanId, updates);
                 }}
                 onDeleteChannel={async (chanId) => {
                   await deleteChannel(activeServer.id, chanId);
@@ -188,6 +234,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
                     }}
                     onCreateChannel={async (name, type, topic) => {
                       await createChannel(activeServer.id, name, type, topic);
+                    }}
+                    onUpdateChannel={async (chanId, updates) => {
+                      await updateChannel(activeServer.id, chanId, updates);
                     }}
                     onDeleteChannel={async (chanId) => {
                       await deleteChannel(activeServer.id, chanId);
@@ -287,7 +336,25 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         open={showCreateServer}
         onOpenChange={setShowCreateServer}
         onCreateServer={handleCreateServerSubmit}
+        onJoinServer={handleJoinServerSubmit}
       />
+
+      {/* Server Settings Modal */}
+      {activeServer && (
+        <ServerSettingsModal
+          open={showServerSettings}
+          onOpenChange={setShowServerSettings}
+          server={activeServer}
+          onUpdateServer={updateServer}
+          onDeleteServer={handleDeleteServer}
+          onCreateChannel={createChannel}
+          onUpdateChannel={updateChannel}
+          onDeleteChannel={deleteChannel}
+          onUpdateMemberRole={updateMemberRole}
+          onKickMember={kickMember}
+          onLeaveServer={handleLeaveServer}
+        />
+      )}
 
       {/* User Settings Modal for Mobile & Global */}
       <SettingsModal open={showUserSettings} onOpenChange={setShowUserSettings} />

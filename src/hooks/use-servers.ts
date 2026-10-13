@@ -1,100 +1,19 @@
 'use client';
 
 import * as React from 'react';
-import { Server, Channel, ChannelType } from '@/lib/types/server';
+import { Server, Channel, ChannelType, RoleDefinition, ServerPermission } from '@/lib/types/server';
 import { useAuth } from '@/features/auth/auth-provider';
 import { supabase } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
 
 const STORAGE_KEY = 'nexus_gaming_servers_store';
 
-const DEFAULT_SERVERS: Server[] = [
-  {
-    id: '00000000-0000-0000-0000-000000000001',
-    name: 'Tactical Squad Alpha',
-    description: 'Competitive tactical FPS squad & scrims headquarters.',
-    icon_url: null,
-    owner_id: null,
-    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
-    channels: [
-      {
-        id: '00000000-0000-0000-0001-000000000001',
-        server_id: '00000000-0000-0000-0000-000000000001',
-        name: 'general',
-        type: 'text',
-        topic: 'General chatter & gaming discussions.',
-        position: 0,
-        created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
-      },
-      {
-        id: '00000000-0000-0000-0001-000000000002',
-        server_id: '00000000-0000-0000-0000-000000000001',
-        name: 'tactics-and-strats',
-        type: 'text',
-        topic: 'Lineups, execute timings, and map callouts.',
-        position: 1,
-        created_at: new Date(Date.now() - 86400000 * 25).toISOString(),
-      },
-      {
-        id: '00000000-0000-0000-0001-000000000003',
-        server_id: '00000000-0000-0000-0000-000000000001',
-        name: 'highlights-and-clips',
-        type: 'text',
-        topic: 'Ace clips, funny moments, and plays of the game.',
-        position: 2,
-        created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
-      },
-      {
-        id: '00000000-0000-0000-0001-000000000004',
-        server_id: '00000000-0000-0000-0000-000000000001',
-        name: 'Squad Lounge 1',
-        type: 'voice',
-        topic: 'Casual hangout voice room.',
-        position: 3,
-        created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
-      },
-      {
-        id: '00000000-0000-0000-0001-000000000005',
-        server_id: '00000000-0000-0000-0000-000000000001',
-        name: 'Competitive Scrims',
-        type: 'voice',
-        topic: 'Ranked scrim comms only.',
-        position: 4,
-        created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
-      },
-    ],
-    members: [],
-  },
-  {
-    id: '00000000-0000-0000-0000-000000000002',
-    name: 'Cyber Ranked Grinders',
-    description: 'High-ELO competitive matchmaking and aim lab analysis.',
-    icon_url: null,
-    owner_id: null,
-    created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
-    channels: [
-      {
-        id: '00000000-0000-0000-0002-000000000001',
-        server_id: '00000000-0000-0000-0000-000000000002',
-        name: 'lobby-chat',
-        type: 'text',
-        topic: 'LFG and rank announcements.',
-        position: 0,
-        created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
-      },
-      {
-        id: '00000000-0000-0000-0002-000000000002',
-        server_id: '00000000-0000-0000-0000-000000000002',
-        name: 'Duo Queue Voice',
-        type: 'voice',
-        topic: 'Duo ranked voice comms.',
-        position: 1,
-        created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
-      },
-    ],
-    members: [],
-  },
-];
+const DUMMY_SERVER_IDS = new Set([
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000002',
+]);
+
+const DEFAULT_SERVERS: Server[] = [];
 
 export function useServers() {
   const { user, profile } = useAuth();
@@ -119,26 +38,28 @@ export function useServers() {
           )
         `);
 
-      if (!error && srvData && srvData.length > 0) {
-        const parsed: Server[] = srvData.map((s) => ({
-          id: s.id,
-          name: s.name,
-          description: s.description,
-          icon_url: s.icon_url,
-          owner_id: s.owner_id,
-          created_at: s.created_at,
-          channels: (s.channels || []).sort(
-            (a: Channel, b: Channel) => a.position - b.position
-          ),
-          members: (s.server_members || []).map((m: any) => ({
-            id: m.id,
-            server_id: m.server_id,
-            user_id: m.user_id,
-            role: m.role,
-            joined_at: m.joined_at,
-            profile: (m.profile as unknown as UserProfile) || undefined,
-          })),
-        }));
+      if (!error && srvData) {
+        const parsed: Server[] = srvData
+          .filter((s) => !DUMMY_SERVER_IDS.has(s.id))
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            icon_url: s.icon_url,
+            owner_id: s.owner_id,
+            created_at: s.created_at,
+            channels: (s.channels || []).sort(
+              (a: Channel, b: Channel) => a.position - b.position
+            ),
+            members: (s.server_members || []).map((m: any) => ({
+              id: m.id,
+              server_id: m.server_id,
+              user_id: m.user_id,
+              role: m.role,
+              joined_at: m.joined_at,
+              profile: (m.profile as unknown as UserProfile) || undefined,
+            })),
+          }));
 
         setServers(parsed);
         try {
@@ -155,7 +76,12 @@ export function useServers() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        setServers(JSON.parse(stored));
+        const parsed: Server[] = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const cleanServers = parsed.filter((s) => !DUMMY_SERVER_IDS.has(s.id));
+          setServers(cleanServers);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanServers));
+        }
       }
     } catch (e) {
       console.warn('Failed to parse cached servers:', e);
@@ -726,6 +652,125 @@ export function useServers() {
     [servers, user, notifyServersUpdate]
   );
 
+  const createRole = React.useCallback(
+    async (
+      serverId: string,
+      name: string,
+      color: string,
+      permissions: ServerPermission[]
+    ): Promise<RoleDefinition> => {
+      const roleId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `role-${Date.now().toString(16)}`;
+
+      const newRole: RoleDefinition = {
+        id: roleId,
+        name,
+        color,
+        permissions,
+        is_custom: true,
+      };
+
+      const updated = servers.map((srv) => {
+        if (srv.id === serverId) {
+          const existingRoles = srv.roles || [];
+          return {
+            ...srv,
+            roles: [...existingRoles, newRole],
+          };
+        }
+        return srv;
+      });
+
+      saveServers(updated);
+      notifyServersUpdate();
+      return newRole;
+    },
+    [servers, notifyServersUpdate]
+  );
+
+  const updateRole = React.useCallback(
+    async (
+      serverId: string,
+      roleId: string,
+      updates: Partial<RoleDefinition>
+    ): Promise<boolean> => {
+      const updated = servers.map((srv) => {
+        if (srv.id === serverId) {
+          const roles = (srv.roles || []).map((r) =>
+            r.id === roleId ? { ...r, ...updates } : r
+          );
+          return { ...srv, roles };
+        }
+        return srv;
+      });
+
+      saveServers(updated);
+      notifyServersUpdate();
+      return true;
+    },
+    [servers, notifyServersUpdate]
+  );
+
+  const deleteRole = React.useCallback(
+    async (serverId: string, roleId: string): Promise<boolean> => {
+      const updated = servers.map((srv) => {
+        if (srv.id === serverId) {
+          const roles = (srv.roles || []).filter((r) => r.id !== roleId);
+          const members = srv.members.map((m) =>
+            m.role === roleId ? { ...m, role: 'member' } : m
+          );
+          return { ...srv, roles, members };
+        }
+        return srv;
+      });
+
+      saveServers(updated);
+      notifyServersUpdate();
+      return true;
+    },
+    [servers, notifyServersUpdate]
+  );
+
+  const updateRolePermissions = React.useCallback(
+    async (
+      serverId: string,
+      roleIdOrName: string,
+      permissions: ServerPermission[]
+    ): Promise<boolean> => {
+      const updated = servers.map((srv) => {
+        if (srv.id === serverId) {
+          const existingRoles = [...(srv.roles || [])];
+          const roleIdx = existingRoles.findIndex(
+            (r) => r.id === roleIdOrName || r.name.toLowerCase() === roleIdOrName.toLowerCase()
+          );
+          if (roleIdx >= 0) {
+            existingRoles[roleIdx] = {
+              ...existingRoles[roleIdx],
+              permissions,
+            };
+          } else {
+            existingRoles.push({
+              id: roleIdOrName.toLowerCase(),
+              name: roleIdOrName.charAt(0).toUpperCase() + roleIdOrName.slice(1),
+              permissions,
+              color: '#6366f1',
+              is_custom: false,
+            });
+          }
+          return { ...srv, roles: existingRoles };
+        }
+        return srv;
+      });
+
+      saveServers(updated);
+      notifyServersUpdate();
+      return true;
+    },
+    [servers, notifyServersUpdate]
+  );
+
   return {
     servers,
     loading,
@@ -739,5 +784,9 @@ export function useServers() {
     leaveServer,
     updateMemberRole,
     kickMember,
+    createRole,
+    updateRole,
+    deleteRole,
+    updateRolePermissions,
   };
 }

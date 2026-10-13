@@ -15,7 +15,8 @@ import {
   Radio,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Server, Channel, ChannelType } from '@/lib/types/server';
+import { Server, Channel, ChannelType, hasServerPermission } from '@/lib/types/server';
+import { useAuth } from '@/features/auth/auth-provider';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -44,12 +45,16 @@ export function ServerSidebar({
   onConnectVoiceChannel,
 }: ServerSidebarProps) {
   const router = useRouter();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [showMenu, setShowMenu] = React.useState(false);
   const [showAddChannel, setShowAddChannel] = React.useState(false);
   const [showInviteModal, setShowInviteModal] = React.useState(false);
   const [newChannelName, setNewChannelName] = React.useState('');
   const [newChannelType, setNewChannelType] = React.useState<ChannelType>('text');
+
+  const canManageServer = hasServerPermission(server, user?.id, 'manage_server') || hasServerPermission(server, user?.id, 'manage_roles');
+  const canManageChannels = hasServerPermission(server, user?.id, 'manage_channels');
 
   const textChannels = server.channels.filter((c) => c.type === 'text');
   const voiceChannels = server.channels.filter((c) => c.type === 'voice');
@@ -99,27 +104,31 @@ export function ServerSidebar({
           {/* Server Action Dropdown */}
           {showMenu && (
             <div className="absolute top-13 left-2 right-2 z-40 bg-card border border-white/[0.08] rounded-xl shadow-panel p-1 space-y-0.5 animate-in fade-in duration-100">
-              <button
-                onClick={() => {
-                  setShowMenu(false);
-                  onOpenServerSettings?.();
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>Server Settings</span>
-              </button>
+              {canManageServer && (
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    onOpenServerSettings?.();
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Server Settings</span>
+                </button>
+              )}
 
-              <button
-                onClick={() => {
-                  setShowMenu(false);
-                  setShowAddChannel(true);
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5 text-primary" />
-                <span>Create Channel</span>
-              </button>
+              {canManageChannels && (
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowAddChannel(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-hover hover:text-primary transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5 text-primary" />
+                  <span>Create Channel</span>
+                </button>
+              )}
 
               <button
                 onClick={() => {
@@ -158,17 +167,19 @@ export function ServerSidebar({
             <span className="flex items-center gap-1">
               <span>Text Channels</span>
             </span>
-            <button
-              onClick={() => {
-                setNewChannelType('text');
-                setShowAddChannel(true);
-              }}
-              className="text-muted-foreground/60 hover:text-foreground p-0.5 rounded transition-colors"
-              title="Add Text Channel"
-              aria-label="Add Text Channel"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
+            {canManageChannels && (
+              <button
+                onClick={() => {
+                  setNewChannelType('text');
+                  setShowAddChannel(true);
+                }}
+                className="text-muted-foreground/60 hover:text-foreground p-0.5 rounded transition-colors"
+                title="Add Text Channel"
+                aria-label="Add Text Channel"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            )}
           </div>
 
           <div className="space-y-0.5 mt-0.5">
@@ -197,7 +208,7 @@ export function ServerSidebar({
                   </div>
 
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {onDeleteChannel && textChannels.length > 1 && (
+                    {canManageChannels && onDeleteChannel && textChannels.length > 1 && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -229,17 +240,19 @@ export function ServerSidebar({
             <span className="flex items-center gap-1">
               <span>Voice Lounges</span>
             </span>
-            <button
-              onClick={() => {
-                setNewChannelType('voice');
-                setShowAddChannel(true);
-              }}
-              className="text-muted-foreground/60 hover:text-foreground p-0.5 rounded transition-colors"
-              title="Add Voice Channel"
-              aria-label="Add Voice Channel"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
+            {canManageChannels && (
+              <button
+                onClick={() => {
+                  setNewChannelType('voice');
+                  setShowAddChannel(true);
+                }}
+                className="text-muted-foreground/60 hover:text-foreground p-0.5 rounded transition-colors"
+                title="Add Voice Channel"
+                aria-label="Add Voice Channel"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            )}
           </div>
 
           <div className="space-y-1 mt-0.5">

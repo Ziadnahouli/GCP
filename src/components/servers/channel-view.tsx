@@ -34,12 +34,12 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Server, Channel } from '@/lib/types/server';
+import { Server, Channel, hasServerPermission } from '@/lib/types/server';
 import { useChannelMessages } from '@/hooks/use-channel-messages';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useSocial } from '@/hooks/use-social';
 import { useConversations } from '@/hooks/use-conversations';
-import { useCallContext } from '@/features/calls/call-context';
+import { useServerVoice } from '@/hooks/use-server-voice';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
 import { Avatar } from '@/components/ui/avatar';
@@ -65,10 +65,10 @@ const DEFAULT_COMMUNITY_MEMBERS = [
 export function ChannelView({ server, channel }: ChannelViewProps) {
   const router = useRouter();
   const { user, profile } = useAuth();
-  const call = useCallContext();
   const { friends } = useSocial();
   const { getOrCreateDirectConversation } = useConversations();
   const { messages, sendMessage, retryMessage } = useChannelMessages(channel.id);
+  const voice = useServerVoice(channel.id, server.id);
   const { toast } = useToast();
 
   const [inputText, setInputText] = React.useState('');
@@ -80,12 +80,36 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showSearch, setShowSearch] = React.useState(false);
   const [communityProfiles, setCommunityProfiles] = React.useState<UserProfile[]>([]);
-  const [isVoiceConnected, setIsVoiceConnected] = React.useState(true);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+
+  // Video and Screen Share elements
+  const localVideoRef = React.useRef<HTMLVideoElement>(null);
+  const localScreenRef = React.useRef<HTMLVideoElement>(null);
+
+  // Permissions for current user
+  const canSendMessages = hasServerPermission(server, user?.id, 'send_messages');
+  const canConnectVoice = hasServerPermission(server, user?.id, 'connect_voice');
+  const canSpeakVoice = hasServerPermission(server, user?.id, 'speak_voice');
+  const canShareScreen = hasServerPermission(server, user?.id, 'share_screen');
+  const canUseSoundboard = hasServerPermission(server, user?.id, 'use_soundboard');
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  // Hook up video stream to video element
+  React.useEffect(() => {
+    if (localVideoRef.current && voice.videoStream) {
+      localVideoRef.current.srcObject = voice.videoStream;
+    }
+  }, [voice.videoStream]);
+
+  // Hook up screen share stream to screen element
+  React.useEffect(() => {
+    if (localScreenRef.current && voice.screenStream) {
+      localScreenRef.current.srcObject = voice.screenStream;
+    }
+  }, [voice.screenStream]);
 
   // Load real community member profiles from database
   React.useEffect(() => {
@@ -137,6 +161,10 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (!canSendMessages) {
+      toast({ title: 'Restricted', description: 'Your role does not have permission to send messages.', type: 'error' });
+      return;
+    }
     const content = inputText.trim();
     if (!content || isSending) return;
 
@@ -403,15 +431,17 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             )}
 
             {/* Soundboard Trigger */}
-            <button
-              type="button"
-              onClick={() => setShowSoundboard(true)}
-              aria-label="Soundboard"
-              className="p-1.5 rounded-md text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
-              title="Soundboard"
-            >
-              <Sparkles className="w-4 h-4" />
-            </button>
+            {canUseSoundboard && (
+              <button
+                type="button"
+                onClick={() => setShowSoundboard(true)}
+                aria-label="Soundboard"
+                className="p-1.5 rounded-md text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
+                title="Soundboard"
+              >
+                <Sparkles className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Members Toggle */}
             <button
@@ -456,32 +486,63 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 </div>
               </div>
 
+              {/* Large Screen Share Presentation Stream if active */}
+              {voice.isScreenSharing && (
+                <div className="my-3 max-w-4xl mx-auto w-full rounded-2xl overflow-hidden border border-emerald-500/30 bg-black aspect-video relative shadow-2xl">
+                  <video
+                    ref={localScreenRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-contain"
+                  />
+                  <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/[0.1] text-xs font-semibold text-emerald-400">
+                    <MonitorUp className="w-3.5 h-3.5" />
+                    <span>Your Screen is Live</span>
+                  </div>
+                </div>
+              )}
+
               {/* Connected Participants Grid */}
-              <div className="my-auto py-8">
-                {isVoiceConnected ? (
+              <div className="my-auto py-6">
+                {voice.isVoiceConnected ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
                     {/* 1. Local Gamer Card */}
-                    <div className="relative group rounded-2xl border border-emerald-500/30 bg-surface-panel/80 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all hover:border-emerald-500/50">
-                      <div className="relative mb-3">
-                        <Avatar
-                          src={profile?.avatar_url || null}
-                          name={profile?.display_name || 'You'}
-                          size="lg"
-                          className={cn(
-                            'transition-all duration-300',
-                            !call.isMicMuted && 'ring-4 ring-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.4)] animate-pulse'
+                    <div className="relative group rounded-2xl border border-emerald-500/30 bg-surface-panel/80 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all hover:border-emerald-500/50 overflow-hidden">
+                      {voice.isCameraOn ? (
+                        <div className="w-24 h-24 rounded-2xl overflow-hidden mb-3 border-2 border-emerald-500 shadow-glow-sm relative">
+                          <video
+                            ref={localVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute bottom-1 right-1 p-0.5 rounded bg-black/60 text-[9px] text-emerald-400 font-mono">
+                            HD
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative mb-3">
+                          <Avatar
+                            src={profile?.avatar_url || null}
+                            name={profile?.display_name || 'You'}
+                            size="lg"
+                            className={cn(
+                              'transition-all duration-300',
+                              voice.isSpeaking && 'ring-4 ring-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.5)] animate-pulse'
+                            )}
+                          />
+                          {voice.isMicMuted ? (
+                            <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-rose-500 text-white shadow-subtle">
+                              <MicOff className="w-3 h-3" />
+                            </div>
+                          ) : (
+                            <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 text-white shadow-subtle">
+                              <Mic className="w-3 h-3" />
+                            </div>
                           )}
-                        />
-                        {call.isMicMuted ? (
-                          <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-rose-500 text-white shadow-subtle">
-                            <MicOff className="w-3 h-3" />
-                          </div>
-                        ) : (
-                          <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 text-white shadow-subtle">
-                            <Mic className="w-3 h-3" />
-                          </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
 
                       <div className="text-sm font-bold text-foreground flex items-center gap-1.5">
                         <span>{profile?.display_name || 'You'}</span>
@@ -491,26 +552,41 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         @{profile?.username || 'gamer'}
                       </div>
 
-                      {/* Equalizer animation when unmuted */}
+                      {/* Equalizer animation matching real mic volume */}
                       <div className="flex items-center gap-1 mt-3 h-3">
-                        {!call.isMicMuted ? (
+                        {!voice.isMicMuted ? (
                           <>
-                            <span className="w-1 h-3 bg-emerald-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                            <span className="w-1 h-2 bg-emerald-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                            <span className="w-1 h-3.5 bg-emerald-400 rounded-full animate-bounce" />
-                            <span className="w-1 h-2 bg-emerald-400 rounded-full animate-bounce [animation-delay:-0.2s]" />
-                            <span className="w-1 h-3 bg-emerald-400 rounded-full animate-bounce [animation-delay:-0.1s]" />
+                            <span
+                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
+                              style={{ height: `${Math.max(4, Math.min(16, (voice.audioLevel / 100) * 16))}px` }}
+                            />
+                            <span
+                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
+                              style={{ height: `${Math.max(3, Math.min(14, (voice.audioLevel / 100) * 14))}px` }}
+                            />
+                            <span
+                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
+                              style={{ height: `${Math.max(6, Math.min(18, (voice.audioLevel / 100) * 18))}px` }}
+                            />
+                            <span
+                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
+                              style={{ height: `${Math.max(3, Math.min(14, (voice.audioLevel / 100) * 14))}px` }}
+                            />
+                            <span
+                              className="w-1 bg-emerald-400 rounded-full transition-all duration-75"
+                              style={{ height: `${Math.max(4, Math.min(16, (voice.audioLevel / 100) * 16))}px` }}
+                            />
                           </>
                         ) : (
                           <span className="text-[10px] text-rose-400 font-mono">Microphone Muted</span>
                         )}
                       </div>
 
-                      <div className="mt-3 flex items-center gap-1.5">
+                      <div className="mt-3 flex items-center gap-1.5 flex-wrap justify-center">
                         <Badge variant="subtle" className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20">
-                          Squad Leader
+                          Squadmate
                         </Badge>
-                        {call.isNoiseSuppressionEnabled && (
+                        {voice.isNoiseSuppressionEnabled && (
                           <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
                             DeepFilter AI
                           </Badge>
@@ -518,51 +594,54 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                       </div>
                     </div>
 
-                    {/* 2. Squad Members Cards */}
-                    {squadList.slice(0, 2).map((mem) => {
-                      if (mem.id === user?.id) return null;
-                      return (
-                        <div
-                          key={mem.id}
-                          className="relative group rounded-2xl border border-white/[0.08] bg-surface-default/60 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all hover:border-white/[0.16]"
-                        >
-                          <div className="relative mb-3">
-                            <Avatar
-                              src={mem.avatar_url || null}
-                              name={mem.display_name}
-                              size="lg"
-                              status={mem.status}
-                              showStatus
-                            />
+                    {/* 2. Remote Connected Peers from Realtime presence */}
+                    {voice.remoteParticipants.map((mem) => (
+                      <div
+                        key={mem.id}
+                        className="relative group rounded-2xl border border-white/[0.08] bg-surface-default/60 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all hover:border-white/[0.16]"
+                      >
+                        <div className="relative mb-3">
+                          <Avatar
+                            src={mem.avatar_url || null}
+                            name={mem.display_name}
+                            size="lg"
+                            className={cn(
+                              'transition-all duration-300',
+                              mem.is_speaking && 'ring-4 ring-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.5)] animate-pulse'
+                            )}
+                          />
+                          {mem.is_muted ? (
+                            <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-rose-500 text-white shadow-subtle">
+                              <MicOff className="w-3 h-3" />
+                            </div>
+                          ) : (
                             <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 text-white shadow-subtle">
                               <Mic className="w-3 h-3" />
                             </div>
-                          </div>
-
-                          <div className="text-sm font-bold text-foreground">
-                            {mem.display_name}
-                          </div>
-                          <div className="text-xs text-muted-foreground/70 font-mono mt-0.5">
-                            @{mem.username}
-                          </div>
-
-                          <div className="flex items-center gap-1 mt-3 h-3">
-                            <span className="w-1 h-2 bg-emerald-400/60 rounded-full" />
-                            <span className="w-1 h-1.5 bg-emerald-400/60 rounded-full" />
-                            <span className="w-1 h-2.5 bg-emerald-400/60 rounded-full" />
-                            <span className="w-1 h-1.5 bg-emerald-400/60 rounded-full" />
-                          </div>
-
-                          <div className="mt-3">
-                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-white/[0.08] text-muted-foreground capitalize">
-                              {mem.role}
-                            </Badge>
-                          </div>
+                          )}
                         </div>
-                      );
-                    })}
 
-                    {/* 3. Empty Invite Slot */}
+                        <div className="text-sm font-bold text-foreground">
+                          {mem.display_name}
+                        </div>
+
+                        <div className="flex items-center gap-1 mt-3 h-3">
+                          {!mem.is_muted ? (
+                            <span className="text-[10px] text-emerald-400 font-mono">Live Audio Active</span>
+                          ) : (
+                            <span className="text-[10px] text-rose-400/80 font-mono">Muted</span>
+                          )}
+                        </div>
+
+                        <div className="mt-3">
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-white/[0.08] text-muted-foreground">
+                            Squadmate
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* 3. Empty Invite Teammates Slot */}
                     <div
                       onClick={() => setShowInviteModal(true)}
                       className="rounded-2xl border border-dashed border-white/[0.12] bg-white/[0.02] hover:bg-white/[0.04] hover:border-primary/40 p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all group"
@@ -591,96 +670,111 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     </div>
                     <Button
                       onClick={() => {
-                        setIsVoiceConnected(true);
+                        if (!canConnectVoice) {
+                          toast({ title: 'Access Denied', description: 'Your role cannot join voice lounges.', type: 'error' });
+                          return;
+                        }
+                        voice.connectVoice();
                         toast({ title: 'Connected to Voice', description: channel.name, type: 'success' });
                       }}
+                      disabled={!canConnectVoice}
                       className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-subtle px-6"
                     >
                       <Volume2 className="w-4 h-4" />
-                      <span>Join Voice Lounge</span>
+                      <span>{canConnectVoice ? 'Join Voice Lounge' : 'Voice Restricted'}</span>
                     </Button>
                   </div>
                 )}
               </div>
 
               {/* Bottom Voice Control Dock */}
-              {isVoiceConnected && (
+              {voice.isVoiceConnected && (
                 <div className="mt-auto pt-4 border-t border-white/[0.06] flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
                   {/* Mic Toggle */}
                   <button
                     type="button"
-                    onClick={call.toggleMic}
+                    onClick={() => {
+                      if (!canSpeakVoice && voice.isMicMuted) {
+                        toast({ title: 'Speaking Restricted', description: 'Your role cannot unmute in this channel.', type: 'error' });
+                        return;
+                      }
+                      voice.toggleMic();
+                    }}
                     className={cn(
                       'p-3 rounded-2xl flex items-center gap-2 transition-all shadow-subtle',
-                      call.isMicMuted
+                      voice.isMicMuted
                         ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
                         : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
                     )}
-                    title={call.isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
+                    title={voice.isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
                   >
-                    {call.isMicMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                    {voice.isMicMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                     <span className="text-xs font-semibold hidden sm:inline">
-                      {call.isMicMuted ? 'Muted' : 'Mute'}
+                      {voice.isMicMuted ? 'Muted' : 'Mute'}
                     </span>
                   </button>
 
                   {/* Deafen Toggle */}
                   <button
                     type="button"
-                    onClick={call.toggleDeafen}
+                    onClick={voice.toggleDeafen}
                     className={cn(
                       'p-3 rounded-2xl flex items-center gap-2 transition-all shadow-subtle',
-                      call.isDeafened
+                      voice.isDeafened
                         ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
                         : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
                     )}
-                    title={call.isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
+                    title={voice.isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
                   >
-                    {call.isDeafened ? <VolumeX className="w-5 h-5" /> : <Headphones className="w-5 h-5" />}
+                    {voice.isDeafened ? <VolumeX className="w-5 h-5" /> : <Headphones className="w-5 h-5" />}
                     <span className="text-xs font-semibold hidden sm:inline">
-                      {call.isDeafened ? 'Deafened' : 'Deafen'}
+                      {voice.isDeafened ? 'Deafened' : 'Deafen'}
                     </span>
                   </button>
 
                   {/* Camera Toggle */}
-                  <button
-                    type="button"
-                    onClick={() => call.toggleCamera()}
-                    className={cn(
-                      'p-3 rounded-2xl flex items-center gap-2 transition-all shadow-subtle',
-                      call.isCameraOn
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
-                        : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
-                    )}
-                    title="Toggle Video Camera"
-                  >
-                    {call.isCameraOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-                    <span className="text-xs font-semibold hidden sm:inline">Camera</span>
-                  </button>
+                  {canShareScreen && (
+                    <button
+                      type="button"
+                      onClick={() => voice.toggleCamera()}
+                      className={cn(
+                        'p-3 rounded-2xl flex items-center gap-2 transition-all shadow-subtle',
+                        voice.isCameraOn
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                          : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
+                      )}
+                      title="Toggle Video Camera"
+                    >
+                      {voice.isCameraOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                      <span className="text-xs font-semibold hidden sm:inline">Camera</span>
+                    </button>
+                  )}
 
                   {/* Screen Share Toggle */}
-                  <button
-                    type="button"
-                    onClick={() => call.toggleScreenShare()}
-                    className={cn(
-                      'p-3 rounded-2xl flex items-center gap-2 transition-all shadow-subtle',
-                      call.isScreenSharing
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
-                        : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
-                    )}
-                    title="Share Screen or Gameplay"
-                  >
-                    {call.isScreenSharing ? <MonitorUp className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
-                    <span className="text-xs font-semibold hidden sm:inline">Share</span>
-                  </button>
+                  {canShareScreen && (
+                    <button
+                      type="button"
+                      onClick={() => voice.toggleScreenShare()}
+                      className={cn(
+                        'p-3 rounded-2xl flex items-center gap-2 transition-all shadow-subtle',
+                        voice.isScreenSharing
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                          : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
+                      )}
+                      title="Share Screen or Gameplay"
+                    >
+                      {voice.isScreenSharing ? <MonitorUp className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
+                      <span className="text-xs font-semibold hidden sm:inline">Share</span>
+                    </button>
+                  )}
 
                   {/* AI Noise Suppression Toggle */}
                   <button
                     type="button"
-                    onClick={call.toggleNoiseSuppression}
+                    onClick={voice.toggleNoiseSuppression}
                     className={cn(
                       'p-3 rounded-2xl flex items-center gap-2 transition-all shadow-subtle',
-                      call.isNoiseSuppressionEnabled
+                      voice.isNoiseSuppressionEnabled
                         ? 'bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30'
                         : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
                     )}
@@ -691,21 +785,23 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   </button>
 
                   {/* Soundboard Trigger */}
-                  <button
-                    type="button"
-                    onClick={() => setShowSoundboard(true)}
-                    className="p-3 rounded-2xl bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/20 flex items-center gap-2 transition-all shadow-subtle"
-                    title="Soundboard Clips"
-                  >
-                    <Radio className="w-5 h-5" />
-                    <span className="text-xs font-semibold hidden sm:inline">Sounds</span>
-                  </button>
+                  {canUseSoundboard && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSoundboard(true)}
+                      className="p-3 rounded-2xl bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/20 flex items-center gap-2 transition-all shadow-subtle"
+                      title="Soundboard Clips"
+                    >
+                      <Radio className="w-5 h-5" />
+                      <span className="text-xs font-semibold hidden sm:inline">Sounds</span>
+                    </button>
+                  )}
 
                   {/* Disconnect Button */}
                   <button
                     type="button"
                     onClick={() => {
-                      setIsVoiceConnected(false);
+                      voice.disconnectVoice();
                       toast({ title: 'Voice Disconnected', description: 'Left voice lounge', type: 'info' });
                     }}
                     className="p-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white flex items-center gap-2 transition-all shadow-subtle font-semibold text-xs"
@@ -765,10 +861,11 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     type="text"
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
-                    placeholder="Chat in voice lounge..."
-                    className="flex-1 bg-white/[0.03] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50"
+                    disabled={!canSendMessages}
+                    placeholder={canSendMessages ? "Chat in voice lounge..." : "Message permissions restricted"}
+                    className="flex-1 bg-white/[0.03] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 disabled:opacity-50"
                   />
-                  <Button type="submit" size="sm" disabled={!inputText.trim() || isSending} className="h-8 px-2.5">
+                  <Button type="submit" size="sm" disabled={!inputText.trim() || isSending || !canSendMessages} className="h-8 px-2.5">
                     <Send className="w-3.5 h-3.5" />
                   </Button>
                 </form>
@@ -890,31 +987,34 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 onSubmit={handleSend}
                 className="flex items-center gap-2 bg-white/[0.02] border border-white/[0.06] rounded-lg p-1.5 px-3 focus-within:border-white/[0.12] focus-within:bg-white/[0.03] transition-all"
               >
-                <button
-                  type="button"
-                  onClick={() => setShowSoundboard(true)}
-                  aria-label="Trigger Soundboard Meme"
-                  className="text-muted-foreground hover:text-amber-400 p-1.5 rounded-md transition-colors shrink-0"
-                  title="Trigger Soundboard Meme"
-                >
-                  <Sparkles className="w-4 h-4" />
-                </button>
+                {canUseSoundboard && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSoundboard(true)}
+                    aria-label="Trigger Soundboard Meme"
+                    className="text-muted-foreground hover:text-amber-400 p-1.5 rounded-md transition-colors shrink-0"
+                    title="Trigger Soundboard Meme"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                  </button>
+                )}
 
                 <textarea
                   rows={1}
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyDown={handleKeyDown}
+                  disabled={!canSendMessages}
                   aria-label={`Message #${channel.name}`}
-                  placeholder={`Message #${channel.name}...`}
-                  className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-28 py-1 font-normal"
+                  placeholder={canSendMessages ? `Message #${channel.name}...` : "You don't have permission to post messages here"}
+                  className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-28 py-1 font-normal disabled:opacity-50"
                 />
 
                 <Button
                   type="submit"
                   size="sm"
                   aria-label="Send channel message"
-                  disabled={!inputText.trim() || isSending}
+                  disabled={!inputText.trim() || isSending || !canSendMessages}
                   className="h-7 w-7 p-0 rounded-md shrink-0 font-medium"
                 >
                   {isSending ? (
@@ -1001,7 +1101,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                       className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 p-1 rounded-md bg-white/[0.06] text-muted-foreground hover:text-foreground hover:bg-white/[0.1] transition-all shrink-0"
                       title="Direct Message"
                     >
-                      <MessageSquare className="w-3 h-3" />
+                      <MessageSquare className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>

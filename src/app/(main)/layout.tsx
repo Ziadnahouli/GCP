@@ -57,6 +57,10 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
     leaveServer,
     updateMemberRole,
     kickMember,
+    createRole,
+    updateRole,
+    deleteRole,
+    updateRolePermissions,
   } = useServers();
 
   const activeServer = React.useMemo(() => {
@@ -353,6 +357,10 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
           onUpdateMemberRole={updateMemberRole}
           onKickMember={kickMember}
           onLeaveServer={handleLeaveServer}
+          onCreateRole={createRole}
+          onUpdateRole={updateRole}
+          onDeleteRole={deleteRole}
+          onUpdateRolePermissions={updateRolePermissions}
         />
       )}
 

@@ -18,7 +18,6 @@ export function useChannelMessages(channelId: string | null) {
   const activeChannelIdRef = React.useRef<string | null>(channelId);
   const prevChannelIdRef = React.useRef<string | null>(null);
   const isFetchingRef = React.useRef(false);
-  const serverMemberVerifiedRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     activeChannelIdRef.current = channelId;
@@ -343,36 +342,6 @@ export function useChannelMessages(channelId: string | null) {
           } catch {}
         }
 
-        // Ensure user is in server_members to satisfy RLS (cached per channel)
-        if (!serverMemberVerifiedRef.current.has(channelId)) {
-          try {
-            const { data: chanData } = await supabase
-              .from('channels')
-              .select('server_id')
-              .eq('id', channelId)
-              .maybeSingle();
-
-            if (chanData?.server_id) {
-              const { data: existing } = await supabase
-                .from('server_members')
-                .select('id')
-                .eq('server_id', chanData.server_id)
-                .eq('user_id', user.id)
-                .maybeSingle();
-
-              if (!existing) {
-                await supabase.from('server_members').insert({
-                  server_id: chanData.server_id,
-                  user_id: user.id,
-                  role: 'member',
-                });
-              }
-            }
-            serverMemberVerifiedRef.current.add(channelId);
-          } catch (smErr) {
-            console.warn('server_members ensure notice:', smErr);
-          }
-        }
 
         debugLogger.info('channel_messaging', `Initiating channel message send (${trimmed.length} chars) to channel ${channelId}`, {
           messageId,

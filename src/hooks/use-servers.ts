@@ -61,6 +61,12 @@ export function useServers() {
         const deletedChans = getDeletedChannelIds();
         const parsed: Server[] = srvData
           .filter((s) => !DUMMY_SERVER_IDS.has(s.id))
+          // Only show servers where user is the owner or an existing member
+          .filter((s) => {
+            const isOwner = s.owner_id === user.id;
+            const isMember = (s.server_members || []).some((m: any) => m.user_id === user.id);
+            return isOwner || isMember;
+          })
           .map((s) => ({
             id: s.id,
             name: s.name,
@@ -83,7 +89,9 @@ export function useServers() {
 
         setServers(parsed);
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+          const userStorageKey = `${STORAGE_KEY}_${user.id}`;
+          localStorage.setItem(userStorageKey, JSON.stringify(parsed));
+          localStorage.removeItem(STORAGE_KEY);
         } catch {}
       }
     } catch (e) {
@@ -94,14 +102,20 @@ export function useServers() {
   // Initialize and load persisted servers + Realtime subscription
   React.useEffect(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const userStorageKey = user ? `${STORAGE_KEY}_${user.id}` : STORAGE_KEY;
+      const stored = localStorage.getItem(userStorageKey);
       if (stored) {
         const parsed: Server[] = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          const cleanServers = parsed.filter((s) => !DUMMY_SERVER_IDS.has(s.id));
+          const cleanServers = parsed.filter(
+            (s) =>
+              !DUMMY_SERVER_IDS.has(s.id) &&
+              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
+          );
           setServers(cleanServers);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanServers));
         }
+      } else {
+        setServers([]);
       }
     } catch (e) {
       console.warn('Failed to parse cached servers:', e);
@@ -141,14 +155,23 @@ export function useServers() {
     };
   }, [fetchServers, user]);
 
-  const saveServers = (updated: Server[]) => {
-    setServers(updated);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch (e) {
-      console.warn('Failed to cache servers:', e);
-    }
-  };
+  const saveServers = React.useCallback(
+    (updated: Server[]) => {
+      const userServers = updated.filter(
+        (s) =>
+          !DUMMY_SERVER_IDS.has(s.id) &&
+          (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
+      );
+      setServers(userServers);
+      try {
+        const userStorageKey = user ? `${STORAGE_KEY}_${user.id}` : STORAGE_KEY;
+        localStorage.setItem(userStorageKey, JSON.stringify(userServers));
+      } catch (e) {
+        console.warn('Failed to cache servers:', e);
+      }
+    },
+    [user]
+  );
 
   const notifyServersUpdate = React.useCallback(() => {
     if (serversChannelRef.current) {

@@ -65,36 +65,65 @@ const VideoFeed = React.memo(function VideoFeed({
   className,
 }: VideoFeedProps) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
+  const trackIdsRef = React.useRef<string>('');
 
   React.useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    // Explicitly set DOM properties so browser doesn't block autoplay
     video.muted = muted;
     video.defaultMuted = muted;
 
     if (stream) {
-      if (video.srcObject !== stream) {
+      const currentTrackIds = stream
+        .getTracks()
+        .map((t) => `${t.id}-${t.readyState}`)
+        .sort()
+        .join(',');
+
+      if (video.srcObject !== stream || trackIdsRef.current !== currentTrackIds) {
+        trackIdsRef.current = currentTrackIds;
         video.srcObject = stream;
       }
+
+      let isCancelled = false;
+
       const playVideo = () => {
-        if (!video) return;
-        video.play().catch((err) => {
-          console.warn('[VideoFeed] Autoplay video play failed/waiting:', err);
-        });
+        if (!video || isCancelled) return;
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err: unknown) => {
+            const errObj = err as { name?: string; message?: string };
+            // Benign browser interruptions (e.g. rapid track changes, user gestures)
+            if (
+              errObj?.name === 'AbortError' ||
+              errObj?.name === 'NotAllowedError' ||
+              errObj?.message?.includes('interrupted')
+            ) {
+              return;
+            }
+            console.warn('[VideoFeed] Autoplay video play notice:', err);
+          });
+        }
       };
+
       playVideo();
 
-      stream.getVideoTracks().forEach((vt) => {
+      const videoTracks = stream.getVideoTracks();
+      videoTracks.forEach((vt) => {
         vt.enabled = true;
         vt.onunmute = playVideo;
       });
 
       stream.onaddtrack = () => playVideo();
       stream.onremovetrack = () => playVideo();
+
+      return () => {
+        isCancelled = true;
+      };
     } else {
       if (video.srcObject !== null) {
+        trackIdsRef.current = '';
         video.srcObject = null;
       }
     }
@@ -400,9 +429,9 @@ export function CallModal({
                 {participants.map((p) => {
                   const isLocalUser = p.id === user?.id;
                   const hasRemoteVideo = !isLocalUser && Boolean(
-                    remoteStream?.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted)
+                    remoteStream?.getVideoTracks().some((t) => t.readyState === 'live')
                   );
-                  const isCameraActive = isLocalUser ? isCameraOn : (p.isCameraOn || hasRemoteVideo);
+                  const isCameraActive = isLocalUser ? isCameraOn : Boolean(p.isCameraOn || hasRemoteVideo);
 
                   return (
                     <div
@@ -414,36 +443,36 @@ export function CallModal({
                           : 'border-white/[0.06]'
                       )}
                     >
-                      {isCameraActive ? (
-                        /* Live WebRTC Camera Video Feed */
-                        <div className="w-full h-full flex items-center justify-center bg-black relative rounded-lg overflow-hidden">
-                          {isLocalUser ? (
-                            <VideoFeed
-                              stream={localStream}
-                              muted
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <VideoFeed
-                              stream={remoteStream}
-                              muted
-                              className="w-full h-full object-cover"
-                            />
+                      {/* Live WebRTC Camera Video Feed (Always mounted to protect media pipeline) */}
+                      <div
+                        className={cn(
+                          'w-full h-full absolute inset-0 flex items-center justify-center bg-black transition-opacity duration-200',
+                          isCameraActive ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'
+                        )}
+                      >
+                        <VideoFeed
+                          stream={isLocalUser ? localStream : remoteStream}
+                          muted={isLocalUser}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+
+                      {/* Fallback Avatar with speaking ring */}
+                      <div
+                        className={cn(
+                          'flex flex-col items-center justify-center space-y-2 transition-opacity duration-200',
+                          isCameraActive ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                        )}
+                      >
+                        <Avatar
+                          name={p.name}
+                          size="lg"
+                          className={cn(
+                            'transition-transform',
+                            p.isSpeaking && 'scale-105 ring-2 ring-primary/60'
                           )}
-                        </div>
-                      ) : (
-                        /* Avatar with speaking ring */
-                        <div className="flex flex-col items-center justify-center space-y-2">
-                          <Avatar
-                            name={p.name}
-                            size="lg"
-                            className={cn(
-                              'transition-transform',
-                              p.isSpeaking && 'scale-105 ring-2 ring-primary/60'
-                            )}
-                          />
-                        </div>
-                      )}
+                        />
+                      </div>
 
                       {/* Participant Name Badge */}
                       <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-medium text-white/90 flex items-center gap-1.5 z-10 border border-white/[0.06]">

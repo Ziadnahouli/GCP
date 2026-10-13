@@ -164,6 +164,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const ringingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const iceWatchdogTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const iceRestartingRef = React.useRef<boolean>(false);
+  const activeCallPayloadRef = React.useRef<IncomingCallData | null>(null);
+  const activeCallSessionIdRef = React.useRef<string | null>(null);
+  const ringingBeaconRef = React.useRef<NodeJS.Timeout | null>(null);
+  const callStatusRef = React.useRef<CallStatus>('idle');
+  callStatusRef.current = callStatus;
   const roomChannelRef = React.useRef<RealtimeChannel | null>(null);
   const outboundChannelsRef = React.useRef<Map<string, RealtimeChannel>>(new Map());
   const outboundQueueRef = React.useRef<Map<string, Array<{ event: string; payload: unknown }>>>(new Map());
@@ -388,7 +393,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const videoTransceiver = pcRef.current.getTransceivers().find(
           (t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video'
         );
-        const recTrack = videoTransceiver?.receiver?.track;
+        const recTrack =
+          videoTransceiver?.receiver?.track ||
+          pcRef.current.getReceivers().find((r) => r.track?.kind === 'video')?.track;
         if (recTrack) {
           recTrack.enabled = true;
           attachRemoteTrack(recTrack);
@@ -424,6 +431,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(ringingTimerRef.current);
       ringingTimerRef.current = null;
     }
+    if (ringingBeaconRef.current) {
+      clearInterval(ringingBeaconRef.current);
+      ringingBeaconRef.current = null;
+    }
+    activeCallPayloadRef.current = null;
     if (iceWatchdogTimerRef.current) {
       clearTimeout(iceWatchdogTimerRef.current);
       iceWatchdogTimerRef.current = null;
@@ -1170,13 +1182,61 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           console.warn('[CallNAT] Error applying ice_restart_answer in mailbox:', e);
         }
       })
+      .on('broadcast', { event: 'request_incoming_call_beacon' }, ({ payload }) => {
+        if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
+          console.log('[CallSignaling] Re-dispatching active call offer beacon on demand:', payload);
+          if (activeCallPayloadRef.current.targetUserId) {
+            sendSignalToUser(activeCallPayloadRef.current.targetUserId, 'incoming_call', activeCallPayloadRef.current);
+          }
+        }
+      })
       .on('broadcast', { event: 'call_ended' }, () => {
         stopMediaTracks();
         setCallStatus('idle');
         setIncomingCall(null);
         toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          // If newly connecting / opening the app, query recent ringing calls for late joiners
+          const checkActiveRingingCalls = async () => {
+            try {
+              const thirtyFiveSecondsAgo = new Date(Date.now() - 35000).toISOString();
+              const { data: recentCalls } = await supabase
+                .from('call_sessions')
+                .select('id, conversation_id, caller_id, is_video, status, started_at')
+                .eq('status', 'ringing')
+                .gt('started_at', thirtyFiveSecondsAgo)
+                .neq('caller_id', user.id)
+                .order('started_at', { ascending: false })
+                .limit(1);
+
+              if (recentCalls && recentCalls.length > 0) {
+                const call = recentCalls[0];
+                const { data: member } = await supabase
+                  .from('conversation_members')
+                  .select('conversation_id')
+                  .eq('conversation_id', call.conversation_id)
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+
+                if (member) {
+                  console.log('[CallSignaling] Detected active ringing call for late opener:', call);
+                  sendSignalToUser(call.caller_id, 'request_incoming_call_beacon', {
+                    calleeId: user.id,
+                    callerId: call.caller_id,
+                    conversationId: call.conversation_id,
+                  });
+                }
+              }
+            } catch (e) {
+              console.warn('[CallCheck] Notice checking active calls:', e);
+            }
+          };
+
+          checkActiveRingingCalls();
+        }
+      });
 
     return () => {
       if (ringtoneRef.current) {
@@ -1503,6 +1563,29 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               callerZeroTierIp: getLocalZeroTierIp(),
             };
 
+            activeCallPayloadRef.current = callPayload;
+
+            // Persist call session to database for cross-app/late opener synchronization
+            try {
+              supabase
+                .from('call_sessions')
+                .insert({
+                  conversation_id: conversationId,
+                  caller_id: user.id,
+                  livekit_room_name: `call-room-${conversationId}`,
+                  is_video: video,
+                  status: 'ringing',
+                  started_at: new Date().toISOString(),
+                })
+                .select('id')
+                .maybeSingle()
+                .then(({ data: sessData }: any) => {
+                  if (sessData) {
+                    activeCallSessionIdRef.current = sessData.id;
+                  }
+                }, () => {});
+            } catch {}
+
             // Notify recipient directly via persistent user mailbox
             sendSignalToUser(recipientId, 'incoming_call', callPayload);
 
@@ -1512,6 +1595,27 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               event: 'incoming_call',
               payload: callPayload,
             }).catch(() => {});
+
+            // Pulse beacon every 2 seconds during outgoing_ringing so any newly opened client catches it
+            if (ringingBeaconRef.current) clearInterval(ringingBeaconRef.current);
+            ringingBeaconRef.current = setInterval(() => {
+              if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
+                sendSignalToUser(recipientId, 'incoming_call', activeCallPayloadRef.current);
+                const room = roomChannelRef.current;
+                if (room && room.state === 'joined') {
+                  room.send({
+                    type: 'broadcast',
+                    event: 'incoming_call',
+                    payload: activeCallPayloadRef.current,
+                  }).catch(() => {});
+                }
+              } else {
+                if (ringingBeaconRef.current) {
+                  clearInterval(ringingBeaconRef.current);
+                  ringingBeaconRef.current = null;
+                }
+              }
+            }, 2000);
           } catch (e) {
             console.warn('[CallSignaling] Error creating offer:', e);
           }
@@ -1851,6 +1955,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     ]);
 
     setIncomingCall(null);
+    try {
+      supabase
+        .from('call_sessions')
+        .update({ status: 'active' })
+        .eq('conversation_id', conversationId)
+        .eq('status', 'ringing')
+        .then(() => {}, () => {});
+    } catch {}
     toast({ title: 'Call Connected', description: `Speaking with ${callerName}.`, type: 'success' });
   };
 
@@ -1859,6 +1971,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (incomingCall) {
       sendSignalToUser(incomingCall.callerId, 'call_rejected', {});
       sendSignalToRoom('call_rejected', {});
+      try {
+        supabase
+          .from('call_sessions')
+          .update({ status: 'rejected', ended_at: new Date().toISOString() })
+          .eq('conversation_id', incomingCall.conversationId)
+          .eq('status', 'ringing')
+          .then(() => {}, () => {});
+      } catch {}
     }
 
     stopMediaTracks();
@@ -1873,6 +1993,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       sendSignalToUser(target, 'call_ended', {});
     }
     sendSignalToRoom('call_ended', {});
+
+    if (activeConversationId) {
+      try {
+        supabase
+          .from('call_sessions')
+          .update({ status: 'ended', ended_at: new Date().toISOString() })
+          .eq('conversation_id', activeConversationId)
+          .in('status', ['ringing', 'active'])
+          .then(() => {}, () => {});
+      } catch {}
+    }
 
     stopMediaTracks();
     setCallStatus('ended');

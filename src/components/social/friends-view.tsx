@@ -71,13 +71,11 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
       if (!matchSearch) return false;
       if (activeTab === 'online') {
-        // If there are friends but none are online, show all friends with their offline badge
-        if (onlineCount === 0) return true;
         return item.friend.status === 'online' || item.friend.status === 'idle' || item.friend.status === 'dnd';
       }
       return true;
     });
-  }, [friends, searchFilter, activeTab, onlineCount]);
+  }, [friends, searchFilter, activeTab]);
 
   const call = useCallContext();
 
@@ -297,7 +295,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                       <div className="flex items-center gap-3">
                         <Avatar
                           name={req.sender?.display_name || 'Gamer'}
-                          status={req.sender?.status || 'online'}
+                          status={req.sender?.status || 'offline'}
                           showStatus
                           size="md"
                         />

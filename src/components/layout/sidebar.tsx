@@ -172,7 +172,7 @@ export function Sidebar({
                     <Avatar
                       src={otherMember?.avatar_url}
                       name={title}
-                      status={otherMember?.status || 'online'}
+                      status={otherMember?.status || 'offline'}
                       showStatus
                       size="sm"
                     />

@@ -189,7 +189,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             username: m.profile?.username || 'member',
             avatar_url: m.profile?.avatar_url || null,
             role: m.role || 'member',
-            status: (m.profile?.status as any) || 'online',
+            status: (m.profile?.status as any) || 'offline',
             game_activity: m.profile?.game_activity || null,
           });
         }
@@ -206,7 +206,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
           username: f.friend.username,
           avatar_url: f.friend.avatar_url || null,
           role: 'friend',
-          status: (f.friend.status as any) || 'online',
+          status: (f.friend.status as any) || 'offline',
           game_activity: f.friend.game_activity || null,
         });
       }
@@ -222,7 +222,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
           username: cp.username,
           avatar_url: cp.avatar_url || null,
           role: 'member',
-          status: (cp.status as any) || 'online',
+          status: (cp.status as any) || 'offline',
           game_activity: cp.game_activity || null,
         });
       }

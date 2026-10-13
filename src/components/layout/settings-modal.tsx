@@ -6,7 +6,6 @@ import {
   Palette,
   Volume2,
   Bell,
-  Shield,
   LogOut,
   Save,
   Loader2,
@@ -14,23 +13,27 @@ import {
   Mic,
   Headphones,
   Check,
-  AlertTriangle,
-  ShieldCheck,
   Terminal,
   Activity,
-  Radio,
-  Database,
   Video,
   Keyboard,
+  Sliders,
+  Camera,
   Play,
   Square,
-  Sliders,
-  Monitor,
+  Flame,
+  Shield,
+  Zap,
+  Radio,
+  Eye,
+  Clock,
+  Circle,
+  HelpCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { AccentTheme, UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
@@ -43,22 +46,62 @@ interface SettingsModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const ACCENT_THEMES: { id: AccentTheme; name: string; hex: string; class: string }[] = [
-  { id: 'violet', name: 'Violet Neon', hex: '#8b5cf6', class: 'bg-[#8b5cf6]' },
-  { id: 'cyan', name: 'Cyber Cyan', hex: '#0ea5e9', class: 'bg-[#0ea5e9]' },
-  { id: 'emerald', name: 'Vanguard Emerald', hex: '#10b981', class: 'bg-[#10b981]' },
-  { id: 'crimson', name: 'Crimson Fury', hex: '#f43f5e', class: 'bg-[#f43f5e]' },
-  { id: 'amber', name: 'Solar Amber', hex: '#f59e0b', class: 'bg-[#f59e0b]' },
+const ACCENT_THEMES: { id: AccentTheme; name: string; hex: string; desc: string; bgClass: string }[] = [
+  { id: 'violet', name: 'Violet Neon', hex: '#8b5cf6', desc: 'Default cybernetic violet glow', bgClass: 'bg-[#8b5cf6]' },
+  { id: 'cyan', name: 'Cyber Cyan', hex: '#0ea5e9', desc: 'Electric high-contrast cyan hue', bgClass: 'bg-[#0ea5e9]' },
+  { id: 'emerald', name: 'Vanguard Emerald', hex: '#10b981', desc: 'Tactical night-vision green', bgClass: 'bg-[#10b981]' },
+  { id: 'crimson', name: 'Crimson Fury', hex: '#f43f5e', desc: 'Aggressive battle-ready crimson', bgClass: 'bg-[#f43f5e]' },
+  { id: 'amber', name: 'Solar Amber', hex: '#f59e0b', desc: 'Warm overclocked solar flare', bgClass: 'bg-[#f59e0b]' },
+];
+
+const PRESET_BANNERS = [
+  { name: 'Cosmic Violet', color: '#7c3aed' },
+  { name: 'Cyber Cyan', color: '#0284c7' },
+  { name: 'Emerald Ops', color: '#059669' },
+  { name: 'Crimson Flare', color: '#e11d48' },
+  { name: 'Solar Gold', color: '#d97706' },
+  { name: 'Obsidian Zinc', color: '#27272a' },
+];
+
+const PRESENCE_OPTIONS: { status: UserStatus; label: string; desc: string; color: string; border: string }[] = [
+  {
+    status: 'online',
+    label: 'Online',
+    desc: 'Visible and ready for matches & squads',
+    color: 'bg-emerald-500',
+    border: 'border-emerald-500/30',
+  },
+  {
+    status: 'idle',
+    label: 'Idle / AFK',
+    desc: 'Stepped away from battle station',
+    color: 'bg-amber-500',
+    border: 'border-amber-500/30',
+  },
+  {
+    status: 'dnd',
+    label: 'Do Not Disturb',
+    desc: 'In-game focus mode; notification chimes silenced',
+    color: 'bg-rose-500',
+    border: 'border-rose-500/30',
+  },
+  {
+    status: 'offline',
+    label: 'Invisible (Offline)',
+    desc: 'Appear offline to everyone while browsing',
+    color: 'bg-zinc-500',
+    border: 'border-zinc-500/30',
+  },
 ];
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { profile, settings, updateProfile, updateSettings, signOut } = useAuth();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = React.useState('profile');
+  const [activeTab, setActiveTab] = React.useState<'profile' | 'appearance' | 'studio' | 'audio' | 'shortcuts' | 'notifs' | 'diagnostics'>('profile');
   const [isSaving, setIsSaving] = React.useState(false);
 
-  // Profile form state
+  // Profile state
   const [displayName, setDisplayName] = React.useState('');
   const [username, setUsername] = React.useState('');
   const [bio, setBio] = React.useState('');
@@ -67,7 +110,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [avatarUrl, setAvatarUrl] = React.useState('');
   const [presenceStatus, setPresenceStatus] = React.useState<UserStatus>('online');
 
-  // Settings state
+  // Appearance & Audio state
   const [selectedAccent, setSelectedAccent] = React.useState<AccentTheme>('violet');
   const [soundEffects, setSoundEffects] = React.useState(true);
   const [pushToTalk, setPushToTalk] = React.useState(false);
@@ -82,7 +125,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     return true;
   });
 
-  // Hardware device enumeration & selection
+  // Hardware devices
   const [audioInputDevices, setAudioInputDevices] = React.useState<MediaDeviceInfo[]>([]);
   const [audioOutputDevices, setAudioOutputDevices] = React.useState<MediaDeviceInfo[]>([]);
   const [videoDevices, setVideoDevices] = React.useState<MediaDeviceInfo[]>([]);
@@ -122,7 +165,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   }, [open, selectedInputDevice, selectedOutputDevice, selectedCamDevice]);
 
-  // Clean up media tests when modal closes or unmounts
+  // Clean up media tests
   const stopMicTest = React.useCallback(() => {
     if (micTestAnimRef.current) {
       cancelAnimationFrame(micTestAnimRef.current);
@@ -158,72 +201,75 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   }, [open, stopMicTest, stopCamTest]);
 
+  // Start live mic test
   const startMicTest = async () => {
+    if (isTestingMic) {
+      stopMicTest();
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const constraints: MediaStreamConstraints = {
         audio: selectedInputDevice ? { deviceId: { exact: selectedInputDevice } } : true,
-      });
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       micTestStreamRef.current = stream;
 
       const AudioCtx =
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-
       const ctx = new AudioCtx();
       micTestAudioCtxRef.current = ctx;
-      const src = ctx.createMediaStreamSource(stream);
+
+      const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
-      src.connect(analyser);
+      source.connect(analyser);
 
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const buffer = new Uint8Array(analyser.frequencyBinCount);
       setIsTestingMic(true);
 
-      const checkLevel = () => {
-        analyser.getByteFrequencyData(dataArray);
+      const updateLevel = () => {
+        analyser.getByteFrequencyData(buffer);
         let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
-        }
-        const avg = sum / dataArray.length;
-        const normalized = Math.min(100, Math.round((avg / 64) * 100));
+        for (let i = 0; i < buffer.length; i++) sum += buffer[i];
+        const avg = sum / buffer.length;
+        const normalized = Math.min(100, Math.round((avg / 128) * 100));
         setMicLevel(normalized);
-        micTestAnimRef.current = requestAnimationFrame(checkLevel);
+        micTestAnimRef.current = requestAnimationFrame(updateLevel);
       };
-      checkLevel();
-    } catch {
-      toast({
-        title: 'Microphone Error',
-        description: 'Could not access microphone for testing. Check device permissions.',
-        type: 'error',
-      });
+      micTestAnimRef.current = requestAnimationFrame(updateLevel);
+    } catch (e) {
+      console.warn('Microphone test access error:', e);
+      toast({ title: 'Microphone Inaccessible', description: 'Could not access the selected microphone device.', type: 'error' });
+      stopMicTest();
     }
   };
 
+  // Start live camera test
   const startCamTest = async () => {
+    if (isTestingCam) {
+      stopCamTest();
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const constraints: MediaStreamConstraints = {
         video: selectedCamDevice ? { deviceId: { exact: selectedCamDevice } } : true,
-      });
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       camTestStreamRef.current = stream;
+      if (camVideoRef.current) {
+        camVideoRef.current.srcObject = stream;
+        camVideoRef.current.play().catch(() => {});
+      }
       setIsTestingCam(true);
-      setTimeout(() => {
-        if (camVideoRef.current) {
-          camVideoRef.current.srcObject = stream;
-          camVideoRef.current.play().catch(() => {});
-        }
-      }, 50);
-    } catch {
-      toast({
-        title: 'Camera Error',
-        description: 'Could not access webcam for preview. Check device permissions.',
-        type: 'error',
-      });
+    } catch (e) {
+      console.warn('Webcam test access error:', e);
+      toast({ title: 'Webcam Inaccessible', description: 'Could not access the selected video device.', type: 'error' });
+      stopCamTest();
     }
   };
 
-  // Sync state when profile/settings change or modal opens
+  // Sync state from profile & settings on mount/open
   React.useEffect(() => {
     if (profile) {
       setDisplayName(profile.display_name || '');
@@ -238,12 +284,13 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       setSelectedAccent(settings.accent_color || 'violet');
       setSoundEffects(settings.sound_effects_enabled);
       setPushToTalk(settings.push_to_talk_enabled);
-      setInputVol(settings.input_volume);
-      setOutputVol(settings.output_volume);
+      setInputVol(settings.input_volume ?? 85);
+      setOutputVol(settings.output_volume ?? 100);
       setDesktopNotifs(settings.desktop_notifications);
     }
   }, [profile, settings, open]);
 
+  // Save profile changes
   const handleSaveProfile = async () => {
     setIsSaving(true);
     try {
@@ -258,33 +305,23 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       });
 
       if (error) {
-        toast({
-          title: 'Update Failed',
-          description: error,
-          type: 'error',
-        });
+        toast({ title: 'Update Failed', description: error, type: 'error' });
       } else {
-        toast({
-          title: 'Profile Updated',
-          description: 'Your gaming identity has been saved.',
-          type: 'success',
-        });
+        toast({ title: 'Profile Updated', description: 'Your gaming identity has been saved.', type: 'success' });
       }
     } finally {
       setIsSaving(false);
     }
   };
 
+  // Save appearance theme
   const handleSaveAppearance = async (theme: AccentTheme) => {
     setSelectedAccent(theme);
     await updateSettings({ accent_color: theme });
-    toast({
-      title: 'Theme Applied',
-      description: `Accent color switched to ${theme.toUpperCase()}.`,
-      type: 'info',
-    });
+    toast({ title: 'Theme Applied', description: `Theme set to ${theme.toUpperCase()}.`, type: 'info' });
   };
 
+  // Save audio & voice preferences
   const handleSaveAudio = async () => {
     setIsSaving(true);
     try {
@@ -298,8 +335,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         output_volume: outputVol,
       });
       toast({
-        title: 'Audio Settings Saved',
-        description: `Microphone noise suppression ${noiseSuppression ? 'enabled' : 'disabled'} and audio preferences updated.`,
+        title: 'Voice & Audio Saved',
+        description: `Krisp AI Noise Suppression ${noiseSuppression ? 'active' : 'disabled'}. Preferences updated.`,
         type: 'success',
       });
     } finally {
@@ -310,107 +347,147 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-4xl p-0 h-[620px] max-h-[92vh] flex flex-col md:flex-row overflow-hidden border border-white/[0.08] bg-surface-panel w-[95vw] md:w-full shadow-2xl shadow-black/90 rounded-2xl"
+        className="max-w-4xl p-0 h-[660px] max-h-[92vh] flex flex-col md:flex-row overflow-hidden border border-white/[0.08] bg-[#090a0f] text-foreground w-[96vw] md:w-full shadow-2xl shadow-black/95 rounded-2xl"
         onClose={() => onOpenChange(false)}
       >
-        {/* Settings Navigation Sidebar */}
-        <div className="w-full md:w-56 bg-surface-sidebar p-3 md:p-4 border-b md:border-b-0 md:border-r border-white/[0.06] shrink-0 flex flex-row md:flex-col justify-between overflow-x-auto md:overflow-x-visible gap-2 no-scrollbar select-none">
-          <div className="flex flex-row md:flex-col gap-1 items-center md:items-stretch overflow-x-auto shrink-0 no-scrollbar">
-            <div className="hidden md:block px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-              User Settings
+        {/* Modern Gaming Navigation Sidebar */}
+        <div className="w-full md:w-64 bg-[#0d0e15] p-3 md:p-4 border-b md:border-b-0 md:border-r border-white/[0.06] shrink-0 flex flex-row md:flex-col justify-between overflow-x-auto md:overflow-x-visible gap-2 no-scrollbar select-none">
+          <div className="space-y-4 w-full">
+            {/* Header & Logo badge */}
+            <div className="hidden md:flex items-center gap-2.5 px-2.5 py-1 text-xs font-bold text-foreground">
+              <div className="w-6 h-6 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center text-primary">
+                <Flame className="w-3.5 h-3.5" />
+              </div>
+              <span className="tracking-wide uppercase text-[11px] font-black text-foreground/90">
+                Nexus Studio Settings
+              </span>
             </div>
 
-            <button
-              onClick={() => setActiveTab('profile')}
-              className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
-                activeTab === 'profile'
-                  ? 'bg-white/[0.06] text-foreground font-medium'
-                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
-              )}
-            >
-              <User className="w-4 h-4 shrink-0" />
-              <span>My Profile</span>
-            </button>
+            {/* Navigation Groups */}
+            <div className="space-y-3">
+              <div>
+                <div className="hidden md:block px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/50">
+                  Identity
+                </div>
+                <div className="flex flex-row md:flex-col gap-1">
+                  <button
+                    onClick={() => setActiveTab('profile')}
+                    className={cn(
+                      'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left w-full font-medium',
+                      activeTab === 'profile'
+                        ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                        : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                    )}
+                  >
+                    <User className="w-4 h-4 shrink-0" />
+                    <span>Gamer Profile</span>
+                  </button>
 
-            <button
-              onClick={() => setActiveTab('appearance')}
-              className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
-                activeTab === 'appearance'
-                  ? 'bg-white/[0.06] text-foreground font-medium'
-                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
-              )}
-            >
-              <Palette className="w-4 h-4 shrink-0" />
-              <span className="hidden sm:inline">Appearance &</span> Theme
-            </button>
+                  <button
+                    onClick={() => setActiveTab('appearance')}
+                    className={cn(
+                      'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left w-full font-medium',
+                      activeTab === 'appearance'
+                        ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                        : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                    )}
+                  >
+                    <Palette className="w-4 h-4 shrink-0" />
+                    <span>Themes & Accents</span>
+                  </button>
+                </div>
+              </div>
 
-            <button
-              onClick={() => setActiveTab('audio')}
-              className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
-                activeTab === 'audio'
-                  ? 'bg-white/[0.06] text-foreground font-medium'
-                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
-              )}
-            >
-              <Volume2 className="w-4 h-4 shrink-0" />
-              <span>Voice & Video</span>
-            </button>
+              <div>
+                <div className="hidden md:block px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/50">
+                  Hardware & Studio
+                </div>
+                <div className="flex flex-row md:flex-col gap-1">
+                  <button
+                    onClick={() => setActiveTab('studio')}
+                    className={cn(
+                      'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left w-full font-medium',
+                      activeTab === 'studio'
+                        ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                        : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                    )}
+                  >
+                    <Mic className="w-4 h-4 shrink-0" />
+                    <span>Voice & Video Studio</span>
+                  </button>
 
-            <button
-              onClick={() => setActiveTab('shortcuts')}
-              className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
-                activeTab === 'shortcuts'
-                  ? 'bg-white/[0.06] text-foreground font-medium'
-                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
-              )}
-            >
-              <Keyboard className="w-4 h-4 shrink-0" />
-              <span>Keybinds</span>
-            </button>
+                  <button
+                    onClick={() => setActiveTab('audio')}
+                    className={cn(
+                      'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left w-full font-medium',
+                      activeTab === 'audio'
+                        ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                        : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                    )}
+                  >
+                    <Sliders className="w-4 h-4 shrink-0" />
+                    <span>Audio Processing</span>
+                  </button>
+                </div>
+              </div>
 
-            <button
-              onClick={() => setActiveTab('notifications')}
-              className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
-                activeTab === 'notifications'
-                  ? 'bg-white/[0.06] text-foreground font-medium'
-                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
-              )}
-            >
-              <Bell className="w-4 h-4 shrink-0" />
-              <span>Notifs</span>
-            </button>
+              <div>
+                <div className="hidden md:block px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/50">
+                  Preferences
+                </div>
+                <div className="flex flex-row md:flex-col gap-1">
+                  <button
+                    onClick={() => setActiveTab('shortcuts')}
+                    className={cn(
+                      'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left w-full font-medium',
+                      activeTab === 'shortcuts'
+                        ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                        : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                    )}
+                  >
+                    <Keyboard className="w-4 h-4 shrink-0" />
+                    <span>Shortcuts & Keybinds</span>
+                  </button>
 
-            <button
-              onClick={() => setActiveTab('diagnostics')}
-              className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors text-left shrink-0',
-                activeTab === 'diagnostics'
-                  ? 'bg-white/[0.06] text-foreground font-medium'
-                  : 'text-muted-foreground/70 hover:bg-white/[0.03] hover:text-foreground'
-              )}
-            >
-              <Terminal className="w-4 h-4 shrink-0" />
-              <span>Logs & Telemetry</span>
-            </button>
+                  <button
+                    onClick={() => setActiveTab('notifs')}
+                    className={cn(
+                      'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left w-full font-medium',
+                      activeTab === 'notifs'
+                        ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                        : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                    )}
+                  >
+                    <Bell className="w-4 h-4 shrink-0" />
+                    <span>Notifications</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('diagnostics')}
+                    className={cn(
+                      'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left w-full font-medium',
+                      activeTab === 'diagnostics'
+                        ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                        : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                    )}
+                  >
+                    <Terminal className="w-4 h-4 shrink-0" />
+                    <span>Diagnostics & Logs</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="border-t-0 md:border-t border-white/[0.06] pt-0 md:pt-3 shrink-0 flex items-center">
+          {/* User Sign Out Card at bottom of sidebar */}
+          <div className="border-t-0 md:border-t border-white/[0.06] pt-0 md:pt-3 shrink-0 flex items-center justify-between">
             <button
               onClick={async () => {
                 await signOut();
                 onOpenChange(false);
-                toast({
-                  title: 'Signed Out',
-                  description: 'You have been disconnected from the session.',
-                  type: 'info',
-                });
+                toast({ title: 'Signed Out', description: 'You have logged out of your session.', type: 'info' });
               }}
-              className="flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors text-left shrink-0"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors w-full"
             >
               <LogOut className="w-4 h-4 shrink-0" />
               <span>Sign Out</span>
@@ -418,667 +495,727 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           </div>
         </div>
 
-        {/* Settings Body Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-surface-panel">
+        {/* Settings Body Content Area */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-[#090a0f] relative custom-scrollbar">
+          {/* TAB 1: GAMER PROFILE */}
           {activeTab === 'profile' && (
-            <div className="space-y-6 max-w-xl">
+            <div className="space-y-6 max-w-xl pb-16">
               <div>
-                <h3 className="text-lg font-bold text-foreground">My Profile</h3>
-                <p className="text-xs text-muted-foreground">
-                  Customize your gaming avatar, display name, and gamer bio.
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <span>Gamer Identity & Profile</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 font-medium">
+                    Live Preview
+                  </span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Configure your banner, avatar, gaming bio, and real-time squad status.
                 </p>
               </div>
 
-              {/* Profile Card Preview */}
-              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden shadow-sm">
+              {/* 3D-styled Gamer ID Hero Card Preview */}
+              <div className="rounded-2xl border border-white/[0.08] bg-[#10121a] overflow-hidden shadow-xl shadow-black/60 relative group">
                 <div
-                  className="h-20 w-full transition-colors relative"
+                  className="h-24 w-full transition-all duration-300 relative overflow-hidden"
                   style={{ backgroundColor: bannerColor }}
-                />
-                <div className="px-5 pb-5 pt-0 relative flex items-end justify-between -mt-8">
+                >
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#10121a] via-transparent to-transparent opacity-80" />
+                  <div className="absolute top-2.5 right-3 bg-black/50 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] font-mono text-white/80 border border-white/10 flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-amber-400" />
+                    <span>NEXUS ID</span>
+                  </div>
+                </div>
+
+                <div className="px-5 pb-5 pt-0 relative flex items-end justify-between -mt-10">
                   <div className="flex items-end gap-3.5">
-                    <Avatar
-                      src={avatarUrl || null}
-                      name={displayName || 'Gamer'}
-                      status={profile?.status || 'online'}
-                      showStatus
-                      size="lg"
-                      className="border-4 border-surface-panel"
-                    />
+                    <div className="relative">
+                      <Avatar
+                        src={avatarUrl || null}
+                        name={displayName || 'Gamer'}
+                        status={presenceStatus}
+                        showStatus
+                        size="lg"
+                        className="border-4 border-[#10121a] shadow-xl w-20 h-20 text-xl font-bold"
+                      />
+                    </div>
                     <div className="mb-1">
-                      <div className="font-semibold text-foreground leading-tight text-base">
-                        {displayName || 'Anonymous Gamer'}
+                      <div className="font-bold text-foreground leading-tight text-base flex items-center gap-1.5">
+                        <span>{displayName || 'Squad Operative'}</span>
+                        <span className="w-3.5 h-3.5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[9px] font-black" title="Verified Gamer">
+                          ✓
+                        </span>
                       </div>
-                      <div className="text-xs text-muted-foreground/60 font-mono">
-                        @{username || 'gamer'}
+                      <div className="text-xs text-muted-foreground/70 font-mono mt-0.5">
+                        @{username || 'gamer_tag'}
                       </div>
                     </div>
                   </div>
                 </div>
+
                 {customStatus && (
-                  <div className="px-5 pb-4 text-xs text-primary font-medium flex items-center gap-1.5 border-t border-white/[0.06] pt-2.5">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>{customStatus}</span>
+                  <div className="px-5 pb-3">
+                    <div className="inline-flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.08] px-3 py-1 rounded-xl text-xs text-foreground/90">
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                      <span className="italic font-medium">"{customStatus}"</span>
+                    </div>
+                  </div>
+                )}
+
+                {bio && (
+                  <div className="px-5 pb-4">
+                    <div className="text-xs text-muted-foreground bg-black/20 p-2.5 rounded-xl border border-white/[0.04]">
+                      {bio}
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* Form Fields */}
+              {/* Form Controls */}
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                {/* Banner Color Selection */}
+                <div>
+                  <label className="block text-xs font-semibold text-foreground/90 mb-1.5">
+                    Profile Banner Hue
+                  </label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {PRESET_BANNERS.map((preset) => (
+                      <button
+                        key={preset.name}
+                        onClick={() => setBannerColor(preset.color)}
+                        className={cn(
+                          'w-7 h-7 rounded-xl transition-transform border border-white/20 relative flex items-center justify-center',
+                          bannerColor === preset.color ? 'scale-110 ring-2 ring-primary ring-offset-2 ring-offset-[#090a0f]' : 'hover:scale-105'
+                        )}
+                        style={{ backgroundColor: preset.color }}
+                        title={preset.name}
+                      >
+                        {bannerColor === preset.color && <Check className="w-3.5 h-3.5 text-white" />}
+                      </button>
+                    ))}
+                    <div className="flex items-center gap-1.5 ml-2">
+                      <input
+                        type="color"
+                        value={bannerColor}
+                        onChange={(e) => setBannerColor(e.target.value)}
+                        className="w-7 h-7 rounded-lg cursor-pointer bg-transparent border-0 p-0"
+                        title="Custom Color"
+                      />
+                      <span className="text-[11px] font-mono text-muted-foreground uppercase">{bannerColor}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Display Name & Username */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label htmlFor="settings-displayName" className="block text-xs font-medium text-muted-foreground mb-1">
+                    <label className="block text-xs font-semibold text-foreground/90 mb-1">
                       Display Name
                     </label>
                     <Input
-                      id="settings-displayName"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="GhostRider"
-                      maxLength={40}
-                      className="bg-white/[0.02] border-white/[0.08] text-xs"
+                      placeholder="Your Gaming Call-sign"
+                      className="bg-white/[0.03] border-white/[0.08] focus:border-primary text-xs rounded-xl"
                     />
                   </div>
                   <div>
-                    <label htmlFor="settings-username" className="block text-xs font-medium text-muted-foreground mb-1">
-                      Unique Username
+                    <label className="block text-xs font-semibold text-foreground/90 mb-1">
+                      Gamer Tag (@username)
                     </label>
                     <Input
-                      id="settings-username"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      placeholder="ghost_rider"
-                      maxLength={30}
-                      className="bg-white/[0.02] border-white/[0.08] text-xs"
+                      placeholder="username"
+                      className="bg-white/[0.03] border-white/[0.08] focus:border-primary text-xs rounded-xl"
                     />
                   </div>
                 </div>
 
+                {/* Custom Status */}
                 <div>
-                  <div id="presence-status-heading" className="block text-xs font-medium text-muted-foreground mb-1.5">
-                    Presence Status
-                  </div>
-                  <div
-                    role="radiogroup"
-                    aria-labelledby="presence-status-heading"
-                    className="grid grid-cols-2 sm:grid-cols-4 gap-2"
-                  >
-                    {[
-                      { value: 'online' as UserStatus, label: 'Online', color: 'bg-emerald-500' },
-                      { value: 'idle' as UserStatus, label: 'Idle', color: 'bg-amber-500' },
-                      { value: 'dnd' as UserStatus, label: 'Do Not Disturb', color: 'bg-rose-500' },
-                      { value: 'offline' as UserStatus, label: 'Invisible', color: 'bg-slate-500' },
-                    ].map((opt) => (
+                  <label className="block text-xs font-semibold text-foreground/90 mb-1">
+                    Custom Status Message
+                  </label>
+                  <Input
+                    value={customStatus}
+                    onChange={(e) => setCustomStatus(e.target.value)}
+                    placeholder="e.g. Grinding Ranked 2v2 | Back in 10m"
+                    className="bg-white/[0.03] border-white/[0.08] focus:border-primary text-xs rounded-xl"
+                  />
+                </div>
+
+                {/* Avatar URL */}
+                <div>
+                  <label className="block text-xs font-semibold text-foreground/90 mb-1">
+                    Avatar Image URL
+                  </label>
+                  <Input
+                    value={avatarUrl}
+                    onChange={(e) => setAvatarUrl(e.target.value)}
+                    placeholder="https://images.unsplash.com/... or custom URL"
+                    className="bg-white/[0.03] border-white/[0.08] focus:border-primary text-xs rounded-xl"
+                  />
+                </div>
+
+                {/* Gamer Bio */}
+                <div>
+                  <label className="block text-xs font-semibold text-foreground/90 mb-1 flex items-center justify-between">
+                    <span>Gamer Bio</span>
+                    <span className="text-[10px] text-muted-foreground/60">{bio.length}/180</span>
+                  </label>
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value.slice(0, 180))}
+                    placeholder="Tell your squad what games you main, rank, or preferred playstyle..."
+                    rows={3}
+                    className="w-full rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 text-xs text-foreground focus:border-primary focus:outline-none transition-colors resize-none"
+                  />
+                </div>
+
+                {/* Presence Status Selection Cards */}
+                <div>
+                  <label className="block text-xs font-semibold text-foreground/90 mb-2">
+                    Live Presence Mode
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {PRESENCE_OPTIONS.map((opt) => (
                       <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setPresenceStatus(opt.value)}
+                        key={opt.status}
+                        onClick={() => setPresenceStatus(opt.status)}
                         className={cn(
-                          'flex items-center gap-2 p-2 rounded-lg border text-xs font-medium transition-all text-left',
-                          presenceStatus === opt.value
-                            ? 'border-primary/50 bg-primary/10 text-primary'
-                            : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] text-muted-foreground hover:text-foreground'
+                          'flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all',
+                          presenceStatus === opt.status
+                            ? 'bg-white/[0.06] border-primary/50 ring-1 ring-primary/40'
+                            : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
                         )}
                       >
-                        <span className={cn('w-2 h-2 rounded-full shrink-0', opt.color)} />
-                        <span className="truncate">{opt.label}</span>
+                        <span className={cn('w-2.5 h-2.5 rounded-full mt-1 shrink-0', opt.color)} />
+                        <div>
+                          <div className="text-xs font-bold text-foreground">{opt.label}</div>
+                          <div className="text-[10px] text-muted-foreground/70 leading-snug mt-0.5">{opt.desc}</div>
+                        </div>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div>
-                  <label htmlFor="settings-customStatus" className="block text-xs font-medium text-muted-foreground mb-1">
-                    Custom Status Message
-                  </label>
-                  <Input
-                    id="settings-customStatus"
-                    value={customStatus}
-                    onChange={(e) => setCustomStatus(e.target.value)}
-                    placeholder="In match • Ranking up"
-                    maxLength={80}
-                    className="bg-white/[0.02] border-white/[0.08] text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="settings-avatarUrl" className="block text-xs font-medium text-muted-foreground mb-1">
-                    Avatar Image URL (Optional)
-                  </label>
-                  <Input
-                    id="settings-avatarUrl"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    placeholder="https://..."
-                    className="bg-white/[0.02] border-white/[0.08] text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="settings-bannerColor" className="block text-xs font-medium text-muted-foreground mb-1">
-                    Banner Color
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="settings-bannerColorPicker"
-                      type="color"
-                      aria-label="Banner Color Picker"
-                      value={bannerColor}
-                      onChange={(e) => setBannerColor(e.target.value)}
-                      className="w-9 h-9 rounded-md border border-white/[0.08] bg-transparent cursor-pointer p-0.5"
-                    />
-                    <Input
-                      id="settings-bannerColor"
-                      value={bannerColor}
-                      onChange={(e) => setBannerColor(e.target.value)}
-                      placeholder="#7c3aed"
-                      aria-label="Banner Color Hex"
-                      className="max-w-[140px] font-mono text-xs uppercase bg-white/[0.02] border-white/[0.08]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="settings-bio" className="block text-xs font-medium text-muted-foreground mb-1">
-                    About Me / Bio
-                  </label>
-                  <textarea
-                    id="settings-bio"
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    rows={3}
-                    maxLength={200}
-                    aria-label="About Me / Bio"
-                    placeholder="Tell your squad what games you play..."
-                    className="w-full rounded-lg border border-white/[0.08] bg-white/[0.02] p-3 text-xs text-foreground focus-visible:outline-none focus-visible:border-white/[0.2] transition-colors resize-none"
-                  />
-                  <div className="text-[10px] text-muted-foreground/60 text-right mt-1">
-                    {bio.length}/200
-                  </div>
-                </div>
-
+                {/* Save Button */}
                 <div className="pt-2">
-                  <Button onClick={handleSaveProfile} disabled={isSaving} className="gap-2 font-medium">
-                    {isSaving ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Save className="w-3.5 h-3.5" />
-                    )}
-                    Save Profile Changes
+                  <Button
+                    onClick={handleSaveProfile}
+                    disabled={isSaving}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5 rounded-xl shadow-lg shadow-primary/20 text-xs flex items-center justify-center gap-2"
+                  >
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    <span>Save Profile Identity</span>
                   </Button>
                 </div>
               </div>
             </div>
           )}
 
+          {/* TAB 2: APPEARANCE & THEMES */}
           {activeTab === 'appearance' && (
-            <div className="space-y-6 max-w-xl">
+            <div className="space-y-6 max-w-xl pb-16">
               <div>
-                <h3 className="text-lg font-semibold text-foreground">Appearance & Accent Themes</h3>
-                <p className="text-xs text-muted-foreground/70">
-                  Select your signature accent color for buttons, highlights, and borders.
+                <h3 className="text-lg font-bold text-foreground">Themes & Accents</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Select your dynamic accent palette. All buttons, rings, and badges re-theme instantly.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 {ACCENT_THEMES.map((theme) => {
                   const isSelected = selectedAccent === theme.id;
                   return (
-                    <button
+                    <div
                       key={theme.id}
                       onClick={() => handleSaveAppearance(theme.id)}
                       className={cn(
-                        'flex items-center justify-between p-3 rounded-lg border transition-all text-left',
+                        'flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all',
                         isSelected
-                          ? 'border-primary/50 bg-primary/10'
-                          : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04]'
+                          ? 'bg-white/[0.06] border-primary ring-1 ring-primary/60 shadow-lg'
+                          : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
                       )}
                     >
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className={cn('w-4 h-4 rounded-full shrink-0 shadow-sm', theme.class)}
-                        />
-                        <span className="text-xs font-medium text-foreground">{theme.name}</span>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-10 h-10 rounded-xl shadow-md flex items-center justify-center text-white"
+                          style={{ backgroundColor: theme.hex }}
+                        >
+                          <Sparkles className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                            <span>{theme.name}</span>
+                            {isSelected && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-primary/20 text-primary font-semibold">
+                                ACTIVE
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground/70">{theme.desc}</div>
+                        </div>
                       </div>
-                      {isSelected && <Check className="w-4 h-4 text-primary" />}
-                    </button>
+
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-4 h-4 rounded-full border border-white/20"
+                          style={{ backgroundColor: theme.hex }}
+                        />
+                        {isSelected && <Check className="w-4 h-4 text-primary" />}
+                      </div>
+                    </div>
                   );
                 })}
-              </div>
-
-              <div className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] mt-4 space-y-2">
-                <div className="text-xs font-medium text-foreground">Theme Live Preview</div>
-                <div className="flex items-center gap-2">
-                  <Button size="sm">Primary Button</Button>
-                  <Button size="sm" variant="outline">
-                    Outline Button
-                  </Button>
-                  <Button size="sm" variant="subtle">
-                    Subtle Accent
-                  </Button>
-                </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'audio' && (
-            <div className="space-y-6 max-w-xl">
+          {/* TAB 3: VOICE & VIDEO STUDIO */}
+          {activeTab === 'studio' && (
+            <div className="space-y-6 max-w-xl pb-16">
               <div>
-                <h3 className="text-lg font-semibold text-foreground">Voice & Video Settings</h3>
-                <p className="text-xs text-muted-foreground/70">
-                  Select input/output hardware, test your mic & camera in real time, and customize audio filters.
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <span>Voice & Video Studio</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
+                    Hardware Linked
+                  </span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Select your microphone, headphones, and camera. Test audio levels and preview webcam.
                 </p>
               </div>
 
-              {/* Hardware Device Selectors */}
+              {/* Hardware Device Pickers */}
               <div className="space-y-3.5">
-                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
-                  Hardware Devices
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="settings-inputDevice" className="block text-xs font-medium text-muted-foreground mb-1">
-                      Microphone (Input Device)
-                    </label>
-                    <select
-                      id="settings-inputDevice"
-                      value={selectedInputDevice}
-                      onChange={(e) => setSelectedInputDevice(e.target.value)}
-                      className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] text-foreground text-xs p-2 focus-visible:outline-none focus-visible:border-white/[0.2] transition-colors cursor-pointer"
-                    >
-                      {audioInputDevices.length > 0 ? (
-                        audioInputDevices.map((d, i) => (
-                          <option key={d.deviceId || i} value={d.deviceId} className="bg-surface-panel text-foreground">
-                            {d.label || `Microphone ${i + 1}`}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="" className="bg-surface-panel text-foreground">Default System Microphone</option>
-                      )}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="settings-outputDevice" className="block text-xs font-medium text-muted-foreground mb-1">
-                      Headset / Speakers (Output Device)
-                    </label>
-                    <select
-                      id="settings-outputDevice"
-                      value={selectedOutputDevice}
-                      onChange={(e) => setSelectedOutputDevice(e.target.value)}
-                      className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] text-foreground text-xs p-2 focus-visible:outline-none focus-visible:border-white/[0.2] transition-colors cursor-pointer"
-                    >
-                      {audioOutputDevices.length > 0 ? (
-                        audioOutputDevices.map((d, i) => (
-                          <option key={d.deviceId || i} value={d.deviceId} className="bg-surface-panel text-foreground">
-                            {d.label || `Speaker ${i + 1}`}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="" className="bg-surface-panel text-foreground">Default System Output</option>
-                      )}
-                    </select>
-                  </div>
-                </div>
-
                 <div>
-                  <label htmlFor="settings-cameraDevice" className="block text-xs font-medium text-muted-foreground mb-1">
-                    Webcam / Camera (Video Input)
+                  <label className="block text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5 text-primary" />
+                    <span>Microphone Input Device</span>
                   </label>
                   <select
-                    id="settings-cameraDevice"
-                    value={selectedCamDevice}
-                    onChange={(e) => setSelectedCamDevice(e.target.value)}
-                    className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] text-foreground text-xs p-2 focus-visible:outline-none focus-visible:border-white/[0.2] transition-colors cursor-pointer"
+                    value={selectedInputDevice}
+                    onChange={(e) => {
+                      setSelectedInputDevice(e.target.value);
+                      if (isTestingMic) stopMicTest();
+                    }}
+                    className="w-full bg-[#10121a] border border-white/[0.08] text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
                   >
-                    {videoDevices.length > 0 ? (
-                      videoDevices.map((d, i) => (
-                        <option key={d.deviceId || i} value={d.deviceId} className="bg-surface-panel text-foreground">
-                          {d.label || `Camera ${i + 1}`}
+                    {audioInputDevices.length === 0 ? (
+                      <option value="">Default Microphone</option>
+                    ) : (
+                      audioInputDevices.map((d) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {d.label || `Microphone ${d.deviceId.slice(0, 5)}`}
                         </option>
                       ))
-                    ) : (
-                      <option value="" className="bg-surface-panel text-foreground">Default Webcam</option>
                     )}
                   </select>
                 </div>
-              </div>
 
-              {/* Interactive Microphone Test */}
-              <div className="p-4 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Mic className="w-4 h-4 text-primary" />
+                {/* Live Mic Test & VU Meter */}
+                <div className="rounded-xl border border-white/[0.08] bg-[#10121a] p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-xs font-semibold text-foreground">Microphone Test</div>
-                      <div className="text-[10px] text-muted-foreground/60">
-                        Speak into your mic to verify sound input and sensitivity.
-                      </div>
+                      <div className="text-xs font-bold text-foreground">Microphone Input Level</div>
+                      <div className="text-[10px] text-muted-foreground">Test mic sensitivity and room noise</div>
                     </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant={isTestingMic ? 'destructive' : 'subtle'}
-                    onClick={isTestingMic ? stopMicTest : startMicTest}
-                    className="gap-1.5 text-xs h-7 px-3"
-                  >
-                    {isTestingMic ? (
-                      <>
-                        <Square className="w-3 h-3 fill-current" />
-                        <span>Stop Test</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Test Mic</span>
-                      </>
-                    )}
-                  </Button>
-                </div>
-
-                {/* Animated Level Bar */}
-                <div className="space-y-1.5">
-                  <div className="h-2 w-full rounded-full bg-white/[0.04] overflow-hidden border border-white/[0.04] relative">
-                    <div
+                    <Button
+                      size="sm"
+                      onClick={startMicTest}
+                      variant="outline"
                       className={cn(
-                        'h-full transition-all duration-75 rounded-full',
-                        micLevel > 75
-                          ? 'bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500'
-                          : micLevel > 30
-                          ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
-                          : 'bg-emerald-500/80'
+                        'text-xs rounded-lg border-white/[0.08] h-8 px-3',
+                        isTestingMic ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'hover:bg-primary/10'
                       )}
-                      style={{ width: `${isTestingMic ? Math.max(3, micLevel) : 0}%` }}
-                    />
+                    >
+                      {isTestingMic ? (
+                        <>
+                          <Square className="w-3 h-3 mr-1.5" /> Stop Test
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3 h-3 mr-1.5" /> Test Mic
+                        </>
+                      )}
+                    </Button>
                   </div>
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground/60 font-mono">
-                    <span>
-                      {isTestingMic
-                        ? micLevel > 15
-                          ? `Signal detected (${micLevel}%)`
-                          : 'Listening... speak now'
-                        : 'Click Test Mic to check signal'}
-                    </span>
-                    <span>{isTestingMic ? `${micLevel}%` : '0%'}</span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Interactive Camera Preview Test */}
-              <div className="p-4 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Video className="w-4 h-4 text-emerald-400" />
-                    <div>
-                      <div className="text-xs font-semibold text-foreground">Webcam Self Preview</div>
-                      <div className="text-[10px] text-muted-foreground/60">
-                        Check your lighting, framing, and camera feed before joining calls.
-                      </div>
+                  {/* Gradient VU meter */}
+                  <div className="space-y-1">
+                    <div className="h-3 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/[0.06]">
+                      <div
+                        className="h-full rounded-full transition-all duration-75 bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500"
+                        style={{ width: `${micLevel}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[9px] font-mono text-muted-foreground/60 px-0.5">
+                      <span>-60 dB (Quiet)</span>
+                      <span>{micLevel}%</span>
+                      <span>0 dB (Peak)</span>
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant={isTestingCam ? 'destructive' : 'subtle'}
-                    onClick={isTestingCam ? stopCamTest : startCamTest}
-                    className="gap-1.5 text-xs h-7 px-3"
-                  >
-                    {isTestingCam ? (
-                      <>
-                        <Square className="w-3 h-3 fill-current" />
-                        <span>Close Preview</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Preview Camera</span>
-                      </>
-                    )}
-                  </Button>
                 </div>
 
-                {isTestingCam && (
-                  <div className="relative rounded-lg overflow-hidden bg-black aspect-video max-h-48 flex items-center justify-center border border-white/[0.08]">
+                {/* Webcam Hardware Device Picker */}
+                <div>
+                  <label className="block text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5">
+                    <Video className="w-3.5 h-3.5 text-primary" />
+                    <span>Camera / Video Device</span>
+                  </label>
+                  <select
+                    value={selectedCamDevice}
+                    onChange={(e) => {
+                      setSelectedCamDevice(e.target.value);
+                      if (isTestingCam) stopCamTest();
+                    }}
+                    className="w-full bg-[#10121a] border border-white/[0.08] text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
+                  >
+                    {videoDevices.length === 0 ? (
+                      <option value="">Default Webcam</option>
+                    ) : (
+                      videoDevices.map((d) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {d.label || `Camera ${d.deviceId.slice(0, 5)}`}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                {/* Live Webcam Preview Studio */}
+                <div className="rounded-xl border border-white/[0.08] bg-[#10121a] p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-foreground">Webcam Preview Studio</div>
+                      <div className="text-[10px] text-muted-foreground">Test camera exposure and lens framing</div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={startCamTest}
+                      variant="outline"
+                      className={cn(
+                        'text-xs rounded-lg border-white/[0.08] h-8 px-3',
+                        isTestingCam ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'hover:bg-primary/10'
+                      )}
+                    >
+                      {isTestingCam ? (
+                        <>
+                          <Square className="w-3 h-3 mr-1.5" /> Stop Camera
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="w-3 h-3 mr-1.5" /> Test Camera
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="relative aspect-video w-full rounded-xl bg-black border border-white/[0.06] overflow-hidden flex items-center justify-center">
                     <video
                       ref={camVideoRef}
                       autoPlay
                       playsInline
                       muted
-                      className="w-full h-full object-cover"
+                      className={cn('w-full h-full object-cover', !isTestingCam && 'hidden')}
                     />
-                    <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-medium text-emerald-400 flex items-center gap-1.5 border border-white/[0.08]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span>Live Camera Feed</span>
-                    </div>
+                    {!isTestingCam && (
+                      <div className="flex flex-col items-center justify-center text-muted-foreground/60 space-y-1">
+                        <Camera className="w-8 h-8 opacity-40" />
+                        <span className="text-xs">Webcam preview offline</span>
+                      </div>
+                    )}
+                    {isTestingCam && (
+                      <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                        <span>CAMERA ACTIVE (1080p)</span>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
+
+                {/* Audio Output Speaker Picker */}
+                <div>
+                  <label className="block text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5">
+                    <Headphones className="w-3.5 h-3.5 text-primary" />
+                    <span>Playback / Headphone Output</span>
+                  </label>
+                  <select
+                    value={selectedOutputDevice}
+                    onChange={(e) => setSelectedOutputDevice(e.target.value)}
+                    className="w-full bg-[#10121a] border border-white/[0.08] text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
+                  >
+                    {audioOutputDevices.length === 0 ? (
+                      <option value="">Default Audio Output (System Default)</option>
+                    ) : (
+                      audioOutputDevices.map((d) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {d.label || `Speaker ${d.deviceId.slice(0, 5)}`}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: AUDIO PROCESSING */}
+          {activeTab === 'audio' && (
+            <div className="space-y-6 max-w-xl pb-16">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Audio Processing & DSP</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Acoustic echo cancellation, Krisp AI noise filters, and master volume balances.
+                </p>
               </div>
 
-              {/* Volume Sliders */}
-              <div className="space-y-4 pt-1">
-                <div>
-                  <div className="flex items-center justify-between text-xs font-medium mb-2">
-                    <span className="flex items-center gap-1.5 text-foreground">
-                      <Mic className="w-4 h-4 text-primary" /> Input Volume (Microphone)
+              {/* Krisp AI Noise Suppression Switch */}
+              <div
+                onClick={() => setNoiseSuppression(!noiseSuppression)}
+                className={cn(
+                  'flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all',
+                  noiseSuppression
+                    ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/30'
+                    : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                )}
+              >
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                    <span>Krisp AI Acoustic Noise Suppression</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-bold">
+                      SMART FILTER
                     </span>
-                    <span className="text-muted-foreground/70 font-mono text-[11px]">{inputVol}%</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Removes mechanical keyboard clicks, gaming fan noise, and background chatter.
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    'w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5',
+                    noiseSuppression ? 'bg-primary' : 'bg-white/20'
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'w-5 h-5 rounded-full bg-white shadow-md transition-transform',
+                      noiseSuppression ? 'translate-x-5' : 'translate-x-0'
+                    )}
+                  />
+                </div>
+              </div>
+
+              {/* Push to talk vs Voice Activity */}
+              <div
+                onClick={() => setPushToTalk(!pushToTalk)}
+                className={cn(
+                  'flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all',
+                  pushToTalk
+                    ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/30'
+                    : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                )}
+              >
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-foreground">Push-to-Talk (PTT) Mode</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Hold keyboard hotkey to transmit mic audio. Defaults to Voice Activity when off.
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    'w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5',
+                    pushToTalk ? 'bg-primary' : 'bg-white/20'
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'w-5 h-5 rounded-full bg-white shadow-md transition-transform',
+                      pushToTalk ? 'translate-x-5' : 'translate-x-0'
+                    )}
+                  />
+                </div>
+              </div>
+
+              {/* Input & Output Volume Sliders */}
+              <div className="space-y-4 pt-2">
+                <div>
+                  <div className="flex justify-between text-xs font-semibold text-foreground/90 mb-1.5">
+                    <span>Microphone Input Gain</span>
+                    <span className="font-mono text-primary">{inputVol}%</span>
                   </div>
                   <input
                     type="range"
                     min="0"
                     max="100"
-                    aria-label="Input Volume (Microphone)"
                     value={inputVol}
                     onChange={(e) => setInputVol(Number(e.target.value))}
-                    className="w-full accent-primary h-1.5 bg-white/[0.06] rounded-lg cursor-pointer"
+                    className="w-full accent-primary h-1.5 bg-white/10 rounded-lg cursor-pointer"
                   />
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between text-xs font-medium mb-2">
-                    <span className="flex items-center gap-1.5 text-foreground">
-                      <Headphones className="w-4 h-4 text-primary" /> Output Volume (Headset)
-                    </span>
-                    <span className="text-muted-foreground/70 font-mono text-[11px]">{outputVol}%</span>
+                  <div className="flex justify-between text-xs font-semibold text-foreground/90 mb-1.5">
+                    <span>Squad Call Output Volume</span>
+                    <span className="font-mono text-primary">{outputVol}%</span>
                   </div>
                   <input
                     type="range"
                     min="0"
-                    max="100"
-                    aria-label="Output Volume (Headset)"
+                    max="150"
                     value={outputVol}
                     onChange={(e) => setOutputVol(Number(e.target.value))}
-                    className="w-full accent-primary h-1.5 bg-white/[0.06] rounded-lg cursor-pointer"
+                    className="w-full accent-primary h-1.5 bg-white/10 rounded-lg cursor-pointer"
                   />
                 </div>
               </div>
 
-              {/* Advanced Voice Toggles */}
-              <div className="pt-2 border-t border-white/[0.06] space-y-2.5">
-                <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer hover:bg-white/[0.04] transition-colors">
-                  <div>
-                    <div className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      AI Noise Suppression & Acoustic Filtering
-                    </div>
-                    <div className="text-[10px] text-muted-foreground/60 mt-0.5">
-                      Filters background mechanical keyboard clicks, fan hum, and room noise in voice calls.
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={noiseSuppression}
-                    onChange={(e) => setNoiseSuppression(e.target.checked)}
-                    className="accent-primary w-4 h-4 rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer hover:bg-white/[0.04] transition-colors">
-                  <span className="text-xs font-medium text-foreground">
-                    Enable Soundboard & System Sound Effects
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={soundEffects}
-                    onChange={(e) => setSoundEffects(e.target.checked)}
-                    className="accent-primary w-4 h-4 rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer hover:bg-white/[0.04] transition-colors">
-                  <div>
-                    <div className="text-xs font-medium text-foreground">Push To Talk Mode</div>
-                    <div className="text-[10px] text-muted-foreground/60">
-                      Default trigger key: [V]
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={pushToTalk}
-                    onChange={(e) => setPushToTalk(e.target.checked)}
-                    className="accent-primary w-4 h-4 rounded cursor-pointer"
-                  />
-                </label>
+              <div className="pt-2">
+                <Button
+                  onClick={handleSaveAudio}
+                  disabled={isSaving}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2"
+                >
+                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>Save Audio Settings</span>
+                </Button>
               </div>
-
-              <Button onClick={handleSaveAudio} disabled={isSaving} className="gap-2 font-medium">
-                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Save Audio Preferences
-              </Button>
             </div>
           )}
 
+          {/* TAB 5: SHORTCUTS & KEYBINDS */}
           {activeTab === 'shortcuts' && (
-            <div className="space-y-6 max-w-xl">
+            <div className="space-y-6 max-w-xl pb-16">
               <div>
-                <h3 className="text-lg font-semibold text-foreground">Keyboard Shortcuts & Hotkeys</h3>
-                <p className="text-xs text-muted-foreground/70">
-                  Quick hotkeys to control communications, voice channels, and overlays during gaming sessions.
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <span>Gaming Keybinds & Shortcuts</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 font-medium">
+                    Tactical Controls
+                  </span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Physical keyboard hotkeys for in-game squad communication and call controls.
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-medium text-foreground">Toggle Microphone Mute</div>
-                    <div className="text-[10px] text-muted-foreground/60">Mute or unmute during voice and video calls</div>
-                  </div>
-                  <div className="flex items-center gap-1 font-mono text-[11px]">
-                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Ctrl</kbd>
-                    <span className="text-muted-foreground">+</span>
-                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Shift</kbd>
-                    <span className="text-muted-foreground">+</span>
-                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">M</kbd>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-medium text-foreground">Toggle Deafen Audio</div>
-                    <div className="text-[10px] text-muted-foreground/60">Silence all incoming call audio and mute mic</div>
-                  </div>
-                  <div className="flex items-center gap-1 font-mono text-[11px]">
-                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Ctrl</kbd>
-                    <span className="text-muted-foreground">+</span>
-                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Shift</kbd>
-                    <span className="text-muted-foreground">+</span>
-                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">D</kbd>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-medium text-foreground">Live Telemetry & Diagnostics Window</div>
-                    <div className="text-[10px] text-muted-foreground/60">Toggle the debug console and real-time logs</div>
-                  </div>
-                  <div className="flex items-center gap-1 font-mono text-[11px]">
-                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Ctrl</kbd>
-                    <span className="text-muted-foreground">+</span>
-                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">~</kbd>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-medium text-foreground">Push To Talk Default Key</div>
-                    <div className="text-[10px] text-muted-foreground/60">Hold while speaking when Push-To-Talk is enabled</div>
-                  </div>
-                  <div className="flex items-center gap-1 font-mono text-[11px]">
-                    <kbd className="px-2.5 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground font-semibold">V</kbd>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-medium text-foreground">Close Modals / Exit Fullscreen</div>
-                    <div className="text-[10px] text-muted-foreground/60">Dismiss active dialogs or exit call fullscreen</div>
-                  </div>
-                  <div className="flex items-center gap-1 font-mono text-[11px]">
-                    <kbd className="px-2 py-1 rounded bg-white/[0.06] border border-white/[0.1] text-foreground">Esc</kbd>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'notifications' && (
-            <div className="space-y-6 max-w-xl">
-              <div>
-                <h3 className="text-lg font-semibold text-foreground">Notification Preferences</h3>
-                <p className="text-xs text-muted-foreground/70">
-                  Control alert badges, desktop notifications, and incoming call sounds.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <label className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer">
-                  <div>
-                    <div className="text-xs font-medium text-foreground">Desktop Notifications</div>
-                    <div className="text-[10px] text-muted-foreground/60">
-                      Show popup alerts when friends send messages or call requests
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={desktopNotifs}
-                    onChange={(e) => {
-                      setDesktopNotifs(e.target.checked);
-                      updateSettings({ desktop_notifications: e.target.checked });
-                    }}
-                    className="accent-primary w-4 h-4 rounded cursor-pointer"
-                  />
-                </label>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'diagnostics' && (
-            <div className="space-y-6 max-w-xl">
-              <div>
-                <h3 className="text-lg font-semibold text-foreground">System Diagnostics & Logs</h3>
-                <p className="text-xs text-muted-foreground/70">
-                  Inspect messaging pipeline, Supabase WebSocket connections, session expirations, and network latency.
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-3">
-                <div className="flex items-center gap-2 text-foreground font-semibold text-xs">
-                  <Terminal className="w-4 h-4 text-primary" />
-                  <span>Interactive Real-Time Diagnostics Console</span>
-                </div>
-                <p className="text-xs text-muted-foreground/70 leading-relaxed font-normal">
-                  The logs console captures all message send attempts, database queries, and WebSocket states. You can also toggle it at any time with <kbd className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-[10px] font-mono">Ctrl + ~</kbd>.
-                </p>
-                <div className="pt-1 flex gap-2">
-                  <Button
-                    onClick={() => {
-                      onOpenChange(false);
-                      triggerOpenLogsWindow();
-                    }}
-                    className="font-medium gap-2 text-xs"
+              <div className="space-y-2">
+                {[
+                  { action: 'Toggle Microphone Mute', key: 'M', desc: 'Mute / unmute your microphone stream' },
+                  { action: 'Toggle Deafen Audio', key: 'D', desc: 'Silence all incoming voices & audio' },
+                  { action: 'Toggle Camera Broadcast', key: 'V', desc: 'Turn video webcam on or off' },
+                  { action: 'Toggle Screen Share', key: 'S', desc: 'Start or end game display sharing' },
+                  { action: 'Close Modal / Drop Focus', key: 'Esc', desc: 'Dismiss active dialogue windows' },
+                  { action: 'Push to Talk (When Enabled)', key: 'Space', desc: 'Hold to speak in squad call' },
+                ].map((item) => (
+                  <div
+                    key={item.action}
+                    className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]"
                   >
-                    <Terminal className="w-3.5 h-3.5" />
-                    Open Diagnostics Window
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">{item.action}</div>
+                      <div className="text-[10px] text-muted-foreground/70">{item.desc}</div>
+                    </div>
+                    <kbd className="px-2.5 py-1 rounded-lg bg-black/60 border border-white/20 shadow-inner font-mono text-[11px] font-bold text-white tracking-wider">
+                      {item.key}
+                    </kbd>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: NOTIFICATIONS */}
+          {activeTab === 'notifs' && (
+            <div className="space-y-6 max-w-xl pb-16">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Notifications & Sounds</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Manage incoming call alerts, message chimes, and desktop popups.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div
+                  onClick={() => setDesktopNotifs(!desktopNotifs)}
+                  className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] cursor-pointer"
+                >
+                  <div>
+                    <div className="text-xs font-bold text-foreground">Desktop System Notifications</div>
+                    <div className="text-[11px] text-muted-foreground">Receive OS alert badges for incoming calls and DMs</div>
+                  </div>
+                  <div
+                    className={cn(
+                      'w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5',
+                      desktopNotifs ? 'bg-primary' : 'bg-white/20'
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'w-5 h-5 rounded-full bg-white shadow-md transition-transform',
+                        desktopNotifs ? 'translate-x-5' : 'translate-x-0'
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setSoundEffects(!soundEffects)}
+                  className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] cursor-pointer"
+                >
+                  <div>
+                    <div className="text-xs font-bold text-foreground">Soundboard & UI Chimes</div>
+                    <div className="text-[11px] text-muted-foreground">Play acoustic tones on message send and squad join</div>
+                  </div>
+                  <div
+                    className={cn(
+                      'w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5',
+                      soundEffects ? 'bg-primary' : 'bg-white/20'
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'w-5 h-5 rounded-full bg-white shadow-md transition-transform',
+                        soundEffects ? 'translate-x-5' : 'translate-x-0'
+                      )}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: DIAGNOSTICS & LOGS */}
+          {activeTab === 'diagnostics' && (
+            <div className="space-y-6 max-w-xl pb-16">
+              <div>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <Terminal className="w-5 h-5 text-primary" />
+                  <span>Diagnostics & System Logs</span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Access runtime logs, WebRTC NAT candidate traversal telemetry, and ZeroTier status.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-white/[0.08] bg-[#10121a] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-foreground">Telemetry Window</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => triggerOpenLogsWindow()}
+                    className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-3 h-8 rounded-lg"
+                  >
+                    Open Live Diagnostics
                   </Button>
+                </div>
+                <div className="text-[11px] text-muted-foreground font-mono bg-black/40 p-3 rounded-xl border border-white/[0.04]">
+                  • Direct P2P Mesh Traversal: ACTIVE<br />
+                  • ICE Candidate Gathering: STUN/TURN Enabled<br />
+                  • ZeroTier Virtual LAN: Standby & Synced<br />
+                  • Engine Protocol: Nexus WebRTC 2.4.0
                 </div>
               </div>
             </div>

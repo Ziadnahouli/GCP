@@ -319,7 +319,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <Avatar
             src={targetMember?.avatar_url || null}
             name={targetMember?.display_name || currentConversation?.name || 'Chat'}
-            status={targetMember?.status || 'online'}
+            status={targetMember?.status || 'offline'}
             showStatus
             size="sm"
           />
@@ -344,7 +344,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               ) : targetMember?.custom_status ? (
                 <span>{targetMember.custom_status}</span>
               ) : (
-                <span className="capitalize">{targetMember?.status || 'Active in squad'}</span>
+                <span className="capitalize">{targetMember?.status || 'offline'}</span>
               )}
             </div>
           </div>
@@ -464,7 +464,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             <Avatar
               src={targetMember?.avatar_url || null}
               name={targetMember?.display_name || 'Gamer'}
-              status={targetMember?.status || 'online'}
+              status={targetMember?.status || 'offline'}
               size="xl"
               className="mx-auto"
             />
@@ -499,7 +499,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               <Avatar
                 src={msg.sender?.avatar_url}
                 name={msg.sender?.display_name || (isMe ? profile?.display_name : 'Gamer')}
-                status={msg.sender?.status || 'online'}
+                status={msg.sender?.status || (isMe ? profile?.status || 'online' : 'offline')}
                 size="sm"
                 className="shrink-0 mt-0.5"
               />

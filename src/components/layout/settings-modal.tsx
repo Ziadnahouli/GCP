@@ -555,7 +555,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   <div className="px-5 pb-3">
                     <div className="inline-flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.08] px-3 py-1 rounded-xl text-xs text-foreground/90">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                      <span className="italic font-medium">"{customStatus}"</span>
+                      <span className="italic font-medium">{`"${customStatus}"`}</span>
                     </div>
                   </div>
                 )}

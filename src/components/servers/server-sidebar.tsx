@@ -289,7 +289,7 @@ export function ServerSidebar({
                           variant="outline"
                           className="text-[9px] px-1.5 py-0 border-emerald-500/50 text-emerald-300 bg-emerald-500/20 font-mono"
                         >
-                          Connected
+                          Active
                         </Badge>
                       ) : (
                         <Badge
@@ -321,7 +321,7 @@ export function ServerSidebar({
                   {isActive && (
                     <div className="pl-6 py-0.5 flex items-center gap-1.5 text-[10px] text-emerald-400/90">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="font-mono">Live Voice Stage</span>
+                      <span className="font-mono">Voice Lounge</span>
                     </div>
                   )}
                 </div>

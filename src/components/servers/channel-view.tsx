@@ -89,13 +89,21 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
-  const { isVoiceConnected, isConnecting, connectVoice } = voice;
-  // Auto-connect to voice lounge when navigating to a voice channel if permitted
+  const [manuallyDisconnected, setManuallyDisconnected] = React.useState(false);
+  const autoConnectAttemptedRef = React.useRef(false);
+
+  // Auto-connect to voice lounge once when first entering a voice channel if permitted
   React.useEffect(() => {
-    if (channel.type === 'voice' && !isVoiceConnected && !isConnecting && canConnectVoice) {
-      connectVoice();
+    if (
+      channel.type === 'voice' &&
+      canConnectVoice &&
+      !autoConnectAttemptedRef.current &&
+      !manuallyDisconnected
+    ) {
+      autoConnectAttemptedRef.current = true;
+      voice.connectVoice();
     }
-  }, [channel.id, channel.type, canConnectVoice, isVoiceConnected, isConnecting, connectVoice]);
+  }, [channel.id, channel.type, canConnectVoice, manuallyDisconnected, voice]);
 
   // Hook up video stream to video element
   React.useEffect(() => {
@@ -406,10 +414,17 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-bold text-foreground">{channel.name}</h2>
-                    <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                      Live Audio Stage
-                    </span>
+                    {voice.isVoiceConnected ? (
+                      <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                        Live Audio Stage
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-muted-foreground text-[10px] font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+                        Disconnected
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {channel.topic || 'WebRTC encrypted voice room with AI noise cancellation & low latency.'}
@@ -665,6 +680,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                           toast({ title: 'Access Denied', description: 'Your role cannot join voice lounges.', type: 'error' });
                           return;
                         }
+                        setManuallyDisconnected(false);
                         voice.connectVoice();
                         toast({ title: 'Connected to Voice', description: channel.name, type: 'success' });
                       }}
@@ -816,6 +832,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   <button
                     type="button"
                     onClick={() => {
+                      setManuallyDisconnected(true);
                       voice.disconnectVoice();
                       toast({ title: 'Voice Disconnected', description: 'Left voice lounge', type: 'info' });
                     }}

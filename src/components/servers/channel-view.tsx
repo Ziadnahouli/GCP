@@ -321,10 +321,20 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             {isVoiceChannel ? (
               <Badge
                 variant="outline"
-                className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 font-mono"
+                className={cn(
+                  "hidden sm:inline-flex items-center gap-1.5 text-[10px] px-2.5 py-0.5 border font-mono transition-all",
+                  voice.isLiveKitActive
+                    ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                    : "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+                )}
+                title={
+                  voice.isLiveKitActive
+                    ? "LiveKit Cloud SFU + Krisp AI Noise Filter Active"
+                    : "Studio DSP Multi-Stage Voice Gate & WebRTC Opus HD Active"
+                }
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>WebRTC Opus 48kHz HD</span>
+                <span>{voice.isLiveKitActive ? 'LiveKit SFU • Krisp AI HD' : 'Studio DSP • Opus 48kHz HD'}</span>
               </Badge>
             ) : (
               channel.topic && (
@@ -998,8 +1008,14 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     onClick={() => {
                       voice.toggleNoiseSuppression();
                       toast({
-                        title: voice.isNoiseSuppressionEnabled ? 'Noise Filter Disabled' : 'Studio Noise Filter Enabled',
-                        description: 'Multi-stage DSP & Adaptive Voice Gate',
+                        title: voice.isNoiseSuppressionEnabled
+                          ? 'Noise Filter Disabled'
+                          : voice.isLiveKitActive
+                          ? 'Krisp AI Noise Filter Enabled'
+                          : 'Studio Noise Filter Enabled',
+                        description: voice.isLiveKitActive
+                          ? 'Discord-grade neural network acoustic isolation'
+                          : 'Multi-stage DSP & Adaptive Voice Gate',
                         type: 'info',
                       });
                     }}
@@ -1009,10 +1025,12 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         ? 'bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30'
                         : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
                     )}
-                    title="Studio DSP Noise Cancellation & Voice Gate"
+                    title={voice.isLiveKitActive ? "Krisp AI Noise Cancellation (LiveKit Cloud)" : "Studio DSP Noise Cancellation & Voice Gate"}
                   >
                     <Sparkles className="w-5 h-5" />
-                    <span className="text-xs font-semibold hidden sm:inline">Noise Filter</span>
+                    <span className="text-xs font-semibold hidden sm:inline">
+                      {voice.isLiveKitActive ? 'Krisp AI' : 'Noise Filter'}
+                    </span>
                   </button>
 
                   {/* Soundboard Trigger */}

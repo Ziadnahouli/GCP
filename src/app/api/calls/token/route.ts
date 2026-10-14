@@ -97,7 +97,7 @@ export async function POST(request: Request) {
     // 3. LiveKit credentials
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
-    const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
+    const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
 
     if (!apiKey || !apiSecret || !wsUrl || wsUrl.includes('your-project')) {
       return NextResponse.json(

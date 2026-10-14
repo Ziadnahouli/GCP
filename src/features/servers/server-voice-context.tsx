@@ -6,6 +6,14 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { SoundboardClip, soundboardEngine } from '@/lib/soundboard/audio-engine';
 import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
 import { createStudioAudioPipeline, StudioAudioPipeline } from '@/lib/webrtc/audio-dsp';
+import {
+  Room,
+  RoomEvent,
+  Track,
+  createLocalAudioTrack,
+  RemoteTrack,
+  RemoteParticipant,
+} from 'livekit-client';
 
 export interface VoiceParticipant {
   id: string;
@@ -28,6 +36,7 @@ export interface ServerVoiceContextType {
   activeServerName: string | null;
   isVoiceConnected: boolean;
   isConnecting: boolean;
+  isLiveKitActive: boolean;
   isMicMuted: boolean;
   isDeafened: boolean;
   isCameraOn: boolean;
@@ -69,6 +78,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
   const [isVoiceConnected, setIsVoiceConnected] = React.useState(false);
   const [isConnecting, setIsConnecting] = React.useState(false);
+  const [isLiveKitActive, setIsLiveKitActive] = React.useState(false);
+  const livekitRoomRef = React.useRef<Room | null>(null);
+  const krispProcessorRef = React.useRef<any>(null);
   const [isMicMuted, setIsMicMuted] = React.useState(false);
   const [isDeafened, setIsDeafened] = React.useState(false);
   const [isCameraOn, setIsCameraOn] = React.useState(false);
@@ -264,6 +276,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     setRemoteParticipants([]);
     remoteVideoStreamsRef.current.clear();
     setRemoteVideoStreams(new Map());
+
+    if (livekitRoomRef.current) {
+      try {
+        livekitRoomRef.current.disconnect();
+      } catch {}
+      livekitRoomRef.current = null;
+    }
+    krispProcessorRef.current = null;
+    setIsLiveKitActive(false);
   }, []);
 
   // WebRTC Mesh Peer Connection Manager
@@ -567,6 +588,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       dspPipelineRef.current = null;
     }
 
+    if (livekitRoomRef.current) {
+      try {
+        livekitRoomRef.current.disconnect();
+      } catch {}
+      livekitRoomRef.current = null;
+    }
+    krispProcessorRef.current = null;
+    setIsLiveKitActive(false);
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
@@ -816,8 +846,182 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         console.warn('[ServerVoice] Error joining server voice presence:', srvErr);
       }
 
-      // 3. Connect WebRTC signaling room channel
+      // 3. Connect LiveKit Cloud SFU with Krisp AI Filter
       const cleanChanId = channelId.toLowerCase().trim();
+      try {
+        const tokenRes = await fetch('/api/calls/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            serverId,
+            channelId,
+            roomName: `nexus-voice-${cleanChanId}`,
+          }),
+        });
+
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          if (tokenData.isConfigured && tokenData.token && tokenData.url) {
+            console.log('[LiveKit] Connecting to LiveKit Cloud SFU at', tokenData.url);
+            const lkRoom = new Room({
+              adaptiveStream: true,
+              dynacast: true,
+            });
+            livekitRoomRef.current = lkRoom;
+
+            lkRoom.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant: RemoteParticipant) => {
+              const peerId = participant.identity;
+              console.log('[LiveKit] Track subscribed:', peerId, track.kind, track.source);
+
+              if (track.kind === Track.Kind.Audio) {
+                const el = track.attach();
+                el.id = `remote-livekit-audio-${peerId}`;
+                el.muted = isDeafenedRef.current;
+                audioElementsRef.current.set(peerId, el);
+              } else if (track.kind === Track.Kind.Video) {
+                if (track.mediaStreamTrack) {
+                  const vStream = new MediaStream([track.mediaStreamTrack]);
+                  remoteVideoStreamsRef.current.set(peerId, vStream);
+                  setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
+
+                  const isScreen = track.source === Track.Source.ScreenShare;
+                  const isCam = track.source === Track.Source.Camera;
+                  const existing = peersMapRef.current.get(peerId);
+                  if (existing) {
+                    peersMapRef.current.set(peerId, {
+                      ...existing,
+                      is_screen_sharing: isScreen || existing.is_screen_sharing,
+                      is_camera_on: isCam || existing.is_camera_on,
+                    });
+                    setRemoteParticipants(Array.from(peersMapRef.current.values()));
+                  }
+
+                  track.mediaStreamTrack.onended = () => {
+                    remoteVideoStreamsRef.current.delete(peerId);
+                    setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
+                    const peer = peersMapRef.current.get(peerId);
+                    if (peer) {
+                      peersMapRef.current.set(peerId, {
+                        ...peer,
+                        is_screen_sharing: isScreen ? false : peer.is_screen_sharing,
+                        is_camera_on: isCam ? false : peer.is_camera_on,
+                      });
+                      setRemoteParticipants(Array.from(peersMapRef.current.values()));
+                    }
+                  };
+                }
+              }
+            });
+
+            lkRoom.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, pub, participant: RemoteParticipant) => {
+              const peerId = participant.identity;
+              if (track.kind === Track.Kind.Audio) {
+                track.detach();
+                audioElementsRef.current.delete(peerId);
+              } else if (track.kind === Track.Kind.Video) {
+                remoteVideoStreamsRef.current.delete(peerId);
+                setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
+                const peer = peersMapRef.current.get(peerId);
+                if (peer) {
+                  peersMapRef.current.set(peerId, {
+                    ...peer,
+                    is_screen_sharing: track.source === Track.Source.ScreenShare ? false : peer.is_screen_sharing,
+                    is_camera_on: track.source === Track.Source.Camera ? false : peer.is_camera_on,
+                  });
+                  setRemoteParticipants(Array.from(peersMapRef.current.values()));
+                }
+              }
+            });
+
+            lkRoom.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
+              const peerId = participant.identity;
+              if (!peersMapRef.current.has(peerId)) {
+                peersMapRef.current.set(peerId, {
+                  id: peerId,
+                  user_id: peerId,
+                  display_name: participant.name || 'Squadmate',
+                  avatar_url: null,
+                  role: 'Squadmate',
+                  is_speaking: false,
+                  is_muted: false,
+                  is_deafened: false,
+                  is_camera_on: false,
+                  is_screen_sharing: false,
+                  audio_level: 0,
+                });
+                setRemoteParticipants(Array.from(peersMapRef.current.values()));
+              }
+            });
+
+            lkRoom.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+              const peerId = participant.identity;
+              peersMapRef.current.delete(peerId);
+              remoteVideoStreamsRef.current.delete(peerId);
+              setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
+              setRemoteParticipants(Array.from(peersMapRef.current.values()));
+            });
+
+            lkRoom.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+              const activeIds = new Set(speakers.map((s) => s.identity));
+              const u = userRef.current;
+              if (u && activeIds.has(u.id)) {
+                if (!isSpeakingRef.current) {
+                  isSpeakingRef.current = true;
+                  setIsSpeaking(true);
+                }
+              }
+              peersMapRef.current.forEach((peer, peerId) => {
+                const spk = activeIds.has(peerId);
+                if (peer.is_speaking !== spk) {
+                  peersMapRef.current.set(peerId, { ...peer, is_speaking: spk });
+                }
+              });
+              const remotes = Array.from(peersMapRef.current.values());
+              setRemoteParticipants(remotes);
+            });
+
+            await lkRoom.connect(tokenData.url, tokenData.token);
+            setIsLiveKitActive(true);
+
+            // Publish local audio with Krisp processor
+            try {
+              const localAudioTrack = await createLocalAudioTrack({
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              });
+
+              if (typeof window !== 'undefined') {
+                try {
+                  const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
+                  if (isKrispNoiseFilterSupported()) {
+                    const krisp = KrispNoiseFilter();
+                    await localAudioTrack.setProcessor(krisp);
+                    krispProcessorRef.current = krisp;
+                    console.log('[LiveKit] Krisp AI noise filter activated!');
+                  }
+                } catch (krispErr) {
+                  console.warn('[LiveKit] Krisp processor setup warning:', krispErr);
+                }
+              }
+
+              if (isMicMutedRef.current) {
+                try {
+                  localAudioTrack.mute();
+                } catch {}
+              }
+
+              await lkRoom.localParticipant.publishTrack(localAudioTrack);
+            } catch (pubErr) {
+              console.warn('[LiveKit] Could not publish local audio:', pubErr);
+            }
+          }
+        }
+      } catch (lkErr) {
+        console.warn('[LiveKit] LiveKit room initialization warning:', lkErr);
+      }
+
+      // 4. Connect WebRTC signaling room channel
       const topic = `voice_room_${cleanChanId}`;
 
       const roomChannel = supabase.channel(topic, {
@@ -1100,6 +1304,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       heartbeatIntervalRef.current = null;
     }
 
+    if (livekitRoomRef.current) {
+      try {
+        livekitRoomRef.current.disconnect();
+      } catch {}
+      livekitRoomRef.current = null;
+    }
+    krispProcessorRef.current = null;
+    setIsLiveKitActive(false);
+
     if (realtimeChannelRef.current) {
       try {
         if (userRef.current) {
@@ -1162,6 +1375,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       });
     }
 
+    if (livekitRoomRef.current?.localParticipant) {
+      try {
+        livekitRoomRef.current.localParticipant.setMicrophoneEnabled(!nextMuted);
+      } catch (lkErr) {
+        console.warn('[LiveKit] Error setting mic state:', lkErr);
+      }
+    }
+
     if (nextMuted) {
       setIsSpeaking(false);
       isSpeakingRef.current = false;
@@ -1199,6 +1420,18 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       }
       setIsCameraOn(false);
       isCameraOnRef.current = false;
+
+      if (livekitRoomRef.current?.localParticipant) {
+        try {
+          const pub = livekitRoomRef.current.localParticipant.getTrackPublication(Track.Source.Camera);
+          if (pub && pub.track) {
+            livekitRoomRef.current.localParticipant.unpublishTrack(pub.track);
+          }
+        } catch (lkErr) {
+          console.warn('[LiveKit] Error unpublishing camera:', lkErr);
+        }
+      }
+
       const fallbackTrack = screenStreamRef.current?.getVideoTracks()[0] || null;
       peerConnectionsRef.current.forEach((pc) => {
         const senders = pc.getSenders();
@@ -1219,6 +1452,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         setIsCameraOn(true);
         isCameraOnRef.current = true;
         const vTrack = vStream.getVideoTracks()[0];
+
+        if (livekitRoomRef.current?.localParticipant && vTrack) {
+          try {
+            await livekitRoomRef.current.localParticipant.publishTrack(vTrack, { source: Track.Source.Camera });
+          } catch (lkErr) {
+            console.warn('[LiveKit] Error publishing camera track:', lkErr);
+          }
+        }
+
         peerConnectionsRef.current.forEach((pc) => {
           const senders = pc.getSenders();
           const videoSender = senders.find((s) => s.track?.kind === 'video');
@@ -1245,6 +1487,18 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       }
       setIsScreenSharing(false);
       isScreenSharingRef.current = false;
+
+      if (livekitRoomRef.current?.localParticipant) {
+        try {
+          const pub = livekitRoomRef.current.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+          if (pub && pub.track) {
+            livekitRoomRef.current.localParticipant.unpublishTrack(pub.track);
+          }
+        } catch (lkErr) {
+          console.warn('[LiveKit] Error unpublishing screen share:', lkErr);
+        }
+      }
+
       const fallbackTrack = videoStreamRef.current?.getVideoTracks()[0] || null;
       peerConnectionsRef.current.forEach((pc) => {
         const senders = pc.getSenders();
@@ -1271,6 +1525,18 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             setScreenStream(null);
             setIsScreenSharing(false);
             isScreenSharingRef.current = false;
+
+            if (livekitRoomRef.current?.localParticipant) {
+              try {
+                const pub = livekitRoomRef.current.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+                if (pub && pub.track) {
+                  livekitRoomRef.current.localParticipant.unpublishTrack(pub.track);
+                }
+              } catch (lkErr) {
+                console.warn('[LiveKit] Error unpublishing screen share onended:', lkErr);
+              }
+            }
+
             const camTrack = videoStreamRef.current?.getVideoTracks()[0] || null;
             peerConnectionsRef.current.forEach((pc) => {
               const senders = pc.getSenders();
@@ -1287,6 +1553,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         screenStreamRef.current = sStream;
         setIsScreenSharing(true);
         isScreenSharingRef.current = true;
+
+        if (livekitRoomRef.current?.localParticipant && videoTrack) {
+          try {
+            await livekitRoomRef.current.localParticipant.publishTrack(videoTrack, { source: Track.Source.ScreenShare });
+          } catch (lkErr) {
+            console.warn('[LiveKit] Error publishing screen share:', lkErr);
+          }
+        }
+
         peerConnectionsRef.current.forEach((pc) => {
           const senders = pc.getSenders();
           const videoSender = senders.find((s) => s.track?.kind === 'video');
@@ -1307,6 +1582,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const toggleNoiseSuppression = React.useCallback(() => {
     const next = !isNoiseSuppressionEnabled;
     setIsNoiseSuppressionEnabled(next);
+
+    if (krispProcessorRef.current) {
+      try {
+        krispProcessorRef.current.setEnabled(next);
+      } catch (krispErr) {
+        console.warn('[Krisp] Error toggling filter state:', krispErr);
+      }
+    }
 
     if (dspPipelineRef.current) {
       dspPipelineRef.current.setNoiseSuppression(next);
@@ -1348,6 +1631,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     activeServerName,
     isVoiceConnected,
     isConnecting,
+    isLiveKitActive,
     isMicMuted,
     isDeafened,
     isCameraOn,

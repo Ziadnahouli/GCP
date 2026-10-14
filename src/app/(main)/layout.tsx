@@ -449,6 +449,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         isCameraOn={call.isCameraOn}
         isScreenSharing={call.isScreenSharing}
         isNoiseSuppressionEnabled={call.isNoiseSuppressionEnabled}
+        isLiveKitActive={call.isLiveKitActive}
         participants={call.participants}
         stats={call.stats}
         localStream={call.localStream}

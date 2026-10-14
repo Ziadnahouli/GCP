@@ -849,13 +849,20 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       // 3. Connect LiveKit Cloud SFU with Krisp AI Filter
       const cleanChanId = channelId.toLowerCase().trim();
       try {
+        const session = (await supabase.auth.getSession())?.data?.session;
         const tokenRes = await fetch('/api/calls/token', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          },
+          credentials: 'include',
           body: JSON.stringify({
             serverId,
             channelId,
             roomName: `nexus-voice-${cleanChanId}`,
+            userId: currentUser.id,
+            userName: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
           }),
         });
 
@@ -877,6 +884,10 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 const el = track.attach();
                 el.id = `remote-livekit-audio-${peerId}`;
                 el.muted = isDeafenedRef.current;
+                if (!document.body.contains(el)) {
+                  el.style.display = 'none';
+                  document.body.appendChild(el);
+                }
                 audioElementsRef.current.set(peerId, el);
               } else if (track.kind === Track.Kind.Video) {
                 if (track.mediaStreamTrack) {
@@ -916,7 +927,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             lkRoom.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, pub, participant: RemoteParticipant) => {
               const peerId = participant.identity;
               if (track.kind === Track.Kind.Audio) {
-                track.detach();
+                try {
+                  track.detach().forEach((el) => {
+                    try { el.remove(); } catch {}
+                  });
+                } catch {}
                 audioElementsRef.current.delete(peerId);
               } else if (track.kind === Track.Kind.Video) {
                 remoteVideoStreamsRef.current.delete(peerId);
@@ -985,11 +1000,18 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
             // Publish local audio with Krisp processor
             try {
-              const localAudioTrack = await createLocalAudioTrack({
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-              });
+              let localAudioTrack: any;
+              const existingAudioTrack = stream?.getAudioTracks()[0] || localStreamRef.current?.getAudioTracks()[0];
+              if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
+                const { LocalAudioTrack } = await import('livekit-client');
+                localAudioTrack = new LocalAudioTrack(existingAudioTrack);
+              } else {
+                localAudioTrack = await createLocalAudioTrack({
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                });
+              }
 
               if (typeof window !== 'undefined') {
                 try {
@@ -1016,6 +1038,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               console.warn('[LiveKit] Could not publish local audio:', pubErr);
             }
           }
+        } else {
+          const errText = await tokenRes.text();
+          console.warn('[LiveKit] Token route response not OK:', tokenRes.status, errText);
         }
       } catch (lkErr) {
         console.warn('[LiveKit] LiveKit room initialization warning:', lkErr);

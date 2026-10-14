@@ -39,6 +39,7 @@ interface CallModalProps {
   isCameraOn: boolean;
   isScreenSharing: boolean;
   isNoiseSuppressionEnabled?: boolean;
+  isLiveKitActive?: boolean;
   participants: CallParticipant[];
   stats: DiagnosticsStats;
   localStream?: MediaStream | null;
@@ -190,6 +191,7 @@ export function CallModal({
   isCameraOn,
   isScreenSharing,
   isNoiseSuppressionEnabled = true,
+  isLiveKitActive = false,
   participants,
   stats,
   localStream,
@@ -351,11 +353,15 @@ export function CallModal({
               ? 'Video Stream'
               : 'Voice Call'}
           </span>
-          {isNoiseSuppressionEnabled && (
+          {isLiveKitActive ? (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono ml-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+              • LiveKit SFU • Krisp AI
+            </span>
+          ) : isNoiseSuppressionEnabled ? (
             <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400/80 font-mono ml-1">
               • AI Noise Filter
             </span>
-          )}
+          ) : null}
         </div>
 
         <div className="flex items-center gap-1">
@@ -668,7 +674,15 @@ export function CallModal({
                   ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
                   : 'bg-white/[0.05] text-muted-foreground hover:bg-white/[0.08]'
               )}
-              title={isNoiseSuppressionEnabled ? 'Noise Filter ON' : 'Noise Filter OFF'}
+              title={
+                isLiveKitActive
+                  ? isNoiseSuppressionEnabled
+                    ? 'Krisp AI Noise Filter ON'
+                    : 'Krisp AI Noise Filter OFF'
+                  : isNoiseSuppressionEnabled
+                  ? 'Noise Filter ON'
+                  : 'Noise Filter OFF'
+              }
               aria-label={isNoiseSuppressionEnabled ? 'Disable noise filter' : 'Enable noise filter'}
             >
               <ShieldCheck className="w-4 h-4" />

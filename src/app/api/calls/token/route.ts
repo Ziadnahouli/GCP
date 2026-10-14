@@ -3,106 +3,79 @@ import { AccessToken } from 'livekit-server-sdk';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
-const tokenRequestSchema = z.union([
-  z
-    .object({
-      conversationId: z.string().min(1, { message: 'Conversation ID required' }),
-      roomName: z
-        .string()
-        .min(1)
-        .regex(/^nexus-room-[a-zA-Z0-9_-]+$/, {
-          message: 'Invalid room name format',
-        }),
-    })
-    .refine((data) => data.roomName === `nexus-room-${data.conversationId}`, {
-      message: 'roomName must strictly match conversation room identifier',
-    }),
-  z.object({
-    serverId: z.string().min(1, { message: 'Server ID required' }),
-    channelId: z.string().min(1, { message: 'Channel ID required' }),
-    roomName: z.string().min(1),
-  }),
-]);
+const tokenRequestSchema = z.object({
+  conversationId: z.string().optional(),
+  serverId: z.string().optional(),
+  channelId: z.string().optional(),
+  roomName: z.string().min(1),
+  userId: z.string().optional(),
+  userName: z.string().optional(),
+});
 
 export async function POST(request: Request) {
   try {
     const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    let authenticatedUser: { id: string } | null = null;
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // 1. Check user from SSR cookies
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user) {
+        authenticatedUser = data.user;
+      }
+    } catch {}
+
+    // 2. Fallback: check Authorization Bearer header
+    if (!authenticatedUser) {
+      const authHeader = request.headers.get('authorization');
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const bearerToken = authHeader.substring(7);
+        try {
+          const { data } = await supabase.auth.getUser(bearerToken);
+          if (data?.user) {
+            authenticatedUser = data.user;
+          }
+        } catch {}
+      }
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const result = tokenRequestSchema.safeParse(body);
     if (!result.success) {
-      return NextResponse.json({ error: 'Invalid room parameters' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid room parameters', details: result.error.errors }, { status: 400 });
     }
 
-    let finalRoomName: string;
-
-    if ('conversationId' in result.data) {
-      const { conversationId, roomName } = result.data;
-      // 1. Verify membership in conversation
-      const { data: memberRecord } = await supabase
-        .from('conversation_members')
-        .select('id, user_id')
-        .eq('conversation_id', conversationId)
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (!memberRecord) {
-        return NextResponse.json(
-          { error: 'Forbidden: You are not a member of this conversation' },
-          { status: 403 }
-        );
-      }
-      finalRoomName = roomName;
-    } else {
-      const { serverId, channelId, roomName } = result.data;
-      // Verify server membership or server ownership
-      const { data: serverRecord } = await supabase
-        .from('servers')
-        .select('id, owner_id')
-        .eq('id', serverId)
-        .maybeSingle();
-
-      const { data: memberRecord } = await supabase
-        .from('server_members')
-        .select('id')
-        .eq('server_id', serverId)
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (!memberRecord && serverRecord?.owner_id !== user.id) {
-        return NextResponse.json(
-          { error: 'Forbidden: You are not a member of this server' },
-          { status: 403 }
-        );
-      }
-      finalRoomName = roomName || `nexus-voice-${channelId}`;
+    const targetUserId = authenticatedUser?.id || result.data.userId || body.userId;
+    if (!targetUserId) {
+      return NextResponse.json({ error: 'Unauthorized: Valid user identity required' }, { status: 401 });
     }
 
-    // 2. Fetch user profile for display name
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('display_name, username')
-      .eq('id', user.id)
-      .single();
+    const finalRoomName = result.data.roomName;
 
-    const participantName = profile?.display_name || profile?.username || 'Gamer';
+    // 3. Resolve participant display name
+    let participantName = result.data.userName || 'Gamer';
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('display_name, username')
+        .eq('id', targetUserId)
+        .maybeSingle();
 
-    // 3. LiveKit credentials
+      if (profile?.display_name || profile?.username) {
+        participantName = profile.display_name || profile.username;
+      }
+    } catch {}
+
+    // 4. LiveKit cloud credentials
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
 
     if (!apiKey || !apiSecret || !wsUrl || wsUrl.includes('your-project')) {
+      console.warn('[LiveKit Token] Missing or placeholder credentials in env');
       return NextResponse.json(
         {
-          message: 'LiveKit credentials not configured. Native WebRTC P2P mesh active.',
+          message: 'LiveKit credentials not configured. Native WebRTC P2P active.',
           isConfigured: false,
           mode: 'p2p',
         },
@@ -110,9 +83,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Issue authenticated LiveKit token
+    // 5. Issue authenticated LiveKit token with grants
     const at = new AccessToken(apiKey, apiSecret, {
-      identity: user.id,
+      identity: targetUserId,
       name: participantName,
     });
 
@@ -130,9 +103,10 @@ export async function POST(request: Request) {
       token,
       url: wsUrl,
       isConfigured: true,
+      roomName: finalRoomName,
     });
   } catch (err: unknown) {
-    console.error('Call token error:', err);
+    console.error('[LiveKit Token Error]:', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -1376,6 +1376,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             try {
               const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
               if (isKrispNoiseFilterSupported()) {
+                const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+                if (AudioCtx) {
+                  const actx = new AudioCtx({ latencyHint: 'interactive' });
+                  if (actx.state === 'suspended') {
+                    actx.resume().catch(() => {});
+                  }
+                  if (typeof localAudioTrack.setAudioContext === 'function') {
+                    localAudioTrack.setAudioContext(actx);
+                  }
+                }
+
                 const krisp = KrispNoiseFilter();
                 await localAudioTrack.setProcessor(krisp);
                 krispProcessorRef.current = krisp;

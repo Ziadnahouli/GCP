@@ -80,9 +80,10 @@ export function ServerSidebar({
         if (Array.isArray(presences) && presences.length > 0) {
           const latest: any = presences[presences.length - 1];
           if (latest?.channel_id && latest?.user_id) {
-            const list = byChannel.get(latest.channel_id) || [];
+            const cleanChanId = (latest.channel_id || '').toLowerCase().trim();
+            const list = byChannel.get(cleanChanId) || [];
             if (!list.some((p) => p.user_id === latest.user_id)) {
-              list.push({
+              const part: VoiceParticipant = {
                 id: latest.user_id,
                 user_id: latest.user_id,
                 display_name: latest.display_name || 'Squadmate',
@@ -94,7 +95,9 @@ export function ServerSidebar({
                 is_camera_on: false,
                 is_screen_sharing: false,
                 audio_level: 0,
-              });
+              };
+              list.push(part);
+              byChannel.set(cleanChanId, list);
               byChannel.set(latest.channel_id, list);
             }
           }
@@ -110,9 +113,10 @@ export function ServerSidebar({
       .on('presence', { event: 'leave' }, updateFromPresence)
       .on('broadcast', { event: 'voice_state_update' }, ({ payload }: any) => {
         if (!payload?.channel_id || !payload?.user_id) return;
+        const cleanChanId = (payload.channel_id || '').toLowerCase().trim();
         setRemoteOccupants((prev) => {
           const next = new Map(prev);
-          const list = next.get(payload.channel_id);
+          const list = next.get(cleanChanId) || next.get(payload.channel_id);
           if (list) {
             const updated = list.map((p) => {
               if (p.user_id === payload.user_id) {
@@ -125,6 +129,7 @@ export function ServerSidebar({
               }
               return p;
             });
+            next.set(cleanChanId, updated);
             next.set(payload.channel_id, updated);
           }
           return next;
@@ -155,17 +160,22 @@ export function ServerSidebar({
   // Merge server-wide remote presence with local realtime voice context
   const getChannelOccupants = React.useCallback(
     (channelId: string): VoiceParticipant[] => {
-      const serverList = remoteOccupants.get(channelId) || [];
+      const cleanChanId = (channelId || '').toLowerCase().trim();
+      const serverList = remoteOccupants.get(cleanChanId) || remoteOccupants.get(channelId) || [];
       const occupantsMap = new Map<string, VoiceParticipant>();
 
       // Populate from presence
       serverList.forEach((p) => occupantsMap.set(p.user_id, p));
 
+      // Also merge any occupants known from serverVoice.channelOccupants (LiveKit room state)
+      const contextOccupants = serverVoice.channelOccupants.get(cleanChanId) || serverVoice.channelOccupants.get(channelId) || [];
+      contextOccupants.forEach((p) => occupantsMap.set(p.user_id, p));
+
       // If current user is connected to this voice channel, overlay local realtime voice state
       if (
         serverVoice.isVoiceConnected &&
-        serverVoice.activeServerId === server.id &&
-        serverVoice.activeChannelId === channelId &&
+        (serverVoice.activeServerId || '').toLowerCase().trim() === (server.id || '').toLowerCase().trim() &&
+        (serverVoice.activeChannelId || '').toLowerCase().trim() === cleanChanId &&
         user
       ) {
         occupantsMap.set(user.id, {

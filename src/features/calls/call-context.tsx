@@ -77,7 +77,13 @@ class RingtonePlayer {
   private static activeInstance: RingtonePlayer | null = null;
   private ctx: AudioContext | null = null;
   private intervalId: NodeJS.Timeout | null = null;
+  private activeGain: GainNode | null = null;
+  private activeOsc: OscillatorNode | null = null;
   private isRunning: boolean = false;
+
+  static isPlaying(): boolean {
+    return Boolean(RingtonePlayer.activeInstance && RingtonePlayer.activeInstance.isRunning);
+  }
 
   static stopAll() {
     if (RingtonePlayer.activeInstance) {
@@ -106,19 +112,24 @@ class RingtonePlayer {
         if (this.ctx.state === 'suspended') {
           this.ctx.resume().catch(() => {});
         }
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.35);
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          this.activeOsc = osc;
+          this.activeGain = gain;
 
-        gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.35);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.35);
 
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.4);
+          gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.35);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.4);
+        } catch {}
       };
 
       playTone();
@@ -131,6 +142,20 @@ class RingtonePlayer {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
+    }
+    if (this.activeGain && this.ctx) {
+      try {
+        this.activeGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.activeGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      } catch {}
+      this.activeGain = null;
+    }
+    if (this.activeOsc) {
+      try {
+        this.activeOsc.stop();
+        this.activeOsc.disconnect();
+      } catch {}
+      this.activeOsc = null;
     }
     if (this.ctx) {
       try {
@@ -206,6 +231,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const remoteStreamRef = React.useRef<MediaStream | null>(null);
   const screenStreamRef = React.useRef<MediaStream | null>(null);
   const ringtoneRef = React.useRef<RingtonePlayer | null>(null);
+  const isStartingCallRef = React.useRef<boolean>(false);
   const ringingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const iceWatchdogTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const iceRestartingRef = React.useRef<boolean>(false);
@@ -284,9 +310,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         outboundQueueRef.current.set(targetUserId, queue);
       }
 
-      const existingChannel = outboundChannelsRef.current.get(targetUserId);
-      if (existingChannel && existingChannel.state === 'joined') {
-        existingChannel
+      let channelToUse = outboundChannelsRef.current.get(targetUserId);
+
+      // If existing channel is closed or errored from prior disconnected call, remove and re-subscribe cleanly
+      if (channelToUse && channelToUse.state !== 'joined' && channelToUse.state !== 'joining') {
+        try {
+          supabase.removeChannel(channelToUse);
+        } catch {}
+        outboundChannelsRef.current.delete(targetUserId);
+        channelToUse = undefined;
+      }
+
+      if (channelToUse && channelToUse.state === 'joined') {
+        channelToUse
           .send({
             type: 'broadcast',
             event,
@@ -301,7 +337,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       // If channel is joining or not yet created, queue signal for delivery on join
       queue.push({ event, payload });
 
-      if (!existingChannel) {
+      if (!channelToUse) {
         const ch = supabase.channel(`user-signals-${targetUserId}`);
         outboundChannelsRef.current.set(targetUserId, ch);
 
@@ -622,12 +658,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       pcRef.current = null;
     }
 
-    if (roomChannelRef.current && supabase) {
-      try {
-        supabase.removeChannel(roomChannelRef.current);
-      } catch {}
-      roomChannelRef.current = null;
+    if (supabase) {
+      outboundChannelsRef.current.forEach((ch) => {
+        try {
+          supabase.removeChannel(ch);
+        } catch {}
+      });
     }
+    outboundChannelsRef.current.clear();
+    isStartingCallRef.current = false;
 
     if (remoteAudioElementRef.current) {
       remoteAudioElementRef.current.pause();
@@ -1376,9 +1415,37 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             try {
               const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
               if (isKrispNoiseFilterSupported()) {
+                // Safeguard against OverconstrainedError in Chromium on Windows:
+                // wrap track applyConstraints to strip unsupported sampleRate or voiceIsolation
+                const rawTrack: MediaStreamTrack | undefined = localAudioTrack.mediaStreamTrack || existingAudioTrack;
+                if (rawTrack && typeof (rawTrack as any).applyConstraints === 'function') {
+                  const origApply = (rawTrack as any).applyConstraints.bind(rawTrack);
+                  (rawTrack as any).applyConstraints = async (constraints: any) => {
+                    try {
+                      return await origApply(constraints);
+                    } catch (err: any) {
+                      if (err?.name === 'OverconstrainedError' || (err && String(err).includes('constraint'))) {
+                        try {
+                          const relaxed = { ...constraints };
+                          delete relaxed.sampleRate;
+                          delete relaxed.voiceIsolation;
+                          return await origApply(relaxed);
+                        } catch {
+                          return;
+                        }
+                      }
+                      throw err;
+                    }
+                  };
+                }
+
                 const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
                 if (AudioCtx) {
-                  const actx = new AudioCtx({ latencyHint: 'interactive' });
+                  const trackSampleRate = rawTrack?.getSettings?.()?.sampleRate;
+                  const actx = new AudioCtx({
+                    sampleRate: trackSampleRate || 48000,
+                    latencyHint: 'interactive',
+                  });
                   if (actx.state === 'suspended') {
                     actx.resume().catch(() => {});
                   }
@@ -1797,8 +1864,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setActiveConversationId(payload.conversationId);
         setPeerUserId(payload.callerId);
 
-        // Start ringtone once
-        if (!ringtoneRef.current) {
+        // Start ringtone once strictly
+        if (!ringtoneRef.current && !RingtonePlayer.isPlaying()) {
           const player = new RingtonePlayer();
           player.start();
           ringtoneRef.current = player;
@@ -1974,10 +2041,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (callStatusRef.current !== 'idle') {
+    if (callStatusRef.current !== 'idle' || isStartingCallRef.current) {
       console.log('[CallSignaling] Cannot start call while status is:', callStatusRef.current);
       return;
     }
+    isStartingCallRef.current = true;
 
     let recipientId = targetUserId;
     if (!recipientId || recipientId === conversationId) {
@@ -1992,6 +2060,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (!recipientId || recipientId === conversationId) {
+      isStartingCallRef.current = false;
       toast({
         title: 'Call Failed',
         description: 'Could not find squadmate to call.',
@@ -2372,11 +2441,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       },
     ]);
 
-    if (!ringtoneRef.current) {
+    if (!ringtoneRef.current && !RingtonePlayer.isPlaying()) {
       const player = new RingtonePlayer();
       player.start();
       ringtoneRef.current = player;
     }
+    isStartingCallRef.current = false;
 
     // Ringing timeout (35s)
     ringingTimerRef.current = setTimeout(() => {

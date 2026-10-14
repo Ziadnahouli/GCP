@@ -832,7 +832,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                   is_screen_sharing: false,
                   audio_level: 0,
                 });
-                setRemoteParticipants(Array.from(peersMapRef.current.values()));
+                const remotes = Array.from(peersMapRef.current.values());
+                setRemoteParticipants(remotes);
+                updateChannelOccupantsMap(channelId, [getMyVoiceState(), ...remotes]);
               }
             });
 
@@ -841,7 +843,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               peersMapRef.current.delete(peerId);
               remoteVideoStreamsRef.current.delete(peerId);
               setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
-              setRemoteParticipants(Array.from(peersMapRef.current.values()));
+              const remotes = Array.from(peersMapRef.current.values());
+              setRemoteParticipants(remotes);
+              updateChannelOccupantsMap(channelId, [getMyVoiceState(), ...remotes]);
             });
 
             lkRoom.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
@@ -869,6 +873,29 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             setIsVoiceConnected(true);
             setIsConnecting(false);
 
+            // Populate any existing participants already present in the room upon connection
+            lkRoom.remoteParticipants.forEach((participant: RemoteParticipant) => {
+              const peerId = participant.identity;
+              if (!peersMapRef.current.has(peerId)) {
+                peersMapRef.current.set(peerId, {
+                  id: peerId,
+                  user_id: peerId,
+                  display_name: participant.name || 'Squadmate',
+                  avatar_url: null,
+                  role: 'Squadmate',
+                  is_speaking: false,
+                  is_muted: false,
+                  is_deafened: false,
+                  is_camera_on: false,
+                  is_screen_sharing: false,
+                  audio_level: 0,
+                });
+              }
+            });
+            const initialRemotes = Array.from(peersMapRef.current.values());
+            setRemoteParticipants(initialRemotes);
+            updateChannelOccupantsMap(channelId, [getMyVoiceState(), ...initialRemotes]);
+
             // Publish local audio track with Krisp AI noise filter
             try {
               let localAudioTrack: any;
@@ -893,9 +920,37 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 try {
                   const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
                   if (isKrispNoiseFilterSupported()) {
+                    // Safeguard against OverconstrainedError in Chromium on Windows:
+                    // wrap track applyConstraints to strip unsupported sampleRate or voiceIsolation
+                    const rawTrack: MediaStreamTrack | undefined = localAudioTrack.mediaStreamTrack || existingAudioTrack;
+                    if (rawTrack && typeof (rawTrack as any).applyConstraints === 'function') {
+                      const origApply = (rawTrack as any).applyConstraints.bind(rawTrack);
+                      (rawTrack as any).applyConstraints = async (constraints: any) => {
+                        try {
+                          return await origApply(constraints);
+                        } catch (err: any) {
+                          if (err?.name === 'OverconstrainedError' || (err && String(err).includes('constraint'))) {
+                            try {
+                              const relaxed = { ...constraints };
+                              delete relaxed.sampleRate;
+                              delete relaxed.voiceIsolation;
+                              return await origApply(relaxed);
+                            } catch {
+                              return;
+                            }
+                          }
+                          throw err;
+                        }
+                      };
+                    }
+
                     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
                     if (AudioCtx) {
-                      const actx = audioContextRef.current || new AudioCtx({ latencyHint: 'interactive' });
+                      const trackSampleRate = rawTrack?.getSettings?.()?.sampleRate;
+                      const actx = audioContextRef.current || new AudioCtx({
+                        sampleRate: trackSampleRate || 48000,
+                        latencyHint: 'interactive',
+                      });
                       audioContextRef.current = actx;
                       if (actx.state === 'suspended') {
                         actx.resume().catch(() => {});
@@ -1061,19 +1116,28 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           });
           serverRealtimeChannelRef.current = serverPresenceChannel;
 
-          serverPresenceChannel.subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              serverPresenceChannel.track({
-                channel_id: channelId,
-                user_id: currentUser.id,
-                display_name: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
-                avatar_url: profileRef.current?.avatar_url || null,
-                is_speaking: false,
-                is_muted: isMicMutedRef.current,
-                is_deafened: isDeafenedRef.current,
-              }).catch(() => {});
-            }
-          });
+          const doTrack = () => {
+            const normalizedChanId = (channelId || '').toLowerCase().trim();
+            serverPresenceChannel.track({
+              channel_id: normalizedChanId,
+              user_id: currentUser.id,
+              display_name: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
+              avatar_url: profileRef.current?.avatar_url || null,
+              is_speaking: false,
+              is_muted: isMicMutedRef.current,
+              is_deafened: isDeafenedRef.current,
+            }).catch(() => {});
+          };
+
+          if (serverPresenceChannel.state === 'joined') {
+            doTrack();
+          } else {
+            serverPresenceChannel.subscribe((status) => {
+              if (status === 'SUBSCRIBED') {
+                doTrack();
+              }
+            });
+          }
         } catch (srvErr) {
           console.warn('[ServerVoice] Error joining server voice presence:', srvErr);
         }

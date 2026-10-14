@@ -885,7 +885,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-12 max-w-sm mx-auto space-y-4">
+                  <div className="text-center py-8 max-w-md mx-auto space-y-4">
                     <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-glow-sm">
                       <Volume2 className="w-8 h-8" />
                     </div>
@@ -895,6 +895,34 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         Connect to {channel.name} to talk with teammates using encrypted WebRTC voice.
                       </p>
                     </div>
+
+                    {/* Preview of Teammates Already in Lounge */}
+                    {(() => {
+                      const cleanId = (channel.id || '').toLowerCase().trim();
+                      const currentOccupants = voice.channelOccupants.get(cleanId) || voice.channelOccupants.get(channel.id) || [];
+                      if (currentOccupants.length === 0) return null;
+
+                      return (
+                        <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-left space-y-2">
+                          <div className="flex items-center justify-between text-xs font-semibold text-emerald-400">
+                            <span>Already in this lounge ({currentOccupants.length})</span>
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {currentOccupants.map((occ) => (
+                              <div
+                                key={occ.user_id || occ.id}
+                                className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-panel border border-white/[0.06] text-xs text-foreground"
+                              >
+                                <Avatar src={occ.avatar_url || null} name={occ.display_name} size="xs" className="w-4 h-4" />
+                                <span className="font-medium text-[11px] truncate max-w-[120px]">{occ.display_name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     <Button
                       onClick={async () => {
                         if (!canConnectVoice) {

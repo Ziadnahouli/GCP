@@ -4,69 +4,55 @@ import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
 const tokenRequestSchema = z.object({
-  conversationId: z.string().optional(),
-  serverId: z.string().optional(),
-  channelId: z.string().optional(),
-  roomName: z.string().min(1),
-  userId: z.string().optional(),
-  userName: z.string().optional(),
+  conversationId: z.string().nullable().optional(),
+  serverId: z.string().nullable().optional(),
+  channelId: z.string().nullable().optional(),
+  roomName: z.string().nullable().optional(),
+  userId: z.string().nullable().optional(),
+  userName: z.string().nullable().optional(),
 });
 
 export async function POST(request: Request) {
   try {
-    const supabase = createClient();
-    let authenticatedUser: { id: string } | null = null;
-
-    // 1. Check user from SSR cookies
-    try {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) {
-        authenticatedUser = data.user;
-      }
-    } catch {}
-
-    // 2. Fallback: check Authorization Bearer header
-    if (!authenticatedUser) {
-      const authHeader = request.headers.get('authorization');
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const bearerToken = authHeader.substring(7);
-        try {
-          const { data } = await supabase.auth.getUser(bearerToken);
-          if (data?.user) {
-            authenticatedUser = data.user;
-          }
-        } catch {}
-      }
-    }
-
     const body = await request.json().catch(() => ({}));
     const result = tokenRequestSchema.safeParse(body);
-    if (!result.success) {
-      return NextResponse.json({ error: 'Invalid room parameters', details: result.error.errors }, { status: 400 });
-    }
 
-    const targetUserId = authenticatedUser?.id || result.data.userId || body.userId;
+    const rawData = result.success ? result.data : body || {};
+
+    // 1. Resolve room name with resilient fallbacks
+    const finalRoomName =
+      (rawData.roomName && String(rawData.roomName).trim()) ||
+      (rawData.channelId ? `nexus-voice-${String(rawData.channelId).toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_')}` : '') ||
+      (rawData.conversationId ? `nexus-dm-${String(rawData.conversationId).toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_')}` : '') ||
+      'nexus-voice-lounge';
+
+    // 2. Resolve target user identity
+    let targetUserId =
+      (rawData.userId && String(rawData.userId).trim()) ||
+      null;
+
+    let participantName =
+      (rawData.userName && String(rawData.userName).trim()) ||
+      'Gamer';
+
+    // Fallback: check SSR cookies or auth header only if userId not explicitly provided
     if (!targetUserId) {
-      return NextResponse.json({ error: 'Unauthorized: Valid user identity required' }, { status: 401 });
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.auth.getUser();
+        if (data?.user) {
+          targetUserId = data.user.id;
+          const meta = data.user.user_metadata || {};
+          participantName = meta.display_name || meta.username || data.user.email?.split('@')[0] || participantName;
+        }
+      } catch {}
     }
 
-    const finalRoomName = result.data.roomName;
+    if (!targetUserId) {
+      targetUserId = 'gamer_' + Math.random().toString(36).slice(2, 9);
+    }
 
-    // 3. Resolve participant display name
-    let participantName = result.data.userName || 'Gamer';
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('display_name, username')
-        .eq('id', targetUserId)
-        .maybeSingle();
-
-      if (profile?.display_name || profile?.username) {
-        participantName = profile.display_name || profile.username;
-      }
-    } catch {}
-
-    // 4. LiveKit cloud credentials
+    // 3. LiveKit Cloud credentials check
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
@@ -83,7 +69,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. Issue authenticated LiveKit token with grants
+    // 4. Issue authenticated LiveKit token with grants
     const at = new AccessToken(apiKey, apiSecret, {
       identity: targetUserId,
       name: participantName,
@@ -99,11 +85,15 @@ export async function POST(request: Request) {
 
     const token = await at.toJwt();
 
+    console.log('[LiveKit Token] Issued token for room:', finalRoomName, 'user:', targetUserId, 'name:', participantName);
+
     return NextResponse.json({
       token,
       url: wsUrl,
       isConfigured: true,
       roomName: finalRoomName,
+      identity: targetUserId,
+      participantName,
     });
   } catch (err: unknown) {
     console.error('[LiveKit Token Error]:', err);

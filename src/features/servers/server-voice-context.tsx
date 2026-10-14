@@ -704,7 +704,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       if (channelName) setActiveChannelName(channelName);
 
       // 1. Immediately request LiveKit token and connect to LiveKit Cloud SFU
-      const cleanChanId = channelId.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
+      const cleanChanId = String(channelId || 'lounge').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
       const roomName = `nexus-voice-${cleanChanId}`;
       const participantName = profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate';
 
@@ -714,8 +714,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            serverId,
-            channelId,
+            serverId: serverId || undefined,
+            channelId: channelId || undefined,
             roomName,
             userId: currentUser.id,
             userName: participantName,

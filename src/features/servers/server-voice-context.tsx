@@ -912,6 +912,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             } catch (pubErr) {
               console.warn('[LiveKit Voice] Local audio track publish notice:', pubErr);
             }
+          } else {
+            console.warn('[LiveKit Voice] LiveKit not configured or missing token/url:', tokenData);
           }
         }
       } catch (lkErr) {

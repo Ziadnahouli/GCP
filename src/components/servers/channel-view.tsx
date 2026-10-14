@@ -61,7 +61,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   const { user, profile } = useAuth();
   const { getOrCreateDirectConversation } = useConversations();
   const { messages, sendMessage, retryMessage } = useChannelMessages(channel.id);
-  const voice = useServerVoice(channel.id, server.id);
+  const voice = useServerVoice(channel.id, server.id, server.name, channel.name);
   const { toast } = useToast();
 
   const [inputText, setInputText] = React.useState('');

@@ -12,6 +12,8 @@ import { ServerSettingsModal } from '@/components/servers/server-settings-modal'
 import { SettingsModal } from '@/components/layout/settings-modal';
 import { CallProvider, useCallContext } from '@/features/calls/call-context';
 import { PresenceProvider } from '@/features/presence/presence-context';
+import { ServerVoiceProvider, useServerVoiceContext } from '@/features/servers/server-voice-context';
+import { VoiceConnectedBar } from '@/components/servers/voice-connected-bar';
 import { IncomingCallModal } from '@/components/calls/incoming-call-modal';
 import { CallModal } from '@/components/calls/call-modal';
 import { PermissionsModal } from '@/components/layout/permissions-modal';
@@ -26,6 +28,7 @@ import { cn } from '@/lib/utils';
 function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, profile, isLoading } = useAuth();
   const call = useCallContext();
+  const serverVoice = useServerVoiceContext();
   const [collapsed, setCollapsed] = React.useState(false);
   const [showCreateServer, setShowCreateServer] = React.useState(false);
   const [showServerSettings, setShowServerSettings] = React.useState(false);
@@ -196,6 +199,23 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
+          {serverVoice.isVoiceConnected && serverVoice.activeChannelName && (
+            <VoiceConnectedBar
+              channelName={serverVoice.activeChannelName}
+              serverName={serverVoice.activeServerName || undefined}
+              isMuted={serverVoice.isMicMuted}
+              isDeafened={serverVoice.isDeafened}
+              onDisconnect={serverVoice.disconnectVoice}
+              onToggleMic={serverVoice.toggleMic}
+              onToggleDeafen={serverVoice.toggleDeafen}
+              onClick={() => {
+                if (serverVoice.activeServerId && serverVoice.activeChannelId) {
+                  router.push(`/?s=${serverVoice.activeServerId}&ch=${serverVoice.activeChannelId}`);
+                }
+              }}
+            />
+          )}
+
           <UserBar />
         </div>
       </div>
@@ -260,6 +280,24 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
                 )}
               </div>
 
+              {serverVoice.isVoiceConnected && serverVoice.activeChannelName && (
+                <VoiceConnectedBar
+                  channelName={serverVoice.activeChannelName}
+                  serverName={serverVoice.activeServerName || undefined}
+                  isMuted={serverVoice.isMicMuted}
+                  isDeafened={serverVoice.isDeafened}
+                  onDisconnect={serverVoice.disconnectVoice}
+                  onToggleMic={serverVoice.toggleMic}
+                  onToggleDeafen={serverVoice.toggleDeafen}
+                  onClick={() => {
+                    if (serverVoice.activeServerId && serverVoice.activeChannelId) {
+                      router.push(`/?s=${serverVoice.activeServerId}&ch=${serverVoice.activeChannelId}`);
+                      setMobileMenuOpen(false);
+                    }
+                  }}
+                />
+              )}
+
               <UserBar />
             </div>
           </div>
@@ -270,6 +308,26 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-background">
         <NavHeader onOpenMobileMenu={() => setMobileMenuOpen(true)} />
         <main className="flex-1 overflow-y-auto min-h-0 bg-background">{children}</main>
+
+        {/* Mobile Persistent Voice Connected Indicator Bar (when drawer is closed) */}
+        {serverVoice.isVoiceConnected && serverVoice.activeChannelName && (
+          <div className="md:hidden shrink-0">
+            <VoiceConnectedBar
+              channelName={serverVoice.activeChannelName}
+              serverName={serverVoice.activeServerName || undefined}
+              isMuted={serverVoice.isMicMuted}
+              isDeafened={serverVoice.isDeafened}
+              onDisconnect={serverVoice.disconnectVoice}
+              onToggleMic={serverVoice.toggleMic}
+              onToggleDeafen={serverVoice.toggleDeafen}
+              onClick={() => {
+                if (serverVoice.activeServerId && serverVoice.activeChannelId) {
+                  router.push(`/?s=${serverVoice.activeServerId}&ch=${serverVoice.activeChannelId}`);
+                }
+              }}
+            />
+          </div>
+        )}
 
         {/* 4. Mobile Bottom Tab Bar (Phone Friendly) */}
         <nav className="md:hidden h-14 bg-surface-sidebar border-t border-white/[0.06] flex items-center justify-around px-2 shrink-0 z-20 select-none">
@@ -416,7 +474,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     >
       <PresenceProvider>
         <CallProvider>
-          <MainLayoutContent>{children}</MainLayoutContent>
+          <ServerVoiceProvider>
+            <MainLayoutContent>{children}</MainLayoutContent>
+          </ServerVoiceProvider>
         </CallProvider>
       </PresenceProvider>
     </React.Suspense>

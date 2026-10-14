@@ -13,10 +13,14 @@ import {
   Users,
   MessageSquare,
   Radio,
+  MicOff,
+  VolumeX,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Server, Channel, ChannelType, hasServerPermission } from '@/lib/types/server';
 import { useAuth } from '@/features/auth/auth-provider';
+import { useServerVoiceContext, VoiceParticipant } from '@/features/servers/server-voice-context';
+import { getBrowserClient } from '@/lib/supabase/client';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -47,11 +51,147 @@ export function ServerSidebar({
   const router = useRouter();
   const { user } = useAuth();
   const { toast } = useToast();
+  const serverVoice = useServerVoiceContext();
   const [showMenu, setShowMenu] = React.useState(false);
   const [showAddChannel, setShowAddChannel] = React.useState(false);
   const [showInviteModal, setShowInviteModal] = React.useState(false);
   const [newChannelName, setNewChannelName] = React.useState('');
   const [newChannelType, setNewChannelType] = React.useState<ChannelType>('text');
+
+  // Realtime presence state of server-wide voice channel occupants
+  const [remoteOccupants, setRemoteOccupants] = React.useState<Map<string, VoiceParticipant[]>>(new Map());
+
+  // Subscribe to server-wide voice channel presence
+  React.useEffect(() => {
+    if (!server?.id) return;
+    const supabase = getBrowserClient();
+    if (!supabase) return;
+
+    const cleanServerId = server.id.toLowerCase().trim();
+    const chan = supabase.channel(`server_voice_${cleanServerId}`, {
+      config: { presence: { key: user?.id || 'anon' } },
+    });
+
+    const updateFromPresence = () => {
+      const state = chan.presenceState();
+      const byChannel = new Map<string, VoiceParticipant[]>();
+
+      Object.entries(state).forEach(([, presences]) => {
+        if (Array.isArray(presences) && presences.length > 0) {
+          const latest: any = presences[presences.length - 1];
+          if (latest?.channel_id && latest?.user_id) {
+            const list = byChannel.get(latest.channel_id) || [];
+            if (!list.some((p) => p.user_id === latest.user_id)) {
+              list.push({
+                id: latest.user_id,
+                user_id: latest.user_id,
+                display_name: latest.display_name || 'Squadmate',
+                avatar_url: latest.avatar_url || null,
+                role: 'Squadmate',
+                is_speaking: Boolean(latest.is_speaking),
+                is_muted: Boolean(latest.is_muted),
+                is_deafened: Boolean(latest.is_deafened),
+                is_camera_on: false,
+                is_screen_sharing: false,
+                audio_level: 0,
+              });
+              byChannel.set(latest.channel_id, list);
+            }
+          }
+        }
+      });
+
+      setRemoteOccupants(byChannel);
+    };
+
+    chan
+      .on('presence', { event: 'sync' }, updateFromPresence)
+      .on('presence', { event: 'join' }, updateFromPresence)
+      .on('presence', { event: 'leave' }, updateFromPresence)
+      .on('broadcast', { event: 'voice_state_update' }, ({ payload }: any) => {
+        if (!payload?.channel_id || !payload?.user_id) return;
+        setRemoteOccupants((prev) => {
+          const next = new Map(prev);
+          const list = next.get(payload.channel_id);
+          if (list) {
+            const updated = list.map((p) => {
+              if (p.user_id === payload.user_id) {
+                return {
+                  ...p,
+                  is_speaking: payload.is_speaking !== undefined ? Boolean(payload.is_speaking) : p.is_speaking,
+                  is_muted: payload.is_muted !== undefined ? Boolean(payload.is_muted) : p.is_muted,
+                  is_deafened: payload.is_deafened !== undefined ? Boolean(payload.is_deafened) : p.is_deafened,
+                };
+              }
+              return p;
+            });
+            next.set(payload.channel_id, updated);
+          }
+          return next;
+        });
+      })
+      .on('broadcast', { event: 'voice_user_left' }, ({ payload }: any) => {
+        if (!payload?.userId) return;
+        setRemoteOccupants((prev) => {
+          const next = new Map(prev);
+          next.forEach((list, chId) => {
+            const filtered = list.filter((p) => p.user_id !== payload.userId);
+            if (filtered.length !== list.length) {
+              next.set(chId, filtered);
+            }
+          });
+          return next;
+        });
+      })
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(chan);
+      } catch {}
+    };
+  }, [server?.id, user?.id]);
+
+  // Merge server-wide remote presence with local realtime voice context
+  const getChannelOccupants = React.useCallback(
+    (channelId: string): VoiceParticipant[] => {
+      const serverList = remoteOccupants.get(channelId) || [];
+      const occupantsMap = new Map<string, VoiceParticipant>();
+
+      // Populate from presence
+      serverList.forEach((p) => occupantsMap.set(p.user_id, p));
+
+      // If current user is connected to this voice channel, overlay local realtime voice state
+      if (
+        serverVoice.isVoiceConnected &&
+        serverVoice.activeServerId === server.id &&
+        serverVoice.activeChannelId === channelId &&
+        user
+      ) {
+        occupantsMap.set(user.id, {
+          id: user.id,
+          user_id: user.id,
+          display_name: user.user_metadata?.display_name || user.email?.split('@')[0] || 'You',
+          avatar_url: user.user_metadata?.avatar_url || null,
+          role: 'You',
+          is_speaking: serverVoice.isSpeaking,
+          is_muted: serverVoice.isMicMuted,
+          is_deafened: serverVoice.isDeafened,
+          is_camera_on: serverVoice.isCameraOn,
+          is_screen_sharing: serverVoice.isScreenSharing,
+          audio_level: serverVoice.audioLevel,
+        });
+
+        // Also merge direct WebRTC peer states
+        serverVoice.remoteParticipants.forEach((p) => {
+          occupantsMap.set(p.user_id, p);
+        });
+      }
+
+      return Array.from(occupantsMap.values());
+    },
+    [remoteOccupants, serverVoice, server.id, user]
+  );
 
   const canManageServer = hasServerPermission(server, user?.id, 'manage_server') || hasServerPermission(server, user?.id, 'manage_roles');
   const canManageChannels = hasServerPermission(server, user?.id, 'manage_channels');
@@ -318,12 +458,84 @@ export function ServerSidebar({
                     </div>
                   </div>
 
-                  {isActive && (
-                    <div className="pl-6 py-0.5 flex items-center gap-1.5 text-[10px] text-emerald-400/90">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="font-mono">Voice Lounge</span>
-                    </div>
-                  )}
+                  {/* Connected Occupants List beneath the voice lounge */}
+                  {(() => {
+                    const occupants = getChannelOccupants(channel.id);
+                    if (occupants.length === 0) {
+                      return isActive ? (
+                        <div className="pl-6 py-0.5 flex items-center gap-1.5 text-[10px] text-emerald-400/90 font-mono">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>Voice Lounge Connected</span>
+                        </div>
+                      ) : null;
+                    }
+
+                    return (
+                      <div className="space-y-0.5 pl-3 pr-1 py-0.5 animate-in fade-in duration-150">
+                        {occupants.map((occ) => {
+                          const isCurrentUser = user?.id === occ.user_id;
+
+                          return (
+                            <div
+                              key={occ.user_id}
+                              className={cn(
+                                'flex items-center justify-between py-1 px-2 rounded-lg text-xs transition-colors group/occupant',
+                                occ.is_speaking
+                                  ? 'bg-emerald-500/10 text-emerald-300'
+                                  : 'hover:bg-white/[0.04] text-muted-foreground hover:text-foreground'
+                              )}
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <div className="relative shrink-0">
+                                  <Avatar
+                                    src={occ.avatar_url || null}
+                                    name={occ.display_name}
+                                    size="xs"
+                                    className={cn(
+                                      'w-5 h-5 transition-all',
+                                      occ.is_speaking
+                                        ? 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-surface-sidebar scale-105'
+                                        : 'ring-1 ring-white/10'
+                                    )}
+                                  />
+                                  {occ.is_speaking && (
+                                    <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 ring-1 ring-surface-sidebar animate-ping" />
+                                  )}
+                                </div>
+
+                                <span
+                                  className={cn(
+                                    'truncate text-[11px] leading-tight',
+                                    occ.is_speaking
+                                      ? 'text-emerald-300 font-semibold'
+                                      : 'text-muted-foreground group-hover/occupant:text-foreground'
+                                  )}
+                                >
+                                  {occ.display_name}
+                                  {isCurrentUser && (
+                                    <span className="text-[9px] opacity-60 ml-1 font-mono">(You)</span>
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0 ml-1">
+                                {occ.is_muted && (
+                                  <span title="Muted" className="flex items-center">
+                                    <MicOff className="w-3 h-3 text-rose-400" />
+                                  </span>
+                                )}
+                                {occ.is_deafened && (
+                                  <span title="Deafened" className="flex items-center">
+                                    <VolumeX className="w-3 h-3 text-rose-400" />
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

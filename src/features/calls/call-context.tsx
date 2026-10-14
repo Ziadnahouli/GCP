@@ -74,10 +74,26 @@ export const CallContext = React.createContext<CallContextType | null>(null);
 
 // Procedural Web Audio Ringtone Generator (no external assets needed)
 class RingtonePlayer {
+  private static activeInstance: RingtonePlayer | null = null;
   private ctx: AudioContext | null = null;
   private intervalId: NodeJS.Timeout | null = null;
+  private isRunning: boolean = false;
+
+  static stopAll() {
+    if (RingtonePlayer.activeInstance) {
+      try {
+        RingtonePlayer.activeInstance.stop();
+      } catch {}
+      RingtonePlayer.activeInstance = null;
+    }
+  }
 
   start() {
+    if (this.isRunning) return;
+    RingtonePlayer.stopAll();
+    RingtonePlayer.activeInstance = this;
+    this.isRunning = true;
+
     try {
       const AudioCtx =
         window.AudioContext ||
@@ -86,7 +102,7 @@ class RingtonePlayer {
       this.ctx = new AudioCtx();
 
       const playTone = () => {
-        if (!this.ctx || this.ctx.state === 'closed') return;
+        if (!this.isRunning || !this.ctx || this.ctx.state === 'closed') return;
         if (this.ctx.state === 'suspended') {
           this.ctx.resume().catch(() => {});
         }
@@ -111,6 +127,7 @@ class RingtonePlayer {
   }
 
   stop() {
+    this.isRunning = false;
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
@@ -120,6 +137,9 @@ class RingtonePlayer {
         this.ctx.close();
       } catch {}
       this.ctx = null;
+    }
+    if (RingtonePlayer.activeInstance === this) {
+      RingtonePlayer.activeInstance = null;
     }
   }
 }
@@ -203,6 +223,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   activeConversationIdRef.current = activeConversationId;
   const peerUserIdRef = React.useRef<string | null>(null);
   peerUserIdRef.current = peerUserId;
+  const incomingCallRef = React.useRef<IncomingCallData | null>(null);
+  incomingCallRef.current = incomingCall;
   const seenSignalIdsRef = React.useRef<Set<string>>(new Set());
 
   // Web Audio Studio-Grade DSP Noise Suppression references
@@ -522,6 +544,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Centralized call state cleanup
   const stopMediaTracks = React.useCallback(() => {
+    RingtonePlayer.stopAll();
     if (ringtoneRef.current) {
       ringtoneRef.current.stop();
       ringtoneRef.current = null;
@@ -534,7 +557,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       clearInterval(ringingBeaconRef.current);
       ringingBeaconRef.current = null;
     }
-    activeCallPayloadRef.current = null;
     if (iceWatchdogTimerRef.current) {
       clearTimeout(iceWatchdogTimerRef.current);
       iceWatchdogTimerRef.current = null;
@@ -551,7 +573,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       livekitRoomRef.current = null;
     }
     krispProcessorRef.current = null;
-    setIsLiveKitActive(false);
 
     // Clean up DSP noise cancellation pipeline
     if (dspFilterNodesRef.current?.animFrame) {
@@ -616,10 +637,28 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     localIceCandidatesRef.current = [];
     pendingRemoteCandidatesRef.current = [];
     seenCandidatesRef.current.clear();
-    setParticipants([]);
+
+    // Reset synchronous references
+    activeCallPayloadRef.current = null;
+    activeCallSessionIdRef.current = null;
+    activeConversationIdRef.current = null;
+    peerUserIdRef.current = null;
+    incomingCallRef.current = null;
+    callStatusRef.current = 'idle';
+    prevStatsRef.current = null;
+
+    // Reset all React call states
+    setCallStatus('idle');
+    setActiveConversationId(null);
+    setPeerUserId(null);
+    setIncomingCall(null);
+    setIsVideoCall(false);
     setIsCameraOn(false);
+    setIsMicMuted(false);
     setIsDeafened(false);
     setIsScreenSharing(false);
+    setIsLiveKitActive(false);
+    setParticipants([]);
     setStats({
       connectionState: 'disconnected',
       rttMs: null,
@@ -630,15 +669,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       transportPath: 'unknown',
       isZeroTierActive: false,
     });
-    if (ringingBeaconRef.current) {
-      clearInterval(ringingBeaconRef.current);
-      ringingBeaconRef.current = null;
-    }
-    activeCallPayloadRef.current = null;
-    activeConversationIdRef.current = null;
-    peerUserIdRef.current = null;
-    callStatusRef.current = 'idle';
-    prevStatsRef.current = null;
   }, [supabase]);
 
   // Clean up all outbound channels on unmount
@@ -1646,6 +1676,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const pc = pcRef.current;
       if (!pc || !sdp) return;
 
+      RingtonePlayer.stopAll();
       if (ringtoneRef.current) {
         ringtoneRef.current.stop();
         ringtoneRef.current = null;
@@ -1688,6 +1719,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     [drainPendingRemoteCandidates, sendSignalToRoom, sendSignalToUser, peerUserId, toast, user?.id]
   );
 
+  // Stable reference wrappers for global signaling callbacks to avoid channel reconnect churn
+  const applyAnswerSdpRef = React.useRef(applyAnswerSdp);
+  applyAnswerSdpRef.current = applyAnswerSdp;
+  const applyRemoteCandidateRef = React.useRef(applyRemoteCandidate);
+  applyRemoteCandidateRef.current = applyRemoteCandidate;
+  const handlePeerMediaToggleRef = React.useRef(handlePeerMediaToggle);
+  handlePeerMediaToggleRef.current = handlePeerMediaToggle;
+  const handleIncomingRenegotiateOfferRef = React.useRef(handleIncomingRenegotiateOffer);
+  handleIncomingRenegotiateOfferRef.current = handleIncomingRenegotiateOffer;
+  const handleIncomingRenegotiateAnswerRef = React.useRef(handleIncomingRenegotiateAnswer);
+  handleIncomingRenegotiateAnswerRef.current = handleIncomingRenegotiateAnswer;
+  const stopMediaTracksRef = React.useRef(stopMediaTracks);
+  stopMediaTracksRef.current = stopMediaTracks;
+  const sendSignalToUserRef = React.useRef(sendSignalToUser);
+  sendSignalToUserRef.current = sendSignalToUser;
+  const sendSignalToRoomRef = React.useRef(sendSignalToRoom);
+  sendSignalToRoomRef.current = sendSignalToRoom;
+
   // 1. GLOBAL SIGNALING LISTENER: Subscribes on mount for the authenticated user
   React.useEffect(() => {
     if (!user || !supabase) return;
@@ -1698,14 +1747,34 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     myChannel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
         if (!payload || payload.callerId === user.id) return;
-        if (
-          callStatusRef.current === 'in_call' ||
-          callStatusRef.current === 'outgoing_ringing' ||
-          (activeConversationIdRef.current && activeConversationIdRef.current === payload.conversationId)
-        ) {
-          console.log('[CallSignaling] Ignoring redundant incoming call beacon while already active or dialing');
+
+        // If user is already in active call or dialing, do not disrupt
+        if (callStatusRef.current === 'in_call' || callStatusRef.current === 'outgoing_ringing') {
+          console.log('[CallSignaling] Ignoring incoming call beacon while already active or dialing');
           return;
         }
+
+        // If user is ALREADY ringing for this exact incoming call, deduplicate and do NOT re-trigger ringtone
+        if (callStatusRef.current === 'incoming_ringing') {
+          const currentCaller = incomingCallRef.current?.callerId;
+          const currentConv = incomingCallRef.current?.conversationId;
+          if (currentCaller === payload.callerId || currentConv === payload.conversationId) {
+            console.log('[CallSignaling] Duplicate incoming call beacon received, keeping single active ringtone.');
+            if (payload.callerZeroTierIp && !peerZeroTierIpRef.current) {
+              peerZeroTierIpRef.current = payload.callerZeroTierIp;
+              setPeerZeroTierIpState(payload.callerZeroTierIp);
+              setPeerZeroTierIp(payload.callerZeroTierIp);
+            }
+            return;
+          }
+        }
+
+        // Fresh incoming call
+        callStatusRef.current = 'incoming_ringing';
+        activeConversationIdRef.current = payload.conversationId;
+        peerUserIdRef.current = payload.callerId;
+        incomingCallRef.current = payload as IncomingCallData;
+
         if (payload.callerZeroTierIp) {
           peerZeroTierIpRef.current = payload.callerZeroTierIp;
           setPeerZeroTierIpState(payload.callerZeroTierIp);
@@ -1713,13 +1782,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
         setIncomingCall(payload as IncomingCallData);
         setCallStatus('incoming_ringing');
+        setActiveConversationId(payload.conversationId);
+        setPeerUserId(payload.callerId);
 
-        if (ringtoneRef.current) {
-          ringtoneRef.current.stop();
+        // Start ringtone once
+        if (!ringtoneRef.current) {
+          const player = new RingtonePlayer();
+          player.start();
+          ringtoneRef.current = player;
         }
-        const player = new RingtonePlayer();
-        player.start();
-        ringtoneRef.current = player;
       })
       .on('broadcast', { event: 'call_answer' }, async ({ payload }) => {
         if (payload?.calleeZeroTierIp) {
@@ -1728,7 +1799,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           setPeerZeroTierIp(payload.calleeZeroTierIp);
         }
         if (payload?.sdp) {
-          await applyAnswerSdp(payload.sdp);
+          await applyAnswerSdpRef.current(payload.sdp);
         }
       })
       .on('broadcast', { event: 'ice_candidate' }, async ({ payload }) => {
@@ -1737,11 +1808,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           setPeerZeroTierIpState(payload.senderZeroTierIp);
         }
         if (payload?.candidate && payload.senderId !== user.id) {
-          await applyRemoteCandidate(payload.candidate);
+          await applyRemoteCandidateRef.current(payload.candidate);
         }
       })
       .on('broadcast', { event: 'peer_media_toggle' }, ({ payload }) => {
-        handlePeerMediaToggle(payload);
+        handlePeerMediaToggleRef.current(payload);
       })
       .on('broadcast', { event: 'soundboard_play' }, async ({ payload }) => {
         if (payload?.clip && payload.senderId !== user.id) {
@@ -1757,9 +1828,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       })
       .on('broadcast', { event: 'call_rejected' }, () => {
         toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
-        stopMediaTracks();
-        setCallStatus('idle');
-        setIncomingCall(null);
+        stopMediaTracksRef.current();
       })
       .on('broadcast', { event: 'ice_restart_offer' }, async ({ payload }) => {
         if (!payload?.sdp || payload.senderId === user.id) return;
@@ -1787,11 +1856,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             sdp: restartAns,
             senderId: user.id,
             senderZeroTierIp: localZtIp,
-            conversationId: activeConversationId,
+            conversationId: activeConversationIdRef.current,
           };
-          sendSignalToRoom('ice_restart_answer', ansPayload);
+          sendSignalToRoomRef.current('ice_restart_answer', ansPayload);
           if (payload.senderId) {
-            sendSignalToUser(payload.senderId, 'ice_restart_answer', ansPayload);
+            sendSignalToUserRef.current(payload.senderId, 'ice_restart_answer', ansPayload);
           }
         } catch (e) {
           console.warn('[CallNAT] Error handling ice_restart_offer in mailbox:', e);
@@ -1817,26 +1886,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .on('broadcast', { event: 'media_renegotiate_offer' }, ({ payload }) => {
-        handleIncomingRenegotiateOffer(payload);
+        handleIncomingRenegotiateOfferRef.current(payload);
       })
       .on('broadcast', { event: 'media_renegotiate_answer' }, ({ payload }) => {
-        handleIncomingRenegotiateAnswer(payload);
+        handleIncomingRenegotiateAnswerRef.current(payload);
       })
       .on('broadcast', { event: 'request_incoming_call_beacon' }, ({ payload }) => {
         if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current && activeCallPayloadRef.current.targetUserId === payload?.calleeId) {
           console.log('[CallSignaling] Re-dispatching active call offer beacon on demand:', payload);
-          sendSignalToUser(activeCallPayloadRef.current.targetUserId, 'incoming_call', activeCallPayloadRef.current);
+          sendSignalToUserRef.current(activeCallPayloadRef.current.targetUserId, 'incoming_call', activeCallPayloadRef.current);
         }
       })
       .on('broadcast', { event: 'call_ended' }, () => {
-        if (ringingBeaconRef.current) {
-          clearInterval(ringingBeaconRef.current);
-          ringingBeaconRef.current = null;
-        }
-        activeCallPayloadRef.current = null;
-        stopMediaTracks();
-        setCallStatus('idle');
-        setIncomingCall(null);
+        stopMediaTracksRef.current();
         toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
       })
       .subscribe((status) => {
@@ -1866,7 +1928,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
                 if (member) {
                   console.log('[CallSignaling] Detected active ringing call for late opener:', call);
-                  sendSignalToUser(call.caller_id, 'request_incoming_call_beacon', {
+                  sendSignalToUserRef.current(call.caller_id, 'request_incoming_call_beacon', {
                     calleeId: user.id,
                     callerId: call.caller_id,
                     conversationId: call.conversation_id,
@@ -1883,19 +1945,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
 
     return () => {
+      RingtonePlayer.stopAll();
       if (ringtoneRef.current) {
         ringtoneRef.current.stop();
+        ringtoneRef.current = null;
       }
       myChannel.unsubscribe();
       supabase.removeChannel(myChannel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, supabase, stopMediaTracks, toast, applyAnswerSdp, applyRemoteCandidate, handlePeerMediaToggle, handleIncomingRenegotiateOffer, handleIncomingRenegotiateAnswer, drainPendingRemoteCandidates, sendSignalToRoom, sendSignalToUser]);
+  }, [user?.id, supabase, toast, drainPendingRemoteCandidates]);
 
   // 2. START OUTGOING CALL
   const startCall = async (targetUserId: string, conversationId: string, video = false) => {
     if (!user || !supabase) {
       toast({ title: 'Error', description: 'You must be signed in to call', type: 'error' });
+      return;
+    }
+
+    if (callStatusRef.current !== 'idle') {
+      console.log('[CallSignaling] Cannot start call while status is:', callStatusRef.current);
       return;
     }
 
@@ -2292,13 +2360,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       },
     ]);
 
-    const player = new RingtonePlayer();
-    player.start();
-    ringtoneRef.current = player;
+    if (!ringtoneRef.current) {
+      const player = new RingtonePlayer();
+      player.start();
+      ringtoneRef.current = player;
+    }
 
     // Ringing timeout (35s)
     ringingTimerRef.current = setTimeout(() => {
-      if (callStatus === 'outgoing_ringing') {
+      if (callStatusRef.current === 'outgoing_ringing') {
         toast({ title: 'No Answer', description: 'Squadmate did not pick up.', type: 'info' });
         endCall();
       }
@@ -2309,6 +2379,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const acceptCall = async () => {
     if (!incomingCall || !user || !supabase) return;
 
+    RingtonePlayer.stopAll();
     if (ringtoneRef.current) {
       ringtoneRef.current.stop();
       ringtoneRef.current = null;
@@ -2322,6 +2393,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     // Immediately dismiss incoming call modal and transition call status
     setIncomingCall(null);
+    incomingCallRef.current = null;
     callStatusRef.current = 'in_call';
     activeConversationIdRef.current = conversationId;
     peerUserIdRef.current = callerId;
@@ -2664,64 +2736,47 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // 4. REJECT INCOMING CALL
   const rejectCall = () => {
-    if (incomingCall) {
-      sendSignalToUser(incomingCall.callerId, 'call_rejected', {});
-      sendSignalToRoom('call_rejected', {});
+    const callerId = incomingCallRef.current?.callerId || incomingCall?.callerId;
+    const convId = incomingCallRef.current?.conversationId || incomingCall?.conversationId;
+    if (callerId) {
+      sendSignalToUser(callerId, 'call_rejected', {});
+    }
+    sendSignalToRoom('call_rejected', {});
+    if (convId) {
       try {
         supabase
           .from('call_sessions')
           .update({ status: 'rejected', ended_at: new Date().toISOString() })
-          .eq('conversation_id', incomingCall.conversationId)
+          .eq('conversation_id', convId)
           .eq('status', 'ringing')
           .then(() => {}, () => {});
       } catch {}
     }
 
     stopMediaTracks();
-    setIncomingCall(null);
-    setCallStatus('idle');
   };
 
   // 5. END ACTIVE CALL
   const endCall = () => {
-    const target = peerUserId || incomingCall?.callerId;
+    const target = peerUserIdRef.current || peerUserId || incomingCallRef.current?.callerId;
     if (target) {
       sendSignalToUser(target, 'call_ended', {});
     }
     sendSignalToRoom('call_ended', {});
 
-    if (activeConversationId) {
+    const convId = activeConversationIdRef.current || activeConversationId;
+    if (convId) {
       try {
         supabase
           .from('call_sessions')
           .update({ status: 'ended', ended_at: new Date().toISOString() })
-          .eq('conversation_id', activeConversationId)
+          .eq('conversation_id', convId)
           .in('status', ['ringing', 'active'])
           .then(() => {}, () => {});
       } catch {}
     }
 
-    if (livekitRoomRef.current) {
-      try {
-        livekitRoomRef.current.disconnect();
-      } catch {}
-      livekitRoomRef.current = null;
-    }
-    krispProcessorRef.current = null;
-    setIsLiveKitActive(false);
-
     stopMediaTracks();
-    setCallStatus('ended');
-
-    setTimeout(() => {
-      setCallStatus('idle');
-      setActiveConversationId(null);
-      setPeerUserId(null);
-      setIncomingCall(null);
-      setIsScreenSharing(false);
-      setParticipants([]);
-    }, 400);
-
     toast({ title: 'Call Ended', description: 'Disconnected from voice room.', type: 'info' });
   };
 

@@ -3,19 +3,26 @@ import { AccessToken } from 'livekit-server-sdk';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
-const tokenRequestSchema = z
-  .object({
-    conversationId: z.string().min(1, { message: 'Conversation ID required' }),
-    roomName: z
-      .string()
-      .min(1)
-      .regex(/^nexus-room-[a-zA-Z0-9_-]+$/, {
-        message: 'Invalid room name format',
-      }),
-  })
-  .refine((data) => data.roomName === `nexus-room-${data.conversationId}`, {
-    message: 'roomName must strictly match conversation room identifier',
-  });
+const tokenRequestSchema = z.union([
+  z
+    .object({
+      conversationId: z.string().min(1, { message: 'Conversation ID required' }),
+      roomName: z
+        .string()
+        .min(1)
+        .regex(/^nexus-room-[a-zA-Z0-9_-]+$/, {
+          message: 'Invalid room name format',
+        }),
+    })
+    .refine((data) => data.roomName === `nexus-room-${data.conversationId}`, {
+      message: 'roomName must strictly match conversation room identifier',
+    }),
+  z.object({
+    serverId: z.string().min(1, { message: 'Server ID required' }),
+    channelId: z.string().min(1, { message: 'Channel ID required' }),
+    roomName: z.string().min(1),
+  }),
+]);
 
 export async function POST(request: Request) {
   try {
@@ -34,21 +41,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid room parameters' }, { status: 400 });
     }
 
-    const { conversationId, roomName } = result.data;
+    let finalRoomName: string;
 
-    // 1. Verify membership in conversation
-    const { data: memberRecord } = await supabase
-      .from('conversation_members')
-      .select('id, user_id')
-      .eq('conversation_id', conversationId)
-      .eq('user_id', user.id)
-      .maybeSingle();
+    if ('conversationId' in result.data) {
+      const { conversationId, roomName } = result.data;
+      // 1. Verify membership in conversation
+      const { data: memberRecord } = await supabase
+        .from('conversation_members')
+        .select('id, user_id')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-    if (!memberRecord) {
-      return NextResponse.json(
-        { error: 'Forbidden: You are not a member of this conversation' },
-        { status: 403 }
-      );
+      if (!memberRecord) {
+        return NextResponse.json(
+          { error: 'Forbidden: You are not a member of this conversation' },
+          { status: 403 }
+        );
+      }
+      finalRoomName = roomName;
+    } else {
+      const { serverId, channelId, roomName } = result.data;
+      // Verify server membership or server ownership
+      const { data: serverRecord } = await supabase
+        .from('servers')
+        .select('id, owner_id')
+        .eq('id', serverId)
+        .maybeSingle();
+
+      const { data: memberRecord } = await supabase
+        .from('server_members')
+        .select('id')
+        .eq('server_id', serverId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!memberRecord && serverRecord?.owner_id !== user.id) {
+        return NextResponse.json(
+          { error: 'Forbidden: You are not a member of this server' },
+          { status: 403 }
+        );
+      }
+      finalRoomName = roomName || `nexus-voice-${channelId}`;
     }
 
     // 2. Fetch user profile for display name
@@ -84,7 +118,7 @@ export async function POST(request: Request) {
 
     at.addGrant({
       roomJoin: true,
-      room: roomName,
+      room: finalRoomName,
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,

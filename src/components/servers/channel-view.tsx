@@ -32,6 +32,8 @@ import {
   Radio,
   Sliders,
   CheckCircle2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Server, Channel, hasServerPermission } from '@/lib/types/server';
@@ -50,6 +52,48 @@ import { InviteModal } from './invite-modal';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
+
+function StreamVideo({
+  stream,
+  isMuted = false,
+  className,
+  objectFit = 'contain',
+}: {
+  stream: MediaStream | null;
+  isMuted?: boolean;
+  className?: string;
+  objectFit?: 'contain' | 'cover';
+}) {
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+
+  React.useEffect(() => {
+    const el = videoRef.current;
+    if (el && stream) {
+      if (el.srcObject !== stream) {
+        el.srcObject = stream;
+      }
+      el.play().catch(() => {});
+    }
+  }, [stream]);
+
+  if (!stream) {
+    return (
+      <div className={cn('w-full h-full bg-black/80 flex items-center justify-center text-muted-foreground text-xs font-mono', className)}>
+        Connecting live feed...
+      </div>
+    );
+  }
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted={isMuted}
+      className={cn('w-full h-full', objectFit === 'cover' ? 'object-cover' : 'object-contain', className)}
+    />
+  );
+}
 
 interface ChannelViewProps {
   server: Server;
@@ -74,9 +118,40 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   const [showSearch, setShowSearch] = React.useState(false);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
-  // Video and Screen Share elements
-  const localVideoRef = React.useRef<HTMLVideoElement>(null);
-  const localScreenRef = React.useRef<HTMLVideoElement>(null);
+  // Screen Share Box and Fullscreen
+  const screenShareBoxRef = React.useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
+
+  const toggleFullscreen = () => {
+    if (!screenShareBoxRef.current) return;
+    if (!document.fullscreenElement) {
+      screenShareBoxRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
+
+  const activeScreenShare = React.useMemo(() => {
+    if (voice.isScreenSharing && voice.screenStream) {
+      return {
+        userId: user?.id,
+        isLocal: true,
+        userName: profile?.display_name || 'You',
+        stream: voice.screenStream,
+      };
+    }
+    const remotePresenter = voice.remoteParticipants.find((p) => p.is_screen_sharing);
+    if (remotePresenter) {
+      const stream = voice.remoteVideoStreams.get(remotePresenter.user_id);
+      return {
+        userId: remotePresenter.user_id,
+        isLocal: false,
+        userName: remotePresenter.display_name,
+        stream: stream || null,
+      };
+    }
+    return null;
+  }, [voice.isScreenSharing, voice.screenStream, voice.remoteParticipants, voice.remoteVideoStreams, user?.id, profile?.display_name]);
 
   // Permissions for current user
   const canSendMessages = hasServerPermission(server, user?.id, 'send_messages');
@@ -90,20 +165,6 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   }, [messages.length]);
 
   const { isVoiceConnected, isConnecting, connectVoice } = voice;
-
-  // Hook up video stream to video element
-  React.useEffect(() => {
-    if (localVideoRef.current && voice.videoStream) {
-      localVideoRef.current.srcObject = voice.videoStream;
-    }
-  }, [voice.videoStream]);
-
-  // Hook up screen share stream to screen element
-  React.useEffect(() => {
-    if (localScreenRef.current && voice.screenStream) {
-      localScreenRef.current.srcObject = voice.screenStream;
-    }
-  }, [voice.screenStream]);
 
   const handleStartDirectChat = async (targetUserId: string, targetName: string) => {
     if (!targetUserId || targetUserId === user?.id) {
@@ -424,231 +485,363 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 </div>
               </div>
 
-              {/* Large Screen Share Presentation Stream if active */}
-              {voice.isScreenSharing && (
-                <div className="my-3 max-w-4xl mx-auto w-full rounded-2xl overflow-hidden border border-emerald-500/30 bg-black aspect-video relative shadow-2xl">
-                  <video
-                    ref={localScreenRef}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-contain"
-                  />
-                  <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/[0.1] text-xs font-semibold text-emerald-400">
-                    <MonitorUp className="w-3.5 h-3.5" />
-                    <span>Your Screen is Live</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Connected Participants Grid */}
-              <div className="my-auto py-6">
+              {/* Dynamic Live Stage: Theater Mode when someone is sharing, or Grid Mode */}
+              <div className="flex-1 flex flex-col justify-center min-h-0 my-3">
                 {voice.isVoiceConnected ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
-                    {/* 1. Local Gamer Card */}
-                    <div className="relative group rounded-2xl border border-emerald-500/30 bg-surface-panel/80 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all hover:border-emerald-500/50 overflow-hidden">
-                      {voice.isCameraOn ? (
-                        <div className="w-24 h-24 rounded-2xl overflow-hidden mb-3 border-2 border-emerald-500 shadow-glow-sm relative">
-                          <video
-                            ref={localVideoRef}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute bottom-1 right-1 p-0.5 rounded bg-black/60 text-[9px] text-emerald-400 font-mono">
-                            HD
+                  activeScreenShare ? (
+                    /* THEATER MODE: Active Screen Share + Persistent Squad Dock */
+                    <div className="flex-1 flex flex-col min-h-0 gap-3">
+                      {/* 1. Large Screen Share Window */}
+                      <div
+                        ref={screenShareBoxRef}
+                        className="flex-1 min-h-[220px] max-h-[56vh] w-full rounded-2xl overflow-hidden border border-emerald-500/30 bg-black aspect-video relative shadow-2xl mx-auto flex items-center justify-center group"
+                      >
+                        <StreamVideo
+                          stream={activeScreenShare.stream}
+                          isMuted={activeScreenShare.isLocal}
+                          objectFit="contain"
+                          className="w-full h-full"
+                        />
+                        {/* Top Bar Overlay */}
+                        <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+                          <div className="flex items-center gap-2 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/[0.1] text-xs font-semibold text-emerald-400 shadow-md pointer-events-auto">
+                            <MonitorUp className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>{activeScreenShare.isLocal ? 'Your Screen is Live' : `${activeScreenShare.userName}'s Screen`}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-[9px] font-mono">LIVE HD</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={toggleFullscreen}
+                            className="p-1.5 rounded-full bg-black/75 backdrop-blur-md border border-white/[0.1] text-white/80 hover:text-white hover:bg-black/90 transition-all pointer-events-auto shadow-md"
+                            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                          >
+                            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 2. ALWAYS-VISIBLE SQUAD STRIP (Prevents other users from disappearing) */}
+                      <div className="shrink-0 flex items-center gap-3 overflow-x-auto pb-1 px-1">
+                        {/* Local Gamer Card (Compact Strip) */}
+                        <div className="shrink-0 w-36 sm:w-44 rounded-xl border border-emerald-500/30 bg-surface-panel/90 backdrop-blur-md p-2.5 flex items-center gap-2.5 shadow-panel">
+                          <div className="relative shrink-0">
+                            {voice.isCameraOn && voice.videoStream ? (
+                              <div className="w-9 h-9 rounded-lg overflow-hidden border border-emerald-500 relative">
+                                <StreamVideo stream={voice.videoStream} isMuted objectFit="cover" className="w-full h-full" />
+                              </div>
+                            ) : (
+                              <Avatar
+                                src={profile?.avatar_url || null}
+                                name={profile?.display_name || 'You'}
+                                size="sm"
+                                className={cn(
+                                  'transition-all',
+                                  voice.isSpeaking
+                                    ? 'ring-2 ring-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.85)]'
+                                    : 'ring-1 ring-emerald-500/20'
+                                )}
+                              />
+                            )}
+                            {voice.isMicMuted ? (
+                              <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-rose-500 text-white">
+                                <MicOff className="w-2.5 h-2.5" />
+                              </div>
+                            ) : (
+                              <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-emerald-500 text-white">
+                                <Mic className="w-2.5 h-2.5" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold text-foreground truncate">
+                              {profile?.display_name || 'You'}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground font-mono">
+                              {voice.isSpeaking ? 'Speaking...' : voice.isMicMuted ? 'Muted' : 'Online'}
+                            </div>
                           </div>
                         </div>
-                      ) : (
-                        <div className="relative mb-3">
-                          <Avatar
-                            src={profile?.avatar_url || null}
-                            name={profile?.display_name || 'You'}
-                            size="lg"
-                            className={cn(
-                              'transition-all duration-150',
-                              voice.isSpeaking
-                                ? 'ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.85)] scale-105'
-                                : 'ring-2 ring-emerald-500/20'
-                            )}
-                          />
-                          {voice.isMicMuted ? (
-                            <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-rose-500 text-white shadow-subtle">
-                              <MicOff className="w-3 h-3" />
+
+                        {/* Remote Participants in Strip */}
+                        {voice.remoteParticipants.map((mem) => {
+                          const remoteStream = voice.remoteVideoStreams.get(mem.user_id);
+                          return (
+                            <div
+                              key={mem.user_id || mem.id}
+                              className={cn(
+                                'shrink-0 w-36 sm:w-44 rounded-xl border bg-surface-default/80 backdrop-blur-md p-2.5 flex items-center gap-2.5 shadow-panel transition-all',
+                                mem.is_speaking
+                                  ? 'border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.25)]'
+                                  : 'border-white/[0.08]'
+                              )}
+                            >
+                              <div className="relative shrink-0">
+                                {mem.is_camera_on && remoteStream ? (
+                                  <div className="w-9 h-9 rounded-lg overflow-hidden border border-emerald-500 relative">
+                                    <StreamVideo stream={remoteStream} objectFit="cover" className="w-full h-full" />
+                                  </div>
+                                ) : (
+                                  <Avatar
+                                    src={mem.avatar_url || null}
+                                    name={mem.display_name}
+                                    size="sm"
+                                    className={cn(
+                                      'transition-all',
+                                      mem.is_speaking
+                                        ? 'ring-2 ring-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.85)]'
+                                        : 'ring-1 ring-white/[0.1]'
+                                    )}
+                                  />
+                                )}
+                                {mem.is_muted ? (
+                                  <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-rose-500 text-white">
+                                    <MicOff className="w-2.5 h-2.5" />
+                                  </div>
+                                ) : (
+                                  <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-emerald-500 text-white">
+                                    <Mic className="w-2.5 h-2.5" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-bold text-foreground truncate">
+                                  {mem.display_name}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground font-mono">
+                                  {mem.is_speaking ? 'Speaking...' : mem.is_muted ? 'Muted' : 'Online'}
+                                </div>
+                              </div>
                             </div>
-                          ) : (
-                            <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 text-white shadow-subtle">
-                              <Mic className="w-3 h-3" />
-                            </div>
-                          )}
-                        </div>
-                      )}
+                          );
+                        })}
 
-                      <div className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                        <span>{profile?.display_name || 'You'}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">(You)</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground/70 font-mono mt-0.5">
-                        @{profile?.username || 'gamer'}
-                      </div>
-
-                      {/* Equalizer animation dynamically matching real mic waveform volume */}
-                      <div className="flex items-end justify-center gap-1 mt-3 h-6">
-                        {!voice.isMicMuted ? (
-                          <>
-                            <span
-                              className={cn(
-                                'w-1 rounded-full transition-all duration-75',
-                                voice.isSpeaking
-                                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
-                                  : 'bg-emerald-500/30'
-                              )}
-                              style={{
-                                height: `${Math.max(4, Math.min(22, Math.round(4 + (voice.audioLevel / 100) * 18 * 0.8)))}px`,
-                              }}
-                            />
-                            <span
-                              className={cn(
-                                'w-1 rounded-full transition-all duration-75',
-                                voice.isSpeaking
-                                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
-                                  : 'bg-emerald-500/30'
-                              )}
-                              style={{
-                                height: `${Math.max(4, Math.min(24, Math.round(4 + (voice.audioLevel / 100) * 20 * 1.2)))}px`,
-                              }}
-                            />
-                            <span
-                              className={cn(
-                                'w-1 rounded-full transition-all duration-75',
-                                voice.isSpeaking
-                                  ? 'bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,1)]'
-                                  : 'bg-emerald-500/30'
-                              )}
-                              style={{
-                                height: `${Math.max(4, Math.min(26, Math.round(4 + (voice.audioLevel / 100) * 22 * 1.0)))}px`,
-                              }}
-                            />
-                            <span
-                              className={cn(
-                                'w-1 rounded-full transition-all duration-75',
-                                voice.isSpeaking
-                                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
-                                  : 'bg-emerald-500/30'
-                              )}
-                              style={{
-                                height: `${Math.max(4, Math.min(24, Math.round(4 + (voice.audioLevel / 100) * 20 * 1.3)))}px`,
-                              }}
-                            />
-                            <span
-                              className={cn(
-                                'w-1 rounded-full transition-all duration-75',
-                                voice.isSpeaking
-                                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
-                                  : 'bg-emerald-500/30'
-                              )}
-                              style={{
-                                height: `${Math.max(4, Math.min(22, Math.round(4 + (voice.audioLevel / 100) * 18 * 0.7)))}px`,
-                              }}
-                            />
-                          </>
-                        ) : (
-                          <span className="text-[10px] text-rose-400 font-mono">Microphone Muted</span>
-                        )}
-                      </div>
-
-                      <div className="mt-3 flex items-center gap-1.5 flex-wrap justify-center">
-                        <Badge variant="subtle" className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20">
-                          Squadmate
-                        </Badge>
-                        {voice.isNoiseSuppressionEnabled && (
-                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
-                            DeepFilter AI
-                          </Badge>
-                        )}
+                        {/* Invite Teammates button in strip */}
+                        <button
+                          type="button"
+                          onClick={() => setShowInviteModal(true)}
+                          className="shrink-0 px-3 py-2 rounded-xl border border-dashed border-white/[0.12] bg-white/[0.02] hover:bg-white/[0.06] hover:border-primary/40 text-xs text-muted-foreground hover:text-primary transition-all flex items-center gap-1.5"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>Invite</span>
+                        </button>
                       </div>
                     </div>
-
-                    {/* 2. Remote Connected Peers from Realtime presence */}
-                    {voice.remoteParticipants.map((mem) => (
-                      <div
-                        key={mem.user_id || mem.id}
-                        className={cn(
-                          'relative group rounded-2xl border bg-surface-default/60 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all',
-                          mem.is_speaking
-                            ? 'border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
-                            : 'border-white/[0.08] hover:border-white/[0.16]'
-                        )}
-                      >
-                        <div className="relative mb-3">
-                          <Avatar
-                            src={mem.avatar_url || null}
-                            name={mem.display_name}
-                            size="lg"
-                            className={cn(
-                              'transition-all duration-150',
-                              mem.is_speaking
-                                ? 'ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.85)] scale-105'
-                                : 'ring-2 ring-emerald-500/20'
-                            )}
-                          />
-                          {mem.is_muted ? (
-                            <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-rose-500 text-white shadow-subtle">
-                              <MicOff className="w-3 h-3" />
+                  ) : (
+                    /* GRID MODE: Standard Stage when no screen is being shared */
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto w-full">
+                      {/* Local Gamer Card */}
+                      <div className="relative group rounded-2xl border border-emerald-500/30 bg-surface-panel/80 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all hover:border-emerald-500/50 overflow-hidden">
+                        {voice.isCameraOn && voice.videoStream ? (
+                          <div className="w-24 h-24 rounded-2xl overflow-hidden mb-3 border-2 border-emerald-500 shadow-glow-sm relative">
+                            <StreamVideo stream={voice.videoStream} isMuted objectFit="cover" className="w-full h-full" />
+                            <div className="absolute bottom-1 right-1 p-0.5 rounded bg-black/60 text-[9px] text-emerald-400 font-mono">
+                              HD
                             </div>
-                          ) : (
-                            <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 text-white shadow-subtle">
-                              <Mic className="w-3 h-3" />
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="text-sm font-bold text-foreground">
-                          {mem.display_name}
-                        </div>
-
-                        <div className="flex items-end justify-center gap-1 mt-3 h-6">
-                          {!mem.is_muted ? (
-                            mem.is_speaking ? (
-                              <>
-                                <span className="w-1 h-3.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
-                                <span className="w-1 h-5 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
-                                <span className="w-1 h-6 bg-emerald-300 rounded-full animate-bounce [animation-delay:300ms]" />
-                                <span className="w-1 h-5 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
-                                <span className="w-1 h-3.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
-                              </>
+                          </div>
+                        ) : (
+                          <div className="relative mb-3">
+                            <Avatar
+                              src={profile?.avatar_url || null}
+                              name={profile?.display_name || 'You'}
+                              size="lg"
+                              className={cn(
+                                'transition-all duration-150',
+                                voice.isSpeaking
+                                  ? 'ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.85)] scale-105'
+                                  : 'ring-2 ring-emerald-500/20'
+                              )}
+                            />
+                            {voice.isMicMuted ? (
+                              <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-rose-500 text-white shadow-subtle">
+                                <MicOff className="w-3 h-3" />
+                              </div>
                             ) : (
-                              <span className="text-[10px] text-emerald-400/80 font-mono">Live Audio Connected</span>
-                            )
+                              <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 text-white shadow-subtle">
+                                <Mic className="w-3 h-3" />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                          <span>{profile?.display_name || 'You'}</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">(You)</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground/70 font-mono mt-0.5">
+                          @{profile?.username || 'gamer'}
+                        </div>
+
+                        {/* Equalizer animation dynamically matching real mic waveform volume */}
+                        <div className="flex items-end justify-center gap-1 mt-3 h-6">
+                          {!voice.isMicMuted ? (
+                            <>
+                              <span
+                                className={cn(
+                                  'w-1 rounded-full transition-all duration-75',
+                                  voice.isSpeaking
+                                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                                    : 'bg-emerald-500/30'
+                                )}
+                                style={{
+                                  height: `${Math.max(4, Math.min(22, Math.round(4 + (voice.audioLevel / 100) * 18 * 0.8)))}px`,
+                                }}
+                              />
+                              <span
+                                className={cn(
+                                  'w-1 rounded-full transition-all duration-75',
+                                  voice.isSpeaking
+                                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                                    : 'bg-emerald-500/30'
+                                )}
+                                style={{
+                                  height: `${Math.max(4, Math.min(24, Math.round(4 + (voice.audioLevel / 100) * 20 * 1.2)))}px`,
+                                }}
+                              />
+                              <span
+                                className={cn(
+                                  'w-1 rounded-full transition-all duration-75',
+                                  voice.isSpeaking
+                                    ? 'bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,1)]'
+                                    : 'bg-emerald-500/30'
+                                )}
+                                style={{
+                                  height: `${Math.max(4, Math.min(26, Math.round(4 + (voice.audioLevel / 100) * 22 * 1.0)))}px`,
+                                }}
+                              />
+                              <span
+                                className={cn(
+                                  'w-1 rounded-full transition-all duration-75',
+                                  voice.isSpeaking
+                                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                                    : 'bg-emerald-500/30'
+                                )}
+                                style={{
+                                  height: `${Math.max(4, Math.min(24, Math.round(4 + (voice.audioLevel / 100) * 20 * 1.3)))}px`,
+                                }}
+                              />
+                              <span
+                                className={cn(
+                                  'w-1 rounded-full transition-all duration-75',
+                                  voice.isSpeaking
+                                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                                    : 'bg-emerald-500/30'
+                                )}
+                                style={{
+                                  height: `${Math.max(4, Math.min(22, Math.round(4 + (voice.audioLevel / 100) * 18 * 0.7)))}px`,
+                                }}
+                              />
+                            </>
                           ) : (
-                            <span className="text-[10px] text-rose-400/80 font-mono">Muted</span>
+                            <span className="text-[10px] text-rose-400 font-mono">Microphone Muted</span>
                           )}
                         </div>
 
-                        <div className="mt-3">
-                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-white/[0.08] text-muted-foreground">
+                        <div className="mt-3 flex items-center gap-1.5 flex-wrap justify-center">
+                          <Badge variant="subtle" className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20">
                             Squadmate
                           </Badge>
+                          {voice.isNoiseSuppressionEnabled && (
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
+                              Studio DSP Noise Filter
+                            </Badge>
+                          )}
                         </div>
                       </div>
-                    ))}
 
-                    {/* 3. Empty Invite Teammates Slot */}
-                    <div
-                      onClick={() => setShowInviteModal(true)}
-                      className="rounded-2xl border border-dashed border-white/[0.12] bg-white/[0.02] hover:bg-white/[0.04] hover:border-primary/40 p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all group"
-                    >
-                      <div className="w-12 h-12 rounded-full bg-white/[0.04] group-hover:bg-primary/10 group-hover:text-primary text-muted-foreground flex items-center justify-center transition-colors mb-2">
-                        <UserPlus className="w-5 h-5" />
-                      </div>
-                      <div className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
-                        Invite Teammates
-                      </div>
-                      <div className="text-[10px] text-muted-foreground max-w-[140px] mt-1 leading-snug">
-                        Share link to assemble your squad for scrims
+                      {/* Remote Connected Peers */}
+                      {voice.remoteParticipants.map((mem) => {
+                        const remoteStream = voice.remoteVideoStreams.get(mem.user_id);
+                        return (
+                          <div
+                            key={mem.user_id || mem.id}
+                            className={cn(
+                              'relative group rounded-2xl border bg-surface-default/60 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all',
+                              mem.is_speaking
+                                ? 'border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+                                : 'border-white/[0.08] hover:border-white/[0.16]'
+                            )}
+                          >
+                            {mem.is_camera_on && remoteStream ? (
+                              <div className="w-24 h-24 rounded-2xl overflow-hidden mb-3 border-2 border-emerald-500 shadow-glow-sm relative">
+                                <StreamVideo stream={remoteStream} objectFit="cover" className="w-full h-full" />
+                                <div className="absolute bottom-1 right-1 p-0.5 rounded bg-black/60 text-[9px] text-emerald-400 font-mono">
+                                  HD
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="relative mb-3">
+                                <Avatar
+                                  src={mem.avatar_url || null}
+                                  name={mem.display_name}
+                                  size="lg"
+                                  className={cn(
+                                    'transition-all duration-150',
+                                    mem.is_speaking
+                                      ? 'ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.85)] scale-105'
+                                      : 'ring-2 ring-emerald-500/20'
+                                  )}
+                                />
+                                {mem.is_muted ? (
+                                  <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-rose-500 text-white shadow-subtle">
+                                    <MicOff className="w-3 h-3" />
+                                  </div>
+                                ) : (
+                                  <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 text-white shadow-subtle">
+                                    <Mic className="w-3 h-3" />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="text-sm font-bold text-foreground">
+                              {mem.display_name}
+                            </div>
+
+                            <div className="flex items-end justify-center gap-1 mt-3 h-6">
+                              {!mem.is_muted ? (
+                                mem.is_speaking ? (
+                                  <>
+                                    <span className="w-1 h-3.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                                    <span className="w-1 h-5 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                                    <span className="w-1 h-6 bg-emerald-300 rounded-full animate-bounce [animation-delay:300ms]" />
+                                    <span className="w-1 h-5 bg-emerald-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                                    <span className="w-1 h-3.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] text-emerald-400/80 font-mono">Live Audio Connected</span>
+                                )
+                              ) : (
+                                <span className="text-[10px] text-rose-400/80 font-mono">Muted</span>
+                              )}
+                            </div>
+
+                            <div className="mt-3">
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-white/[0.08] text-muted-foreground">
+                                Squadmate
+                              </Badge>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Empty Invite Teammates Slot */}
+                      <div
+                        onClick={() => setShowInviteModal(true)}
+                        className="rounded-2xl border border-dashed border-white/[0.12] bg-white/[0.02] hover:bg-white/[0.04] hover:border-primary/40 p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all group"
+                      >
+                        <div className="w-12 h-12 rounded-full bg-white/[0.04] group-hover:bg-primary/10 group-hover:text-primary text-muted-foreground flex items-center justify-center transition-colors mb-2">
+                          <UserPlus className="w-5 h-5" />
+                        </div>
+                        <div className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
+                          Invite Teammates
+                        </div>
+                        <div className="text-[10px] text-muted-foreground max-w-[140px] mt-1 leading-snug">
+                          Share link to assemble your squad for scrims
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )
                 ) : voice.isConnecting ? (
                   <div className="text-center py-16 max-w-sm mx-auto space-y-4">
                     <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
@@ -802,17 +995,24 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   {/* AI Noise Suppression Toggle */}
                   <button
                     type="button"
-                    onClick={voice.toggleNoiseSuppression}
+                    onClick={() => {
+                      voice.toggleNoiseSuppression();
+                      toast({
+                        title: voice.isNoiseSuppressionEnabled ? 'Noise Filter Disabled' : 'Studio Noise Filter Enabled',
+                        description: 'Multi-stage DSP & Adaptive Voice Gate',
+                        type: 'info',
+                      });
+                    }}
                     className={cn(
                       'p-3 rounded-2xl flex items-center gap-2 transition-all shadow-subtle',
                       voice.isNoiseSuppressionEnabled
                         ? 'bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30'
                         : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
                     )}
-                    title="AI DeepFilter Noise Suppression"
+                    title="Studio DSP Noise Cancellation & Voice Gate"
                   >
                     <Sparkles className="w-5 h-5" />
-                    <span className="text-xs font-semibold hidden sm:inline">DeepFilter</span>
+                    <span className="text-xs font-semibold hidden sm:inline">Noise Filter</span>
                   </button>
 
                   {/* Soundboard Trigger */}

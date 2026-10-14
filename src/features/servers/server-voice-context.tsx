@@ -5,6 +5,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { SoundboardClip, soundboardEngine } from '@/lib/soundboard/audio-engine';
 import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
+import { createStudioAudioPipeline, StudioAudioPipeline } from '@/lib/webrtc/audio-dsp';
 
 export interface VoiceParticipant {
   id: string;
@@ -38,6 +39,7 @@ export interface ServerVoiceContextType {
   videoStream: MediaStream | null;
   screenStream: MediaStream | null;
   remoteParticipants: VoiceParticipant[];
+  remoteVideoStreams: Map<string, MediaStream>;
   channelOccupants: Map<string, VoiceParticipant[]>;
 
   joinVoiceChannel: (
@@ -80,6 +82,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const [screenStream, setScreenStream] = React.useState<MediaStream | null>(null);
 
   const [remoteParticipants, setRemoteParticipants] = React.useState<VoiceParticipant[]>([]);
+  const [remoteVideoStreams, setRemoteVideoStreams] = React.useState<Map<string, MediaStream>>(new Map());
+  const remoteVideoStreamsRef = React.useRef<Map<string, MediaStream>>(new Map());
+  const dspPipelineRef = React.useRef<StudioAudioPipeline | null>(null);
   const [channelOccupants, setChannelOccupants] = React.useState<Map<string, VoiceParticipant[]>>(new Map());
 
   // Synchronous refs for WebRTC callbacks to prevent stale closures
@@ -257,6 +262,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
     peersMapRef.current.clear();
     setRemoteParticipants([]);
+    remoteVideoStreamsRef.current.clear();
+    setRemoteVideoStreams(new Map());
   }, []);
 
   // WebRTC Mesh Peer Connection Manager
@@ -288,6 +295,32 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         });
       }
 
+      // Pre-add video transceiver so camera/screenshare can be added or replaced dynamically
+      try {
+        pc.addTransceiver('video', { direction: 'sendrecv' });
+      } catch {}
+
+      // Add local video/screen tracks if active
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getVideoTracks().forEach((track) => {
+          try {
+            const senders = pc!.getSenders();
+            const vSender = senders.find((s) => s.track?.kind === 'video');
+            if (vSender) vSender.replaceTrack(track);
+            else pc!.addTrack(track, screenStreamRef.current!);
+          } catch {}
+        });
+      } else if (videoStreamRef.current) {
+        videoStreamRef.current.getVideoTracks().forEach((track) => {
+          try {
+            const senders = pc!.getSenders();
+            const vSender = senders.find((s) => s.track?.kind === 'video');
+            if (vSender) vSender.replaceTrack(track);
+            else pc!.addTrack(track, videoStreamRef.current!);
+          } catch {}
+        });
+      }
+
       // Trickle ICE candidates
       pc.onicecandidate = (event) => {
         const cleaned = cleanIceCandidate(event.candidate?.toJSON());
@@ -307,45 +340,58 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         }
       };
 
-      // Handle receiving remote audio streams
+      // Handle receiving remote audio and video streams
       pc.ontrack = (event) => {
-        if (event.track.kind !== 'audio') return;
-        console.log('[WebRTC] ontrack fired for peer:', remoteUserId, event.track.kind);
-        const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
+        if (event.track.kind === 'audio') {
+          console.log('[WebRTC] ontrack fired for peer (audio):', remoteUserId);
+          const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
 
-        let audioEl = audioElementsRef.current.get(remoteUserId);
-        if (!audioEl) {
-          audioEl = document.createElement('audio');
-          audioEl.id = `remote-voice-audio-${remoteUserId}`;
-          audioEl.autoplay = true;
-          audioEl.setAttribute('playsinline', 'true');
-          audioEl.style.display = 'none';
-          document.body.appendChild(audioEl);
-          audioElementsRef.current.set(remoteUserId, audioEl);
-        }
+          let audioEl = audioElementsRef.current.get(remoteUserId);
+          if (!audioEl) {
+            audioEl = document.createElement('audio');
+            audioEl.id = `remote-voice-audio-${remoteUserId}`;
+            audioEl.autoplay = true;
+            audioEl.setAttribute('playsinline', 'true');
+            audioEl.style.display = 'none';
+            document.body.appendChild(audioEl);
+            audioElementsRef.current.set(remoteUserId, audioEl);
+          }
 
-        if (audioEl.srcObject !== stream) {
-          audioEl.srcObject = stream;
-        }
-        audioEl.muted = isDeafenedRef.current;
-        audioEl.volume = 1.0;
+          if (audioEl.srcObject !== stream) {
+            audioEl.srcObject = stream;
+          }
+          audioEl.muted = isDeafenedRef.current;
+          audioEl.volume = 1.0;
 
-        const playPromise = audioEl.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((err) => {
-            console.warn('[WebRTC] Audio autoplay awaiting user click:', err);
-          });
+          const playPromise = audioEl.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((err) => {
+              console.warn('[WebRTC] Audio autoplay awaiting user click:', err);
+            });
+          }
+        } else if (event.track.kind === 'video') {
+          console.log('[WebRTC] ontrack fired for peer (video):', remoteUserId);
+          const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
+          remoteVideoStreamsRef.current.set(remoteUserId, stream);
+          setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
+
+          event.track.onended = () => {
+            remoteVideoStreamsRef.current.delete(remoteUserId);
+            setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
+          };
         }
       };
 
       pc.onconnectionstatechange = () => {
         if (pc?.connectionState === 'failed' || pc?.connectionState === 'closed') {
           peerConnectionsRef.current.delete(remoteUserId);
+          remoteVideoStreamsRef.current.delete(remoteUserId);
+          setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
         }
       };
 
       if (isInitiator) {
-        pc.createOffer({ offerToReceiveAudio: true })
+        pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true } as any)
           .then((offer) => pc!.setLocalDescription(offer))
           .then(() => {
             const ch = realtimeChannelRef.current || channel;
@@ -398,6 +444,21 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               }
             });
           }
+          if (screenStreamRef.current || videoStreamRef.current) {
+            const senders = pc.getSenders();
+            const vTrack = screenStreamRef.current?.getVideoTracks()[0] || videoStreamRef.current?.getVideoTracks()[0];
+            const vStream = screenStreamRef.current || videoStreamRef.current;
+            if (vTrack && vStream) {
+              const videoSender = senders.find((s) => s.track?.kind === 'video');
+              if (videoSender) {
+                videoSender.replaceTrack(vTrack);
+              } else {
+                try {
+                  pc!.addTrack(vTrack, vStream);
+                } catch {}
+              }
+            }
+          }
 
           await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
 
@@ -412,7 +473,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           }
           pendingCandidatesRef.current.delete(fromPeerId);
 
-          const answer = await pc.createAnswer();
+          const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: true } as any);
           await pc.setLocalDescription(answer);
 
           if (realtimeChannelRef.current) {
@@ -499,6 +560,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
+    }
+
+    if (dspPipelineRef.current) {
+      dspPipelineRef.current.cleanup();
+      dspPipelineRef.current = null;
     }
 
     if (localStreamRef.current) {
@@ -589,14 +655,24 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       if (!isExistingStreamLive) {
         try {
           if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-            stream = await navigator.mediaDevices.getUserMedia({
+            const rawStream = await navigator.mediaDevices.getUserMedia({
               audio: {
                 echoCancellation: true,
-                noiseSuppression: isNoiseSuppressionEnabled,
+                noiseSuppression: true,
                 autoGainControl: true,
               },
               video: false,
             });
+
+            // Initialize multi-stage Studio Voice DSP (85Hz High-pass, Vocal Formant EQ, Fan Hiss High-shelf, Noise Gate, Compressor)
+            if (dspPipelineRef.current) {
+              dspPipelineRef.current.cleanup();
+              dspPipelineRef.current = null;
+            }
+            const dsp = createStudioAudioPipeline(rawStream, isNoiseSuppressionEnabled);
+            dspPipelineRef.current = dsp;
+            stream = dsp ? dsp.outputStream : rawStream;
+
             setLocalStream(stream);
             localStreamRef.current = stream;
             setIsMicMuted(false);
@@ -1123,6 +1199,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       }
       setIsCameraOn(false);
       isCameraOnRef.current = false;
+      const fallbackTrack = screenStreamRef.current?.getVideoTracks()[0] || null;
+      peerConnectionsRef.current.forEach((pc) => {
+        const senders = pc.getSenders();
+        const videoSender = senders.find((s) => s.track?.kind === 'video');
+        if (videoSender) {
+          videoSender.replaceTrack(fallbackTrack);
+        }
+      });
       broadcastMyVoiceState({ is_camera_on: false });
     } else {
       try {
@@ -1134,6 +1218,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         videoStreamRef.current = vStream;
         setIsCameraOn(true);
         isCameraOnRef.current = true;
+        const vTrack = vStream.getVideoTracks()[0];
+        peerConnectionsRef.current.forEach((pc) => {
+          const senders = pc.getSenders();
+          const videoSender = senders.find((s) => s.track?.kind === 'video');
+          if (videoSender) {
+            videoSender.replaceTrack(vTrack);
+          } else {
+            try { pc.addTrack(vTrack, vStream); } catch {}
+          }
+        });
         broadcastMyVoiceState({ is_camera_on: true });
       } catch (err) {
         console.warn('Failed to start webcam:', err);
@@ -1151,11 +1245,19 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       }
       setIsScreenSharing(false);
       isScreenSharingRef.current = false;
+      const fallbackTrack = videoStreamRef.current?.getVideoTracks()[0] || null;
+      peerConnectionsRef.current.forEach((pc) => {
+        const senders = pc.getSenders();
+        const videoSender = senders.find((s) => s.track?.kind === 'video');
+        if (videoSender) {
+          videoSender.replaceTrack(fallbackTrack);
+        }
+      });
       broadcastMyVoiceState({ is_screen_sharing: false });
     } else {
       try {
         const sStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
+          video: { frameRate: { ideal: 30, max: 60 } },
           audio: true,
         });
 
@@ -1169,6 +1271,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             setScreenStream(null);
             setIsScreenSharing(false);
             isScreenSharingRef.current = false;
+            const camTrack = videoStreamRef.current?.getVideoTracks()[0] || null;
+            peerConnectionsRef.current.forEach((pc) => {
+              const senders = pc.getSenders();
+              const videoSender = senders.find((s) => s.track?.kind === 'video');
+              if (videoSender) {
+                videoSender.replaceTrack(camTrack);
+              }
+            });
             broadcastMyVoiceState({ is_screen_sharing: false });
           };
         }
@@ -1177,6 +1287,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         screenStreamRef.current = sStream;
         setIsScreenSharing(true);
         isScreenSharingRef.current = true;
+        peerConnectionsRef.current.forEach((pc) => {
+          const senders = pc.getSenders();
+          const videoSender = senders.find((s) => s.track?.kind === 'video');
+          if (videoSender) {
+            videoSender.replaceTrack(videoTrack);
+          } else {
+            try { pc.addTrack(videoTrack, sStream); } catch {}
+          }
+        });
         broadcastMyVoiceState({ is_screen_sharing: true });
       } catch (err) {
         console.warn('Screen share cancelled or failed:', err);
@@ -1188,6 +1307,10 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const toggleNoiseSuppression = React.useCallback(() => {
     const next = !isNoiseSuppressionEnabled;
     setIsNoiseSuppressionEnabled(next);
+
+    if (dspPipelineRef.current) {
+      dspPipelineRef.current.setNoiseSuppression(next);
+    }
 
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track) => {
@@ -1236,6 +1359,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     videoStream,
     screenStream,
     remoteParticipants,
+    remoteVideoStreams,
     channelOccupants,
 
     joinVoiceChannel,

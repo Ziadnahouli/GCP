@@ -635,8 +635,12 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       const supabase = getBrowserClient();
       if (!currentUser || !supabase) return;
 
-      // If already connected to this channel, do nothing
-      if (isVoiceConnected && activeChannelId === channelId) return;
+      // If already connected to this channel AND LiveKit room is active and connected, do nothing
+      const isLkConnected = livekitRoomRef.current?.state === 'connected' || isLiveKitActive;
+      if (isVoiceConnected && activeChannelId === channelId && isLkConnected) {
+        console.log('[LiveKit Voice] Already connected to channel and LiveKit room is active');
+        return;
+      }
 
       setIsConnecting(true);
 
@@ -667,6 +671,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         serverRealtimeChannelRef.current = null;
       }
 
+      if (livekitRoomRef.current) {
+        try {
+          livekitRoomRef.current.disconnect();
+        } catch {}
+        livekitRoomRef.current = null;
+      }
+      setIsLiveKitActive(false);
+
       cleanUpAllPeers();
 
       setActiveServerId(serverId);
@@ -675,219 +687,53 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       if (serverName) setActiveServerName(serverName);
       if (channelName) setActiveChannelName(channelName);
 
-      // 1. Capture Microphone & setup speech analyzer BEFORE establishing WebRTC peer connections
-      let stream = localStreamRef.current;
-      const isExistingStreamLive =
-        stream &&
-        stream.active &&
-        stream.getAudioTracks().some((t) => t.readyState === 'live');
-
-      if (!isExistingStreamLive) {
-        try {
-          if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-            const rawStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-              },
-              video: false,
-            });
-
-            // Initialize multi-stage Studio Voice DSP (85Hz High-pass, Vocal Formant EQ, Fan Hiss High-shelf, Noise Gate, Compressor)
-            if (dspPipelineRef.current) {
-              dspPipelineRef.current.cleanup();
-              dspPipelineRef.current = null;
-            }
-            const dsp = createStudioAudioPipeline(rawStream, isNoiseSuppressionEnabled);
-            dspPipelineRef.current = dsp;
-            stream = dsp ? dsp.outputStream : rawStream;
-
-            setLocalStream(stream);
-            localStreamRef.current = stream;
-            setIsMicMuted(false);
-            isMicMutedRef.current = false;
-          }
-        } catch (micErr) {
-          console.warn('[WebRTC] Microphone unavailable, joining in muted mode:', micErr);
-          setIsMicMuted(true);
-          isMicMutedRef.current = true;
-        }
-      }
-
-      // Web Audio API speech analyzer for live RMS equalizer & speaking pulse
-      if (stream) {
-        try {
-          if (animFrameRef.current) {
-            cancelAnimationFrame(animFrameRef.current);
-            animFrameRef.current = null;
-          }
-          if (audioContextRef.current) {
-            try {
-              audioContextRef.current.close();
-            } catch {}
-            audioContextRef.current = null;
-          }
-
-          const AudioCtx =
-            window.AudioContext ||
-            (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-
-          if (AudioCtx) {
-            const audioCtx = new AudioCtx();
-            audioContextRef.current = audioCtx;
-            if (audioCtx.state === 'suspended') {
-              audioCtx.resume().catch(() => {});
-            }
-
-            const source = audioCtx.createMediaStreamSource(stream);
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 512;
-            analyser.smoothingTimeConstant = 0.3;
-            source.connect(analyser);
-
-            const silentGain = audioCtx.createGain();
-            silentGain.gain.value = 0;
-            source.connect(silentGain);
-            silentGain.connect(audioCtx.destination);
-
-            analyserRef.current = analyser;
-            const timeData = new Uint8Array(analyser.fftSize);
-
-            let speakingCounter = 0;
-            let lastLevelUpdate = 0;
-
-            const checkSpeaking = () => {
-              if (!analyserRef.current) return;
-              if (audioCtx.state === 'suspended') {
-                audioCtx.resume().catch(() => {});
-              }
-
-              if (isMicMutedRef.current) {
-                if (isSpeakingRef.current) {
-                  isSpeakingRef.current = false;
-                  setIsSpeaking(false);
-                  broadcastMyVoiceState({ is_speaking: false });
-                }
-                setAudioLevel(0);
-                audioLevelRef.current = 0;
-                animFrameRef.current = requestAnimationFrame(checkSpeaking);
-                return;
-              }
-
-              analyserRef.current.getByteTimeDomainData(timeData);
-
-              let sumSquares = 0;
-              for (let i = 0; i < timeData.length; i++) {
-                const sample = (timeData[i] - 128) / 128;
-                sumSquares += sample * sample;
-              }
-              const rms = Math.sqrt(sumSquares / timeData.length);
-              const normalized = Math.min(100, Math.round(rms * 350));
-              audioLevelRef.current = normalized;
-
-              const now = Date.now();
-              if (now - lastLevelUpdate > 100) {
-                lastLevelUpdate = now;
-                setAudioLevel(normalized);
-              }
-
-              const rawSpeaking = normalized > 6;
-              if (rawSpeaking) {
-                speakingCounter = 12; // ~200ms hangover
-                if (!isSpeakingRef.current) {
-                  isSpeakingRef.current = true;
-                  setIsSpeaking(true);
-                  broadcastMyVoiceState({ is_speaking: true });
-                }
-              } else if (speakingCounter > 0) {
-                speakingCounter--;
-              } else if (isSpeakingRef.current) {
-                isSpeakingRef.current = false;
-                setIsSpeaking(false);
-                broadcastMyVoiceState({ is_speaking: false });
-              }
-
-              animFrameRef.current = requestAnimationFrame(checkSpeaking);
-            };
-
-            checkSpeaking();
-          }
-        } catch (audioErr) {
-          console.warn('[WebRTC] AudioContext setup warning:', audioErr);
-        }
-      }
-
-      // 2. Connect Server-wide presence channel so all server members see occupants under the channel in the sidebar
-      try {
-        const cleanServerId = serverId.toLowerCase().trim();
-        const serverPresenceChannel = supabase.channel(`server_voice_${cleanServerId}`, {
-          config: {
-            broadcast: { self: false },
-            presence: { key: currentUser.id },
-          },
-        });
-        serverRealtimeChannelRef.current = serverPresenceChannel;
-
-        serverPresenceChannel.subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            serverPresenceChannel.track({
-              channel_id: channelId,
-              user_id: currentUser.id,
-              display_name: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
-              avatar_url: profileRef.current?.avatar_url || null,
-              is_speaking: false,
-              is_muted: isMicMutedRef.current,
-              is_deafened: isDeafenedRef.current,
-            }).catch(() => {});
-          }
-        });
-      } catch (srvErr) {
-        console.warn('[ServerVoice] Error joining server voice presence:', srvErr);
-      }
-
-      // 3. Connect LiveKit Cloud SFU with Krisp AI Filter
+      // 1. Immediately request LiveKit token and connect to LiveKit Cloud SFU
       const cleanChanId = channelId.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
-      try {
-        let accessToken: string | undefined;
-        try {
-          const sessionPromise = supabase.auth.getSession();
-          const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
-            setTimeout(() => resolve({ data: { session: null } }), 150)
-          );
-          const sessionResult = await Promise.race([sessionPromise, timeoutPromise]);
-          accessToken = sessionResult?.data?.session?.access_token;
-        } catch {}
+      const roomName = `nexus-voice-${cleanChanId}`;
+      const participantName = profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate';
 
+      try {
+        console.log('[LiveKit Voice] Requesting SFU token for room:', roomName, 'as user:', currentUser.id);
         const tokenRes = await fetch('/api/calls/token', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-          },
-          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             serverId,
             channelId,
-            roomName: `nexus-voice-${cleanChanId}`,
+            roomName,
             userId: currentUser.id,
-            userName: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
+            userName: participantName,
           }),
         });
 
-        if (tokenRes.ok) {
+        if (!tokenRes.ok) {
+          const errText = await tokenRes.text();
+          console.error('[LiveKit Voice] Token endpoint error:', tokenRes.status, errText);
+        } else {
           const tokenData = await tokenRes.json();
           if (tokenData.isConfigured && tokenData.token && tokenData.url) {
-            console.log('[LiveKit] Connecting to LiveKit Cloud SFU at', tokenData.url);
+            console.log('[LiveKit Voice] Connecting to LiveKit Cloud SFU at', tokenData.url, 'for room', roomName);
             const lkRoom = new Room({
               adaptiveStream: true,
               dynacast: true,
             });
             livekitRoomRef.current = lkRoom;
 
+            lkRoom.on(RoomEvent.Connected, () => {
+              console.log('[LiveKit Voice] Connected to LiveKit Cloud Room:', roomName);
+              setIsLiveKitActive(true);
+              setIsVoiceConnected(true);
+              setIsConnecting(false);
+            });
+
+            lkRoom.on(RoomEvent.Disconnected, (reason) => {
+              console.log('[LiveKit Voice] Disconnected from LiveKit Cloud SFU, reason:', reason);
+              setIsLiveKitActive(false);
+            });
+
             lkRoom.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant: RemoteParticipant) => {
               const peerId = participant.identity;
-              console.log('[LiveKit] Track subscribed:', peerId, track.kind, track.source);
+              console.log('[LiveKit Voice] Remote track subscribed:', peerId, track.kind, track.source);
 
               if (track.kind === Track.Kind.Audio) {
                 const el = track.attach();
@@ -1004,13 +850,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               setRemoteParticipants(remotes);
             });
 
+            // Connect to LiveKit Cloud SFU
             await lkRoom.connect(tokenData.url, tokenData.token);
             setIsLiveKitActive(true);
+            setIsVoiceConnected(true);
+            setIsConnecting(false);
 
-            // Publish local audio with Krisp processor
+            // Publish local audio track with Krisp AI noise filter
             try {
               let localAudioTrack: any;
-              const existingAudioTrack = stream?.getAudioTracks()[0] || localStreamRef.current?.getAudioTracks()[0];
+              const existingAudioTrack = localStreamRef.current?.getAudioTracks()[0];
               if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
                 const { LocalAudioTrack } = await import('livekit-client');
                 localAudioTrack = new LocalAudioTrack(existingAudioTrack);
@@ -1020,6 +869,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                   noiseSuppression: true,
                   autoGainControl: true,
                 });
+                if (localAudioTrack.mediaStreamTrack) {
+                  const s = new MediaStream([localAudioTrack.mediaStreamTrack]);
+                  setLocalStream(s);
+                  localStreamRef.current = s;
+                }
               }
 
               if (typeof window !== 'undefined') {
@@ -1029,30 +883,171 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     const krisp = KrispNoiseFilter();
                     await localAudioTrack.setProcessor(krisp);
                     krispProcessorRef.current = krisp;
-                    console.log('[LiveKit] Krisp AI noise filter activated!');
+                    console.log('[LiveKit Voice] Krisp AI noise filter activated!');
                   }
                 } catch (krispErr) {
-                  console.warn('[LiveKit] Krisp processor setup warning:', krispErr);
+                  console.warn('[LiveKit Voice] Krisp processor warning:', krispErr);
                 }
               }
 
               if (isMicMutedRef.current) {
-                try {
-                  localAudioTrack.mute();
-                } catch {}
+                try { localAudioTrack.mute(); } catch {}
               }
 
               await lkRoom.localParticipant.publishTrack(localAudioTrack);
+              console.log('[LiveKit Voice] Local audio track published to LiveKit Cloud SFU!');
             } catch (pubErr) {
-              console.warn('[LiveKit] Could not publish local audio:', pubErr);
+              console.warn('[LiveKit Voice] Local audio track publish notice:', pubErr);
             }
           }
-        } else {
-          const errText = await tokenRes.text();
-          console.warn('[LiveKit] Token route response not OK:', tokenRes.status, errText);
         }
       } catch (lkErr) {
-        console.warn('[LiveKit] LiveKit room initialization warning:', lkErr);
+        console.error('[LiveKit Voice] Error connecting to LiveKit room:', lkErr);
+      }
+
+      // 2. Microphone capture & Web Audio speech analyzer for RMS meter
+      let stream = localStreamRef.current;
+      const isExistingStreamLive =
+        stream &&
+        stream.active &&
+        stream.getAudioTracks().some((t) => t.readyState === 'live');
+
+      if (!isExistingStreamLive) {
+        try {
+          if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+            const rawStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              },
+              video: false,
+            });
+
+            if (dspPipelineRef.current) {
+              dspPipelineRef.current.cleanup();
+              dspPipelineRef.current = null;
+            }
+            const dsp = createStudioAudioPipeline(rawStream, isNoiseSuppressionEnabled);
+            dspPipelineRef.current = dsp;
+            stream = dsp ? dsp.outputStream : rawStream;
+
+            setLocalStream(stream);
+            localStreamRef.current = stream;
+            setIsMicMuted(false);
+            isMicMutedRef.current = false;
+          }
+        } catch (micErr) {
+          console.warn('[VoiceLounge] Mic setup notice (joining muted):', micErr);
+          setIsMicMuted(true);
+          isMicMutedRef.current = true;
+        }
+      }
+
+      if (stream) {
+        try {
+          if (animFrameRef.current) {
+            cancelAnimationFrame(animFrameRef.current);
+            animFrameRef.current = null;
+          }
+          if (audioContextRef.current) {
+            try { audioContextRef.current.close(); } catch {}
+            audioContextRef.current = null;
+          }
+
+          const AudioCtx =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+          if (AudioCtx) {
+            const audioCtx = new AudioCtx();
+            audioContextRef.current = audioCtx;
+            if (audioCtx.state === 'suspended') {
+              audioCtx.resume().catch(() => {});
+            }
+
+            const source = audioCtx.createMediaStreamSource(stream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.smoothingTimeConstant = 0.3;
+            source.connect(analyser);
+
+            const silentGain = audioCtx.createGain();
+            silentGain.gain.value = 0;
+            source.connect(silentGain);
+            silentGain.connect(audioCtx.destination);
+
+            const pcmData = new Uint8Array(analyser.frequencyBinCount);
+            let speakingCounter = 0;
+
+            const checkSpeaking = () => {
+              if (!analyser) return;
+              analyser.getByteFrequencyData(pcmData);
+
+              let sum = 0;
+              for (let i = 0; i < pcmData.length; i++) {
+                sum += pcmData[i];
+              }
+              const avg = sum / pcmData.length;
+              const normalized = Math.min(100, Math.round((avg / 128) * 100));
+
+              if (normalized !== audioLevelRef.current) {
+                audioLevelRef.current = normalized;
+                setAudioLevel(normalized);
+              }
+
+              const speakingThreshold = 14;
+              if (normalized > speakingThreshold && !isMicMutedRef.current && !isDeafenedRef.current) {
+                speakingCounter = 6;
+                if (!isSpeakingRef.current) {
+                  isSpeakingRef.current = true;
+                  setIsSpeaking(true);
+                  broadcastMyVoiceState({ is_speaking: true });
+                }
+              } else if (speakingCounter > 0) {
+                speakingCounter--;
+              } else if (isSpeakingRef.current) {
+                isSpeakingRef.current = false;
+                setIsSpeaking(false);
+                broadcastMyVoiceState({ is_speaking: false });
+              }
+
+              animFrameRef.current = requestAnimationFrame(checkSpeaking);
+            };
+
+            checkSpeaking();
+          }
+        } catch (audioErr) {
+          console.warn('[VoiceLounge] AudioContext setup warning:', audioErr);
+        }
+      }
+
+      // 3. Connect Server-wide presence channel so all server members see occupants under the channel in the sidebar
+      try {
+        const cleanServerId = serverId.toLowerCase().trim();
+        const serverPresenceChannel = supabase.channel(`server_voice_${cleanServerId}`, {
+          config: {
+            broadcast: { self: false },
+            presence: { key: currentUser.id },
+          },
+        });
+        serverRealtimeChannelRef.current = serverPresenceChannel;
+
+        serverPresenceChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            serverPresenceChannel.track({
+              channel_id: channelId,
+              user_id: currentUser.id,
+              display_name: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
+              avatar_url: profileRef.current?.avatar_url || null,
+              is_speaking: false,
+              is_muted: isMicMutedRef.current,
+              is_deafened: isDeafenedRef.current,
+            }).catch(() => {});
+          }
+        });
+      } catch (srvErr) {
+        console.warn('[ServerVoice] Error joining server voice presence:', srvErr);
       }
 
       // 4. Connect WebRTC signaling room channel
@@ -1319,6 +1314,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     [
       isVoiceConnected,
       activeChannelId,
+      isLiveKitActive,
       isNoiseSuppressionEnabled,
       cleanUpAllPeers,
       getMyVoiceState,

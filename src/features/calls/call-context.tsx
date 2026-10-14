@@ -1227,32 +1227,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const connectLiveKitCall = React.useCallback(
     async (conversationId: string, currentLocalStream: MediaStream | null) => {
       const currentUser = user || userRef.current;
-      if (!currentUser || !supabase) return;
+      if (!currentUser) return;
 
       try {
         const cleanConvId = (conversationId || '').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
-        let accessToken: string | undefined;
-        try {
-          const sessionPromise = supabase.auth.getSession();
-          const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
-            setTimeout(() => resolve({ data: { session: null } }), 150)
-          );
-          const sessionResult = await Promise.race([sessionPromise, timeoutPromise]);
-          accessToken = sessionResult?.data?.session?.access_token;
-        } catch {}
+        const participantName = profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate';
 
+        console.log('[LiveKit Call] Requesting SFU token for private call:', cleanConvId);
         const tokenRes = await fetch('/api/calls/token', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           },
-          credentials: 'include',
           body: JSON.stringify({
             conversationId: cleanConvId,
             roomName: `nexus-dm-${cleanConvId}`,
             userId: currentUser.id,
-            userName: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
+            userName: participantName,
           }),
         });
 
@@ -1275,6 +1266,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           dynacast: true,
         });
         livekitRoomRef.current = lkRoom;
+
+        lkRoom.on(RoomEvent.Connected, () => {
+          console.log('[LiveKit Call] Connected to LiveKit Cloud SFU Room:', `nexus-dm-${cleanConvId}`);
+          setIsLiveKitActive(true);
+        });
+
+        lkRoom.on(RoomEvent.Disconnected, () => {
+          console.log('[LiveKit Call] Disconnected from LiveKit Cloud SFU');
+          setIsLiveKitActive(false);
+        });
 
         lkRoom.on(RoomEvent.TrackSubscribed, (track: any, _pub: any, participant: any) => {
           console.log('[LiveKit Call] Remote track subscribed:', participant.identity, track.kind, track.source);

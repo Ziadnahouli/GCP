@@ -323,8 +323,10 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 variant="outline"
                 className={cn(
                   "hidden sm:inline-flex items-center gap-1.5 text-[10px] px-2.5 py-0.5 border font-mono transition-all",
-                  voice.isVoiceConnected
+                  voice.isLiveKitActive && voice.isVoiceConnected
                     ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/15 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
+                    : voice.isVoiceConnected
+                    ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/15"
                     : "border-emerald-500/30 text-emerald-400/90 bg-emerald-500/10"
                 )}
                 title="LiveKit Cloud SFU + Krisp AI Noise Cancellation Active"
@@ -333,7 +335,13 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   "w-1.5 h-1.5 rounded-full",
                   voice.isVoiceConnected ? "bg-emerald-400 animate-pulse" : "bg-emerald-500/60"
                 )} />
-                <span>{voice.isVoiceConnected ? 'Connected • LiveKit SFU • Krisp AI' : 'LiveKit SFU • Krisp AI'}</span>
+                <span>
+                  {voice.isLiveKitActive && voice.isVoiceConnected
+                    ? 'Connected • LiveKit Cloud SFU • Krisp AI'
+                    : voice.isVoiceConnected
+                    ? 'Connected • LiveKit SFU • Krisp AI'
+                    : 'LiveKit SFU • Krisp AI'}
+                </span>
               </Badge>
             ) : (
               channel.topic && (

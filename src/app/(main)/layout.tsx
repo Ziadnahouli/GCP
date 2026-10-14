@@ -178,6 +178,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
                 server={activeServer}
                 activeChannelId={selectedChannelId || activeServer.channels[0]?.id || null}
                 onSelectChannel={handleSelectChannel}
+                onConnectVoiceChannel={(channel) => {
+                  serverVoice.joinVoiceChannel(activeServer.id, channel.id, activeServer.name, channel.name);
+                }}
                 onOpenServerSettings={() => setShowServerSettings(true)}
                 onCreateChannel={async (name, type, topic) => {
                   await createChannel(activeServer.id, name, type, topic);
@@ -253,6 +256,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
                     onSelectChannel={(ch) => {
                       handleSelectChannel(ch);
                       setMobileMenuOpen(false);
+                    }}
+                    onConnectVoiceChannel={(channel) => {
+                      serverVoice.joinVoiceChannel(activeServer.id, channel.id, activeServer.name, channel.name);
                     }}
                     onOpenServerSettings={() => {
                       setShowServerSettings(true);

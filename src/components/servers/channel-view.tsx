@@ -89,27 +89,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
-  const [manuallyDisconnected, setManuallyDisconnected] = React.useState(false);
-
-  // Reset manual disconnect state when switching channels
-  React.useEffect(() => {
-    setManuallyDisconnected(false);
-  }, [channel.id]);
-
   const { isVoiceConnected, isConnecting, connectVoice } = voice;
-
-  // Auto-connect to voice lounge when navigating to a voice channel if permitted and not manually disconnected
-  React.useEffect(() => {
-    if (
-      channel.type === 'voice' &&
-      canConnectVoice &&
-      !manuallyDisconnected &&
-      !isVoiceConnected &&
-      !isConnecting
-    ) {
-      connectVoice();
-    }
-  }, [channel.id, channel.type, canConnectVoice, manuallyDisconnected, isVoiceConnected, isConnecting, connectVoice]);
 
   // Hook up video stream to video element
   React.useEffect(() => {
@@ -669,6 +649,21 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                       </div>
                     </div>
                   </div>
+                ) : voice.isConnecting ? (
+                  <div className="text-center py-16 max-w-sm mx-auto space-y-4">
+                    <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
+                      <div className="absolute inset-0 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 animate-ping" />
+                      <div className="relative w-14 h-14 rounded-2xl bg-emerald-500/30 border border-emerald-500/60 text-emerald-400 flex items-center justify-center shadow-glow-sm">
+                        <Volume2 className="w-7 h-7 animate-pulse" />
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-foreground">Connecting to Voice Lounge...</h3>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Negotiating encrypted WebRTC audio mesh for {channel.name}.
+                      </p>
+                    </div>
+                  </div>
                 ) : (
                   <div className="text-center py-12 max-w-sm mx-auto space-y-4">
                     <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-glow-sm">
@@ -686,7 +681,6 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                           toast({ title: 'Access Denied', description: 'Your role cannot join voice lounges.', type: 'error' });
                           return;
                         }
-                        setManuallyDisconnected(false);
                         voice.connectVoice();
                         toast({ title: 'Connected to Voice', description: channel.name, type: 'success' });
                       }}
@@ -838,7 +832,6 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   <button
                     type="button"
                     onClick={() => {
-                      setManuallyDisconnected(true);
                       voice.disconnectVoice();
                       toast({ title: 'Voice Disconnected', description: 'Left voice lounge', type: 'info' });
                     }}

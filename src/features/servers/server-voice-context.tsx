@@ -199,9 +199,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         ...customState,
       };
 
-      try {
-        channel.track(state);
-      } catch {}
+      // Only call channel.track on persistent status changes (mute/deafen), never on transient speaking changes
+      if (
+        customState?.is_muted !== undefined ||
+        customState?.is_deafened !== undefined ||
+        customState?.role !== undefined
+      ) {
+        try {
+          channel.track(state);
+        } catch {}
+      }
 
       try {
         channel.send({
@@ -302,6 +309,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
       // Handle receiving remote audio streams
       pc.ontrack = (event) => {
+        if (event.track.kind !== 'audio') return;
         console.log('[WebRTC] ontrack fired for peer:', remoteUserId, event.track.kind);
         const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
 
@@ -316,7 +324,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           audioElementsRef.current.set(remoteUserId, audioEl);
         }
 
-        audioEl.srcObject = stream;
+        if (audioEl.srcObject !== stream) {
+          audioEl.srcObject = stream;
+        }
         audioEl.muted = isDeafenedRef.current;
         audioEl.volume = 1.0;
 
@@ -570,93 +580,136 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       if (channelName) setActiveChannelName(channelName);
 
       // 1. Capture Microphone & setup speech analyzer BEFORE establishing WebRTC peer connections
-      // This ensures local audio tracks are attached to initial SDP offers, eliminating race conditions.
-      try {
-        if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: isNoiseSuppressionEnabled,
-              autoGainControl: true,
-            },
-            video: false,
-          });
-          setLocalStream(stream);
-          localStreamRef.current = stream;
-          setIsMicMuted(false);
-          isMicMutedRef.current = false;
+      let stream = localStreamRef.current;
+      const isExistingStreamLive =
+        stream &&
+        stream.active &&
+        stream.getAudioTracks().some((t) => t.readyState === 'live');
 
-          // Web Audio API speech analyzer for live RMS equalizer & speaking pulse
-          try {
-            const AudioCtx =
-              window.AudioContext ||
-              (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!isExistingStreamLive) {
+        try {
+          if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: isNoiseSuppressionEnabled,
+                autoGainControl: true,
+              },
+              video: false,
+            });
+            setLocalStream(stream);
+            localStreamRef.current = stream;
+            setIsMicMuted(false);
+            isMicMutedRef.current = false;
+          }
+        } catch (micErr) {
+          console.warn('[WebRTC] Microphone unavailable, joining in muted mode:', micErr);
+          setIsMicMuted(true);
+          isMicMutedRef.current = true;
+        }
+      }
 
-            if (AudioCtx) {
-              const audioCtx = new AudioCtx();
-              audioContextRef.current = audioCtx;
+      // Web Audio API speech analyzer for live RMS equalizer & speaking pulse
+      if (stream) {
+        try {
+          if (animFrameRef.current) {
+            cancelAnimationFrame(animFrameRef.current);
+            animFrameRef.current = null;
+          }
+          if (audioContextRef.current) {
+            try {
+              audioContextRef.current.close();
+            } catch {}
+            audioContextRef.current = null;
+          }
+
+          const AudioCtx =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+          if (AudioCtx) {
+            const audioCtx = new AudioCtx();
+            audioContextRef.current = audioCtx;
+            if (audioCtx.state === 'suspended') {
+              audioCtx.resume().catch(() => {});
+            }
+
+            const source = audioCtx.createMediaStreamSource(stream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.smoothingTimeConstant = 0.3;
+            source.connect(analyser);
+
+            const silentGain = audioCtx.createGain();
+            silentGain.gain.value = 0;
+            source.connect(silentGain);
+            silentGain.connect(audioCtx.destination);
+
+            analyserRef.current = analyser;
+            const timeData = new Uint8Array(analyser.fftSize);
+
+            let speakingCounter = 0;
+            let lastLevelUpdate = 0;
+
+            const checkSpeaking = () => {
+              if (!analyserRef.current) return;
               if (audioCtx.state === 'suspended') {
                 audioCtx.resume().catch(() => {});
               }
 
-              const source = audioCtx.createMediaStreamSource(stream);
-              const analyser = audioCtx.createAnalyser();
-              analyser.fftSize = 512;
-              analyser.smoothingTimeConstant = 0.3;
-              source.connect(analyser);
-
-              const silentGain = audioCtx.createGain();
-              silentGain.gain.value = 0;
-              source.connect(silentGain);
-              silentGain.connect(audioCtx.destination);
-
-              analyserRef.current = analyser;
-              const timeData = new Uint8Array(analyser.fftSize);
-
-              const checkSpeaking = () => {
-                if (!analyserRef.current) return;
-                if (audioCtx.state === 'suspended') {
-                  audioCtx.resume().catch(() => {});
-                }
-
-                if (isMicMutedRef.current) {
-                  setAudioLevel(0);
-                  audioLevelRef.current = 0;
-                  setIsSpeaking(false);
+              if (isMicMutedRef.current) {
+                if (isSpeakingRef.current) {
                   isSpeakingRef.current = false;
-                  animFrameRef.current = requestAnimationFrame(checkSpeaking);
-                  return;
+                  setIsSpeaking(false);
+                  broadcastMyVoiceState({ is_speaking: false });
                 }
-
-                analyserRef.current.getByteTimeDomainData(timeData);
-
-                let sumSquares = 0;
-                for (let i = 0; i < timeData.length; i++) {
-                  const sample = (timeData[i] - 128) / 128;
-                  sumSquares += sample * sample;
-                }
-                const rms = Math.sqrt(sumSquares / timeData.length);
-                const normalized = Math.min(100, Math.round(rms * 350));
-                setAudioLevel(normalized);
-                audioLevelRef.current = normalized;
-
-                const speaking = normalized > 5;
-                setIsSpeaking(speaking);
-                isSpeakingRef.current = speaking;
-
+                setAudioLevel(0);
+                audioLevelRef.current = 0;
                 animFrameRef.current = requestAnimationFrame(checkSpeaking);
-              };
+                return;
+              }
 
-              checkSpeaking();
-            }
-          } catch (audioErr) {
-            console.warn('[WebRTC] AudioContext setup warning:', audioErr);
+              analyserRef.current.getByteTimeDomainData(timeData);
+
+              let sumSquares = 0;
+              for (let i = 0; i < timeData.length; i++) {
+                const sample = (timeData[i] - 128) / 128;
+                sumSquares += sample * sample;
+              }
+              const rms = Math.sqrt(sumSquares / timeData.length);
+              const normalized = Math.min(100, Math.round(rms * 350));
+              audioLevelRef.current = normalized;
+
+              const now = Date.now();
+              if (now - lastLevelUpdate > 100) {
+                lastLevelUpdate = now;
+                setAudioLevel(normalized);
+              }
+
+              const rawSpeaking = normalized > 6;
+              if (rawSpeaking) {
+                speakingCounter = 12; // ~200ms hangover
+                if (!isSpeakingRef.current) {
+                  isSpeakingRef.current = true;
+                  setIsSpeaking(true);
+                  broadcastMyVoiceState({ is_speaking: true });
+                }
+              } else if (speakingCounter > 0) {
+                speakingCounter--;
+              } else if (isSpeakingRef.current) {
+                isSpeakingRef.current = false;
+                setIsSpeaking(false);
+                broadcastMyVoiceState({ is_speaking: false });
+              }
+
+              animFrameRef.current = requestAnimationFrame(checkSpeaking);
+            };
+
+            checkSpeaking();
           }
+        } catch (audioErr) {
+          console.warn('[WebRTC] AudioContext setup warning:', audioErr);
         }
-      } catch (micErr) {
-        console.warn('[WebRTC] Microphone unavailable, joining in muted mode:', micErr);
-        setIsMicMuted(true);
-        isMicMutedRef.current = true;
       }
 
       // 2. Connect Server-wide presence channel so all server members see occupants under the channel in the sidebar
@@ -958,6 +1011,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       updateChannelOccupantsMap,
       getOrCreatePeerConnection,
       handleRtcSignal,
+      broadcastMyVoiceState,
     ]
   );
 
@@ -1019,24 +1073,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     setActiveChannelName(null);
     setActiveServerName(null);
   }, [stopAllMediaStreams, activeChannelId, updateChannelOccupantsMap, cleanUpAllPeers]);
-
-  // Sync speaking status to peers
-  const prevSpeakingRef = React.useRef(false);
-  React.useEffect(() => {
-    if (isVoiceConnected && prevSpeakingRef.current !== isSpeaking) {
-      prevSpeakingRef.current = isSpeaking;
-      broadcastMyVoiceState({ is_speaking: isSpeaking, audio_level: audioLevel });
-      if (realtimeChannelRef.current && user) {
-        try {
-          realtimeChannelRef.current.send({
-            type: 'broadcast',
-            event: 'voice_speaking',
-            payload: { user_id: user.id, is_speaking: isSpeaking, audio_level: audioLevel },
-          });
-        } catch {}
-      }
-    }
-  }, [isSpeaking, isVoiceConnected, broadcastMyVoiceState, audioLevel, user]);
 
   // Toggle microphone
   const toggleMic = React.useCallback(() => {

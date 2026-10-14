@@ -397,19 +397,26 @@ export function ServerSidebar({
 
           <div className="space-y-1 mt-0.5">
             {voiceChannels.map((channel) => {
-              const isActive = activeChannelId === channel.id;
+              const isSelected = activeChannelId === channel.id;
+              const isVoiceConnectedToThis =
+                serverVoice.isVoiceConnected &&
+                serverVoice.activeChannelId?.toLowerCase().trim() === channel.id.toLowerCase().trim();
 
               return (
                 <div key={channel.id} className="space-y-0.5">
                   <div
                     onClick={() => {
                       onSelectChannel(channel);
-                      onConnectVoiceChannel?.(channel);
+                      if (!isVoiceConnectedToThis) {
+                        onConnectVoiceChannel?.(channel);
+                      }
                     }}
                     className={cn(
                       'group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all border',
-                      isActive
+                      isVoiceConnectedToThis
                         ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : isSelected
+                        ? 'bg-white/[0.06] text-foreground border-white/[0.1]'
                         : 'hover:bg-emerald-500/10 hover:text-emerald-400 text-muted-foreground border-transparent hover:border-emerald-500/20'
                     )}
                   >
@@ -417,19 +424,20 @@ export function ServerSidebar({
                       <Volume2
                         className={cn(
                           'w-3.5 h-3.5 shrink-0 transition-colors',
-                          isActive ? 'text-emerald-400 animate-pulse' : 'text-emerald-400/80'
+                          isVoiceConnectedToThis ? 'text-emerald-400 animate-pulse' : 'text-emerald-400/80'
                         )}
                       />
                       <span className="truncate">{channel.name}</span>
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {isActive ? (
+                      {isVoiceConnectedToThis ? (
                         <Badge
                           variant="outline"
-                          className="text-[9px] px-1.5 py-0 border-emerald-500/50 text-emerald-300 bg-emerald-500/20 font-mono"
+                          className="text-[9px] px-1.5 py-0 border-emerald-500/50 text-emerald-300 bg-emerald-500/20 font-mono flex items-center gap-1"
                         >
-                          Active
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>Connected</span>
                         </Badge>
                       ) : (
                         <Badge
@@ -462,7 +470,7 @@ export function ServerSidebar({
                   {(() => {
                     const occupants = getChannelOccupants(channel.id);
                     if (occupants.length === 0) {
-                      return isActive ? (
+                      return isVoiceConnectedToThis ? (
                         <div className="pl-6 py-0.5 flex items-center gap-1.5 text-[10px] text-emerald-400/90 font-mono">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                           <span>Voice Lounge Connected</span>

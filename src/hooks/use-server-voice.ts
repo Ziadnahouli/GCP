@@ -20,24 +20,30 @@ export function useServerVoice(
   const isCurrentChannelActive = Boolean(
     context.isVoiceConnected &&
       channelId &&
-      context.activeChannelId === channelId
+      context.activeChannelId?.toLowerCase().trim() === channelId.toLowerCase().trim()
   );
+
+  const isCurrentChannelConnecting = Boolean(
+    context.isConnecting &&
+      channelId &&
+      context.activeChannelId?.toLowerCase().trim() === channelId.toLowerCase().trim()
+  );
+
+  const { joinVoiceChannel, disconnectVoice } = context;
 
   const connectVoice = React.useCallback(async () => {
     if (serverId && channelId) {
-      await context.joinVoiceChannel(serverId, channelId, serverName, channelName);
+      await joinVoiceChannel(serverId, channelId, serverName, channelName);
     }
-  }, [context, serverId, channelId, serverName, channelName]);
+  }, [joinVoiceChannel, serverId, channelId, serverName, channelName]);
 
   return {
     ...context,
     // When channelId is passed, isVoiceConnected indicates if THIS specific channel is active
     isVoiceConnected: channelId ? isCurrentChannelActive : context.isVoiceConnected,
-    isConnecting: channelId
-      ? context.isConnecting && context.activeChannelId === channelId
-      : context.isConnecting,
+    isConnecting: channelId ? isCurrentChannelConnecting : context.isConnecting,
     connectVoice,
-    disconnectVoice: context.disconnectVoice,
+    disconnectVoice,
     // Only return remote participants of this channel if this channel is active
     remoteParticipants: channelId
       ? isCurrentChannelActive

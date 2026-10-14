@@ -325,22 +325,32 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   "hidden sm:inline-flex items-center gap-1.5 text-[10px] px-2.5 py-0.5 border font-mono transition-all",
                   voice.isLiveKitActive && voice.isVoiceConnected
                     ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/15 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
+                    : voice.isConnecting
+                    ? "border-amber-500/40 text-amber-300 bg-amber-500/15"
                     : voice.isVoiceConnected
-                    ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/15"
-                    : "border-emerald-500/30 text-emerald-400/90 bg-emerald-500/10"
+                    ? "border-emerald-500/30 text-emerald-300/80 bg-emerald-500/10"
+                    : "border-white/[0.1] text-muted-foreground bg-white/[0.04]"
                 )}
                 title="LiveKit Cloud SFU + Krisp AI Noise Cancellation Active"
               >
                 <span className={cn(
                   "w-1.5 h-1.5 rounded-full",
-                  voice.isVoiceConnected ? "bg-emerald-400 animate-pulse" : "bg-emerald-500/60"
+                  voice.isLiveKitActive && voice.isVoiceConnected
+                    ? "bg-emerald-400 animate-pulse"
+                    : voice.isConnecting
+                    ? "bg-amber-400 animate-ping"
+                    : voice.isVoiceConnected
+                    ? "bg-emerald-400/80"
+                    : "bg-muted-foreground/50"
                 )} />
                 <span>
                   {voice.isLiveKitActive && voice.isVoiceConnected
                     ? 'Connected • LiveKit Cloud SFU • Krisp AI'
+                    : voice.isConnecting
+                    ? 'Connecting to LiveKit SFU...'
                     : voice.isVoiceConnected
-                    ? 'Connected • LiveKit SFU • Krisp AI'
-                    : 'LiveKit SFU • Krisp AI'}
+                    ? 'Connected (Mesh Voice)'
+                    : 'LiveKit Cloud SFU • Krisp AI'}
                 </span>
               </Badge>
             ) : (
@@ -886,13 +896,17 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                       </p>
                     </div>
                     <Button
-                      onClick={() => {
+                      onClick={async () => {
                         if (!canConnectVoice) {
                           toast({ title: 'Access Denied', description: 'Your role cannot join voice lounges.', type: 'error' });
                           return;
                         }
-                        voice.connectVoice();
-                        toast({ title: 'Connected to Voice', description: channel.name, type: 'success' });
+                        try {
+                          await voice.connectVoice();
+                          toast({ title: 'Connected to Voice Lounge', description: `${channel.name} • LiveKit Cloud SFU`, type: 'success' });
+                        } catch (err: any) {
+                          toast({ title: 'Connection Notice', description: err?.message || 'Connecting to lounge...', type: 'info' });
+                        }
                       }}
                       disabled={!canConnectVoice}
                       className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-2 shadow-subtle px-6"

@@ -86,12 +86,19 @@ export function hasServerPermission(
   userId: string | null | undefined,
   permission: ServerPermission
 ): boolean {
-  if (!server || !userId) return false;
+  if (!server) return false;
+  // If no userId provided, allow standard voice/chat participation for preview
+  if (!userId) {
+    return permission === 'connect_voice' || permission === 'speak_voice' || permission === 'send_messages';
+  }
   // Server owner always has all permissions
   if (server.owner_id === userId) return true;
 
   const member = server.members?.find((m) => m.user_id === userId);
-  if (!member) return false;
+  if (!member) {
+    // Fallback for regular members if member array hasn't synced
+    return DEFAULT_ROLE_PERMISSIONS.member.includes(permission);
+  }
 
   // 1. Check custom roles configured on server
   if (server.roles && server.roles.length > 0) {

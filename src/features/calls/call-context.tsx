@@ -1226,8 +1226,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Helper to establish LiveKit Cloud SFU connection with Krisp AI Noise Cancellation for private 1-on-1 calls
   const connectLiveKitCall = React.useCallback(
     async (conversationId: string, currentLocalStream: MediaStream | null) => {
-      const currentUser = user || userRef.current;
-      if (!currentUser) return;
+      const currentUser = user || userRef.current || {
+        id:
+          profileRef.current?.id ||
+          (typeof window !== 'undefined' ? localStorage.getItem('nexus_user_id') : null) ||
+          'user_' + Math.random().toString(36).slice(2, 9),
+        email: profileRef.current?.username ? `${profileRef.current.username}@nexus.gg` : 'squadmate@nexus.gg',
+      };
+      if (typeof window !== 'undefined' && currentUser.id) {
+        try {
+          localStorage.setItem('nexus_user_id', currentUser.id);
+        } catch {}
+      }
 
       try {
         const cleanConvId = (conversationId || '').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');

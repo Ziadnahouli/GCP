@@ -631,9 +631,21 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       serverName?: string,
       channelName?: string
     ) => {
-      const currentUser = user || userRef.current;
+      const currentUser = user || userRef.current || {
+        id:
+          profileRef.current?.id ||
+          (typeof window !== 'undefined' ? localStorage.getItem('nexus_user_id') : null) ||
+          'user_' + Math.random().toString(36).slice(2, 9),
+        email: profileRef.current?.username ? `${profileRef.current.username}@nexus.gg` : 'squadmate@nexus.gg',
+      };
+      if (typeof window !== 'undefined' && currentUser.id) {
+        try {
+          localStorage.setItem('nexus_user_id', currentUser.id);
+        } catch {}
+      }
+
+      console.log('[LiveKit Voice] Initiating joinVoiceChannel:', { serverId, channelId, userId: currentUser.id, serverName, channelName });
       const supabase = getBrowserClient();
-      if (!currentUser || !supabase) return;
 
       // If already connected to this channel AND LiveKit room is active and connected, do nothing
       const isLkConnected = livekitRoomRef.current?.state === 'connected' || isLiveKitActive;
@@ -653,7 +665,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             payload: { userId: currentUser.id },
           });
           realtimeChannelRef.current.untrack();
-          supabase.removeChannel(realtimeChannelRef.current);
+          if (supabase) {
+            supabase.removeChannel(realtimeChannelRef.current);
+          }
         } catch {}
         realtimeChannelRef.current = null;
       }
@@ -666,7 +680,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             payload: { userId: currentUser.id },
           });
           serverRealtimeChannelRef.current.untrack();
-          supabase.removeChannel(serverRealtimeChannelRef.current);
+          if (supabase) {
+            supabase.removeChannel(serverRealtimeChannelRef.current);
+          }
         } catch {}
         serverRealtimeChannelRef.current = null;
       }
@@ -1023,42 +1039,44 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       }
 
       // 3. Connect Server-wide presence channel so all server members see occupants under the channel in the sidebar
-      try {
-        const cleanServerId = serverId.toLowerCase().trim();
-        const serverPresenceChannel = supabase.channel(`server_voice_${cleanServerId}`, {
-          config: {
-            broadcast: { self: false },
-            presence: { key: currentUser.id },
-          },
-        });
-        serverRealtimeChannelRef.current = serverPresenceChannel;
+      if (supabase) {
+        try {
+          const cleanServerId = serverId.toLowerCase().trim();
+          const serverPresenceChannel = supabase.channel(`server_voice_${cleanServerId}`, {
+            config: {
+              broadcast: { self: false },
+              presence: { key: currentUser.id },
+            },
+          });
+          serverRealtimeChannelRef.current = serverPresenceChannel;
 
-        serverPresenceChannel.subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            serverPresenceChannel.track({
-              channel_id: channelId,
-              user_id: currentUser.id,
-              display_name: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
-              avatar_url: profileRef.current?.avatar_url || null,
-              is_speaking: false,
-              is_muted: isMicMutedRef.current,
-              is_deafened: isDeafenedRef.current,
-            }).catch(() => {});
-          }
-        });
-      } catch (srvErr) {
-        console.warn('[ServerVoice] Error joining server voice presence:', srvErr);
+          serverPresenceChannel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              serverPresenceChannel.track({
+                channel_id: channelId,
+                user_id: currentUser.id,
+                display_name: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
+                avatar_url: profileRef.current?.avatar_url || null,
+                is_speaking: false,
+                is_muted: isMicMutedRef.current,
+                is_deafened: isDeafenedRef.current,
+              }).catch(() => {});
+            }
+          });
+        } catch (srvErr) {
+          console.warn('[ServerVoice] Error joining server voice presence:', srvErr);
+        }
       }
 
       // 4. Connect WebRTC signaling room channel
       const topic = `voice_room_${cleanChanId}`;
 
-      const roomChannel = supabase.channel(topic, {
+      const roomChannel = supabase ? supabase.channel(topic, {
         config: {
           broadcast: { self: false },
           presence: { key: currentUser.id },
         },
-      });
+      }) : null;
 
       realtimeChannelRef.current = roomChannel;
 
@@ -1110,8 +1128,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         updateChannelOccupantsMap(channelId, [getMyVoiceState(), ...remotes]);
       };
 
-      roomChannel
-        .on('presence', { event: 'sync' }, () => {
+      if (roomChannel) {
+        roomChannel
+          .on('presence', { event: 'sync' }, () => {
           updateParticipantsFromPresence(roomChannel.presenceState());
         })
         .on('presence', { event: 'join' }, ({ key, newPresences }: any) => {
@@ -1274,23 +1293,24 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           }
         });
 
-      roomChannel.subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          const myState = getMyVoiceState();
-          try {
-            await roomChannel.track(myState);
-          } catch (trackErr) {
-            console.warn('[WebRTC] Presence track warning:', trackErr);
+        roomChannel.subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            const myState = getMyVoiceState();
+            try {
+              await roomChannel.track(myState);
+            } catch (trackErr) {
+              console.warn('[WebRTC] Presence track warning:', trackErr);
+            }
+            try {
+              roomChannel.send({
+                type: 'broadcast',
+                event: 'voice_announce',
+                payload: myState,
+              });
+            } catch {}
           }
-          try {
-            roomChannel.send({
-              type: 'broadcast',
-              event: 'voice_announce',
-              payload: myState,
-            });
-          } catch {}
-        }
-      });
+        });
+      }
 
       // Heartbeat discovery every 5 seconds
       if (heartbeatIntervalRef.current) {

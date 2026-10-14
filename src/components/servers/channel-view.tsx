@@ -90,20 +90,26 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   }, [messages.length]);
 
   const [manuallyDisconnected, setManuallyDisconnected] = React.useState(false);
-  const autoConnectAttemptedRef = React.useRef(false);
 
-  // Auto-connect to voice lounge once when first entering a voice channel if permitted
+  // Reset manual disconnect state when switching channels
+  React.useEffect(() => {
+    setManuallyDisconnected(false);
+  }, [channel.id]);
+
+  const { isVoiceConnected, isConnecting, connectVoice } = voice;
+
+  // Auto-connect to voice lounge when navigating to a voice channel if permitted and not manually disconnected
   React.useEffect(() => {
     if (
       channel.type === 'voice' &&
       canConnectVoice &&
-      !autoConnectAttemptedRef.current &&
-      !manuallyDisconnected
+      !manuallyDisconnected &&
+      !isVoiceConnected &&
+      !isConnecting
     ) {
-      autoConnectAttemptedRef.current = true;
-      voice.connectVoice();
+      connectVoice();
     }
-  }, [channel.id, channel.type, canConnectVoice, manuallyDisconnected, voice]);
+  }, [channel.id, channel.type, canConnectVoice, manuallyDisconnected, isVoiceConnected, isConnecting, connectVoice]);
 
   // Hook up video stream to video element
   React.useEffect(() => {
@@ -586,7 +592,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     {/* 2. Remote Connected Peers from Realtime presence */}
                     {voice.remoteParticipants.map((mem) => (
                       <div
-                        key={mem.id}
+                        key={mem.user_id || mem.id}
                         className={cn(
                           'relative group rounded-2xl border bg-surface-default/60 backdrop-blur-md p-5 flex flex-col items-center justify-center text-center shadow-panel transition-all',
                           mem.is_speaking

@@ -631,7 +631,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       serverName?: string,
       channelName?: string
     ) => {
-      const currentUser = userRef.current;
+      const currentUser = user || userRef.current;
       const supabase = getBrowserClient();
       if (!currentUser || !supabase) return;
 
@@ -847,14 +847,23 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       }
 
       // 3. Connect LiveKit Cloud SFU with Krisp AI Filter
-      const cleanChanId = channelId.toLowerCase().trim();
+      const cleanChanId = channelId.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
       try {
-        const session = (await supabase.auth.getSession())?.data?.session;
+        let accessToken: string | undefined;
+        try {
+          const sessionPromise = supabase.auth.getSession();
+          const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
+            setTimeout(() => resolve({ data: { session: null } }), 150)
+          );
+          const sessionResult = await Promise.race([sessionPromise, timeoutPromise]);
+          accessToken = sessionResult?.data?.session?.access_token;
+        } catch {}
+
         const tokenRes = await fetch('/api/calls/token', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           },
           credentials: 'include',
           body: JSON.stringify({

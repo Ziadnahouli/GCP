@@ -323,18 +323,17 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 variant="outline"
                 className={cn(
                   "hidden sm:inline-flex items-center gap-1.5 text-[10px] px-2.5 py-0.5 border font-mono transition-all",
-                  voice.isLiveKitActive
-                    ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
-                    : "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+                  voice.isVoiceConnected
+                    ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/15 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
+                    : "border-emerald-500/30 text-emerald-400/90 bg-emerald-500/10"
                 )}
-                title={
-                  voice.isLiveKitActive
-                    ? "LiveKit Cloud SFU + Krisp AI Noise Filter Active"
-                    : "Studio DSP Multi-Stage Voice Gate & WebRTC Opus HD Active"
-                }
+                title="LiveKit Cloud SFU + Krisp AI Noise Cancellation Active"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>{voice.isLiveKitActive ? 'LiveKit SFU • Krisp AI HD' : 'Studio DSP • Opus 48kHz HD'}</span>
+                <span className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  voice.isVoiceConnected ? "bg-emerald-400 animate-pulse" : "bg-emerald-500/60"
+                )} />
+                <span>{voice.isVoiceConnected ? 'Connected • LiveKit SFU • Krisp AI' : 'LiveKit SFU • Krisp AI'}</span>
               </Badge>
             ) : (
               channel.topic && (
@@ -1025,11 +1024,11 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         ? 'bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30'
                         : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
                     )}
-                    title={voice.isLiveKitActive ? "Krisp AI Noise Cancellation (LiveKit Cloud)" : "Studio DSP Noise Cancellation & Voice Gate"}
+                    title={voice.isNoiseSuppressionEnabled ? "Krisp AI Noise Filter Active (LiveKit Cloud)" : "Krisp AI Filter Disabled"}
                   >
                     <Sparkles className="w-5 h-5" />
                     <span className="text-xs font-semibold hidden sm:inline">
-                      {voice.isLiveKitActive ? 'Krisp AI' : 'Noise Filter'}
+                      {voice.isNoiseSuppressionEnabled ? 'Krisp AI Active' : 'Krisp AI Off'}
                     </span>
                   </button>
 

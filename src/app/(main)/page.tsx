@@ -288,9 +288,17 @@ function HomePageContent() {
             variant="default"
             className="w-full text-xs font-semibold h-8"
             onClick={() => {
+              const srvWithVoice = servers.find((s) => s.channels.some((c) => c.type === 'voice'));
+              if (srvWithVoice) {
+                const vc = srvWithVoice.channels.find((c) => c.type === 'voice');
+                if (vc) {
+                  router.push(`/?s=${srvWithVoice.id}&ch=${vc.id}`);
+                  return;
+                }
+              }
               toast({
                 title: 'Voice Lounge',
-                description: 'Full voice room signaling will connect in Phase 5.',
+                description: 'Select a server from the sidebar to join its voice lounge.',
                 type: 'info',
               });
             }}

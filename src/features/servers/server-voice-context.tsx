@@ -276,15 +276,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     setRemoteParticipants([]);
     remoteVideoStreamsRef.current.clear();
     setRemoteVideoStreams(new Map());
-
-    if (livekitRoomRef.current) {
-      try {
-        livekitRoomRef.current.disconnect();
-      } catch {}
-      livekitRoomRef.current = null;
-    }
-    krispProcessorRef.current = null;
-    setIsLiveKitActive(false);
   }, []);
 
   // WebRTC Mesh Peer Connection Manager
@@ -293,6 +284,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       const u = userRef.current;
       const channel = realtimeChannelRef.current;
       if (!u || !remoteUserId || remoteUserId === u.id) return undefined;
+
+      // When LiveKit Cloud SFU is active, all audio/video is routed via SFU; skip P2P mesh WebRTC
+      if (livekitRoomRef.current && (livekitRoomRef.current.state === 'connected' || livekitRoomRef.current.state === 'connecting')) {
+        return undefined;
+      }
 
       let pc = peerConnectionsRef.current.get(remoteUserId);
       if (pc && pc.connectionState !== 'closed' && pc.connectionState !== 'failed') {
@@ -732,6 +728,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             const lkRoom = new Room({
               adaptiveStream: true,
               dynacast: true,
+              disconnectOnPageLeave: false,
             });
             livekitRoomRef.current = lkRoom;
 

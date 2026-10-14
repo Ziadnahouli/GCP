@@ -1304,6 +1304,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const lkRoom = new Room({
           adaptiveStream: true,
           dynacast: true,
+          disconnectOnPageLeave: false,
         });
         livekitRoomRef.current = lkRoom;
 

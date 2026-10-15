@@ -38,6 +38,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
 import { Avatar } from '@/components/ui/avatar';
+import { useTheme, ThemeMode } from '@/context/ThemeContext';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
@@ -96,6 +97,7 @@ const PRESENCE_OPTIONS: { status: UserStatus; label: string; desc: string; color
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { profile, settings, updateProfile, updateSettings, signOut } = useAuth();
+  const { theme, setTheme, accent, setAccent } = useTheme();
   const { toast } = useToast();
 
   const [activeTab, setActiveTab] = React.useState<'profile' | 'appearance' | 'studio' | 'audio' | 'shortcuts' | 'notifs' | 'diagnostics'>('profile');
@@ -738,19 +740,64 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           {activeTab === 'appearance' && (
             <div className="space-y-6 max-w-3xl w-full pb-16">
               <div>
-                <h3 className="text-lg font-bold text-foreground">Themes & Accents</h3>
+                <h3 className="text-lg font-bold text-foreground">Theme & Interface Mode</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Choose between standard dark, light, pure OLED black, and WCAG AAA high-contrast.
+                </p>
+              </div>
+
+              {/* Theme Modes */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  { id: 'dark' as ThemeMode, name: 'Dark Mode (Default)', desc: 'Balanced slate graphite theme designed for gaming sessions', border: 'border-slate-800', bg: 'bg-[#0d0f12]' },
+                  { id: 'light' as ThemeMode, name: 'Light Mode', desc: 'High-clarity paper white styling for bright environments', border: 'border-slate-200', bg: 'bg-[#f8fafc]' },
+                  { id: 'oled' as ThemeMode, name: 'OLED Pure Black', desc: '100% true black (#000000) for OLED panels & battery conservation', border: 'border-neutral-900', bg: 'bg-black' },
+                  { id: 'high-contrast' as ThemeMode, name: 'High-Contrast (WCAG AAA)', desc: 'Maximized luminance ratio with crisp white borders & emerald signals', border: 'border-white', bg: 'bg-black' },
+                ].map((m) => {
+                  const isCurrent = theme === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setTheme(m.id)}
+                      className={cn(
+                        'flex flex-col text-left p-3.5 rounded-2xl border transition-all cursor-pointer',
+                        isCurrent
+                          ? 'bg-white/[0.08] border-primary ring-1 ring-primary/60 shadow-lg'
+                          : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                      )}
+                    >
+                      <div className="flex items-center justify-between w-full mb-1">
+                        <span className="text-xs font-bold text-foreground">{m.name}</span>
+                        {isCurrent && <Check className="w-4 h-4 text-primary" />}
+                      </div>
+                      <span className="text-[11px] text-muted-foreground/75 leading-relaxed">{m.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2">
+                <h3 className="text-lg font-bold text-foreground">Accent Color Variations</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Select your dynamic accent palette. All buttons, rings, and badges re-theme instantly.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-3">
-                {ACCENT_THEMES.map((theme) => {
-                  const isSelected = selectedAccent === theme.id;
+                {ACCENT_THEMES.map((themeItem) => {
+                  const isSelected = selectedAccent === themeItem.id;
                   return (
                     <div
-                      key={theme.id}
-                      onClick={() => handleSaveAppearance(theme.id)}
+                      key={themeItem.id}
+                      onClick={() => {
+                        handleSaveAppearance(themeItem.id);
+                        if (['indigo', 'cyan', 'emerald', 'crimson', 'amber', 'silver'].includes(themeItem.id)) {
+                          setAccent(themeItem.id as any);
+                        } else if (themeItem.id === 'violet') {
+                          setAccent('indigo');
+                        }
+                      }}
                       className={cn(
                         'flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all',
                         isSelected
@@ -761,33 +808,54 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       <div className="flex items-center gap-3">
                         <div
                           className="w-10 h-10 rounded-xl shadow-md flex items-center justify-center text-white"
-                          style={{ backgroundColor: theme.hex }}
+                          style={{ backgroundColor: themeItem.hex }}
                         >
                           <Sparkles className="w-5 h-5" />
                         </div>
                         <div>
                           <div className="text-xs font-bold text-foreground flex items-center gap-2">
-                            <span>{theme.name}</span>
+                            <span>{themeItem.name}</span>
                             {isSelected && (
                               <span className="text-[9px] px-1.5 py-0.2 rounded bg-primary/20 text-primary font-semibold">
                                 ACTIVE
                               </span>
                             )}
                           </div>
-                          <div className="text-[11px] text-muted-foreground/70">{theme.desc}</div>
+                          <div className="text-[11px] text-muted-foreground/70">{themeItem.desc}</div>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <div
                           className="w-4 h-4 rounded-full border border-white/20"
-                          style={{ backgroundColor: theme.hex }}
+                          style={{ backgroundColor: themeItem.hex }}
                         />
                         {isSelected && <Check className="w-4 h-4 text-primary" />}
                       </div>
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Privacy & Regulatory Section */}
+              <div className="pt-4 border-t border-white/[0.06] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-bold text-foreground">Privacy & Peer Networking Choices</h4>
+                  <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                    Configure WebRTC ICE candidate routing, ZeroTier mesh storage, and performance telemetry.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(new CustomEvent('open-cookie-consent'));
+                    }
+                  }}
+                  className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.1] text-foreground transition-all cursor-pointer whitespace-nowrap"
+                >
+                  Manage Preferences ⚙
+                </button>
               </div>
             </div>
           )}

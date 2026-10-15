@@ -1,3 +1,5 @@
+@import '../styles/themes.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,10 +7,12 @@
 @layer base {
   :root {
     /* Premium Graphite & Deep Slate Minimal Palette */
-    --background: 222 18% 7%; /* #0f1117 deep graphite */
+    --background: 222 18% 7%;
+    /* #0f1117 deep graphite */
     --foreground: 210 20% 98%;
 
-    --card: 220 15% 10%; /* #14171f subtle elevation */
+    --card: 220 15% 10%;
+    /* #14171f subtle elevation */
     --card-foreground: 210 20% 98%;
 
     --popover: 220 15% 10%;
@@ -36,47 +40,58 @@
     --ring: 239 84% 67%;
 
     /* Restrained Graphite Surface Hierarchy */
-    --surface-default: 220 15% 10%; /* #14171f */
-    --surface-hover: 220 14% 14.5%; /* #1d212b */
-    --surface-active: 220 14% 17%; /* #222733 */
-    --surface-header: 220 17% 8%; /* #111319 */
-    --surface-sidebar: 220 19% 6%; /* #0c0e14 deepest shell */
-    --surface-panel: 220 14% 12%; /* #171a23 */
+    --surface-default: 220 15% 10%;
+    /* #14171f */
+    --surface-hover: 220 14% 14.5%;
+    /* #1d212b */
+    --surface-active: 220 14% 17%;
+    /* #222733 */
+    --surface-header: 220 17% 8%;
+    /* #111319 */
+    --surface-sidebar: 220 19% 6%;
+    /* #0c0e14 deepest shell */
+    --surface-panel: 220 14% 12%;
+    /* #171a23 */
 
     --radius: 0.625rem;
   }
 
   /* Accent theme variations */
   [data-theme='violet'] {
-    --primary: 239 84% 67%; /* Restrained blue-violet default */
+    --primary: 239 84% 67%;
+    /* Restrained blue-violet default */
     --primary-foreground: 210 40% 98%;
     --primary-hover: 239 84% 60%;
     --ring: 239 84% 67%;
   }
 
   [data-theme='cyan'] {
-    --primary: 199 89% 48%; /* #0ea5e9 */
+    --primary: 199 89% 48%;
+    /* #0ea5e9 */
     --primary-foreground: 210 40% 98%;
     --primary-hover: 199 89% 40%;
     --ring: 199 89% 48%;
   }
 
   [data-theme='emerald'] {
-    --primary: 152 69% 45%; /* #10b981 */
+    --primary: 152 69% 45%;
+    /* #10b981 */
     --primary-foreground: 210 40% 98%;
     --primary-hover: 152 69% 38%;
     --ring: 152 69% 45%;
   }
 
   [data-theme='crimson'] {
-    --primary: 350 84% 56%; /* #f43f5e */
+    --primary: 350 84% 56%;
+    /* #f43f5e */
     --primary-foreground: 210 40% 98%;
     --primary-hover: 350 84% 48%;
     --ring: 350 84% 56%;
   }
 
   [data-theme='amber'] {
-    --primary: 38 92% 50%; /* #f59e0b */
+    --primary: 38 92% 50%;
+    /* #f59e0b */
     --primary-foreground: 224 25% 8%;
     --primary-hover: 38 92% 42%;
     --ring: 38 92% 50%;
@@ -103,20 +118,29 @@ body {
 }
 
 /* Allow text selection in message bodies, inputs, code snippets, logs, and IDs */
-.selectable, [data-selectable], pre, code, .prose, input, textarea, [role="textbox"] {
+.selectable,
+[data-selectable],
+pre,
+code,
+.prose,
+input,
+textarea,
+[role="textbox"] {
   user-select: text;
   -webkit-user-select: text;
 }
 
 /* Ensure inputs, textareas, and selects always have dark surface background and white text */
-input, textarea, select {
+input,
+textarea,
+select {
   background-color: hsl(var(--surface-default)) !important;
   color: hsl(var(--foreground)) !important;
 }
 
 /* Fix browser autofill from turning inputs bright white */
 input:-webkit-autofill,
-input:-webkit-autofill:hover, 
+input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
   -webkit-text-fill-color: hsl(var(--foreground)) !important;
@@ -181,6 +205,7 @@ input:-webkit-autofill:active {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;

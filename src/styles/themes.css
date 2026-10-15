@@ -1,0 +1,115 @@
+:root {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --transition-smooth: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 1. Dark Mode (Default) */
+[data-theme="dark"],
+:root:not([data-theme="light"]):not([data-theme="oled"]):not([data-theme="high-contrast"]) {
+  --bg-app: #0d0f12;
+  --bg-sidebar: #13171d;
+  --bg-surface: #181d25;
+  --bg-surface-hover: #222935;
+  --bg-surface-active: #2b3342;
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border-subtle: #242c38;
+  --border-strong: #374151;
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --success: #10b981;
+}
+
+/* 2. Light Mode */
+[data-theme="light"] {
+  --bg-app: #f8fafc;
+  --bg-sidebar: #f1f5f9;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #e2e8f0;
+  --bg-surface-active: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-subtle: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --success: #10b981;
+}
+
+/* 3. OLED Black Mode */
+[data-theme="oled"] {
+  --bg-app: #000000;
+  --bg-sidebar: #050505;
+  --bg-surface: #0a0a0a;
+  --bg-surface-hover: #171717;
+  --bg-surface-active: #262626;
+  --text-primary: #ffffff;
+  --text-secondary: #a3a3a3;
+  --text-muted: #525252;
+  --border-subtle: #1f1f1f;
+  --border-strong: #333333;
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --success: #10b981;
+}
+
+/* 4. High-Contrast Mode (WCAG AAA) */
+[data-theme="high-contrast"] {
+  --bg-app: #000000;
+  --bg-sidebar: #0a0a0a;
+  --bg-surface: #121212;
+  --bg-surface-hover: #2a2a2a;
+  --bg-surface-active: #3a3a3a;
+  --text-primary: #ffffff;
+  --text-secondary: #ffffff;
+  --text-muted: #d4d4d4;
+  --border-subtle: #ffffff;
+  --border-strong: #ffffff;
+  --danger: #ff0000;
+  --danger-hover: #cc0000;
+  --success: #00ff66;
+}
+
+/* Accent Color Variations */
+[data-accent="indigo"],
+:root:not([data-accent]) {
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-glow: rgba(99, 102, 241, 0.35);
+}
+
+[data-accent="cyan"] {
+  --accent: #06b6d4;
+  --accent-hover: #0891b2;
+  --accent-glow: rgba(6, 182, 212, 0.35);
+}
+
+[data-accent="emerald"] {
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-glow: rgba(16, 185, 129, 0.35);
+}
+
+[data-accent="crimson"] {
+  --accent: #f43f5e;
+  --accent-hover: #e11d48;
+  --accent-glow: rgba(244, 63, 94, 0.35);
+}
+
+[data-accent="amber"] {
+  --accent: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-glow: rgba(245, 158, 11, 0.35);
+}
+
+[data-accent="silver"] {
+  --accent: #94a3b8;
+  --accent-hover: #64748b;
+  --accent-glow: rgba(148, 163, 184, 0.35);
+}

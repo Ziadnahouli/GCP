@@ -8,6 +8,7 @@ import {
   Radio,
   Sliders,
   Zap,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { Avatar } from '@/components/ui/avatar';
@@ -92,6 +93,16 @@ function HomePageContent() {
   // 2. If a server is active, render the ChannelView with unique key per channel
   if (activeServer && activeChannel) {
     return <ChannelView key={activeChannel.id} server={activeServer} channel={activeChannel} />;
+  }
+
+  // 3. If serverId is present in URL but server is still synchronizing/hydrating
+  if (serverId) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-background text-muted-foreground text-xs font-mono">
+        <Loader2 className="w-5 h-5 animate-spin text-primary mr-2" />
+        <span>Loading server...</span>
+      </div>
+    );
   }
 
   // Otherwise render the full Gaming Social Hub

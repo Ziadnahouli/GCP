@@ -19,7 +19,8 @@ import { CallModal } from '@/components/calls/call-modal';
 import { PermissionsModal } from '@/components/layout/permissions-modal';
 import { LogsWindow } from '@/components/diagnostics/logs-window';
 import { useAuth } from '@/features/auth/auth-provider';
-import { useServers } from '@/hooks/use-servers';
+import { useServers, ServersProvider } from '@/hooks/use-servers';
+import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { Gamepad2, MessageSquare, Users, X } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Channel } from '@/lib/types/server';
@@ -27,6 +28,7 @@ import { cn } from '@/lib/utils';
 
 function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, profile, isLoading } = useAuth();
+  useGlobalShortcuts();
   const call = useCallContext();
   const serverVoice = useServerVoiceContext();
   const [collapsed, setCollapsed] = React.useState(false);
@@ -481,9 +483,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     >
       <PresenceProvider>
         <CallProvider>
-          <ServerVoiceProvider>
-            <MainLayoutContent>{children}</MainLayoutContent>
-          </ServerVoiceProvider>
+          <ServersProvider>
+            <ServerVoiceProvider>
+              <MainLayoutContent>{children}</MainLayoutContent>
+            </ServerVoiceProvider>
+          </ServersProvider>
         </CallProvider>
       </PresenceProvider>
     </React.Suspense>

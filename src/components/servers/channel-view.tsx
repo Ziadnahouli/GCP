@@ -899,7 +899,8 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     {/* Preview of Teammates Already in Lounge */}
                     {(() => {
                       const cleanId = (channel.id || '').toLowerCase().trim();
-                      const currentOccupants = voice.channelOccupants.get(cleanId) || voice.channelOccupants.get(channel.id) || [];
+                      const rawOccupants = voice.channelOccupants.get(cleanId) || voice.channelOccupants.get(channel.id) || [];
+                      const currentOccupants = rawOccupants.filter((p) => (voice.isVoiceConnected ? true : p.user_id !== user?.id));
                       if (currentOccupants.length === 0) return null;
 
                       return (

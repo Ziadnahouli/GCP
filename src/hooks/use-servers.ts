@@ -34,9 +34,26 @@ const markChannelDeleted = (channelId: string) => {
 
 const DEFAULT_SERVERS: Server[] = [];
 
-export function useServers() {
+export function useServersInternal() {
   const { user, profile } = useAuth();
-  const [servers, setServers] = React.useState<Server[]>(DEFAULT_SERVERS);
+  const [servers, setServers] = React.useState<Server[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_SERVERS;
+    try {
+      const userStorageKey = user ? `${STORAGE_KEY}_${user.id}` : STORAGE_KEY;
+      const stored = localStorage.getItem(userStorageKey);
+      if (stored) {
+        const parsed: Server[] = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (s) =>
+              !DUMMY_SERVER_IDS.has(s.id) &&
+              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
+          );
+        }
+      }
+    } catch {}
+    return DEFAULT_SERVERS;
+  });
   const [loading, setLoading] = React.useState(false);
   const serversChannelRef = React.useRef<any>(null);
 
@@ -148,8 +165,20 @@ export function useServers() {
       fetchServers();
     }, 30000);
 
+    const handleLocalServersUpdate = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        setServers(e.detail);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('nexus_servers_updated', handleLocalServersUpdate);
+    }
+
     return () => {
       clearInterval(autoSyncTimer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('nexus_servers_updated', handleLocalServersUpdate);
+      }
       serversChannelRef.current = null;
       supabase.removeChannel(channel);
     };
@@ -166,6 +195,9 @@ export function useServers() {
       try {
         const userStorageKey = user ? `${STORAGE_KEY}_${user.id}` : STORAGE_KEY;
         localStorage.setItem(userStorageKey, JSON.stringify(userServers));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('nexus_servers_updated', { detail: userServers }));
+        }
       } catch (e) {
         console.warn('Failed to cache servers:', e);
       }
@@ -832,4 +864,21 @@ export function useServers() {
     deleteRole,
     updateRolePermissions,
   };
+}
+
+export type UseServersReturn = ReturnType<typeof useServersInternal>;
+
+const ServersContext = React.createContext<UseServersReturn | null>(null);
+
+export function ServersProvider({ children }: { children: React.ReactNode }) {
+  const value = useServersInternal();
+  return React.createElement(ServersContext.Provider, { value }, children);
+}
+
+export function useServers(): UseServersReturn {
+  const context = React.useContext(ServersContext);
+  if (!context) {
+    throw new Error('useServers must be used within a ServersProvider');
+  }
+  return context;
 }

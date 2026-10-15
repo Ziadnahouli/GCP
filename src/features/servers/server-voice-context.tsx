@@ -1438,46 +1438,60 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     krispProcessorRef.current = null;
     setIsLiveKitActive(false);
 
+    const prevChanId = activeChannelIdRef.current || activeChannelId;
+    const prevServerId = activeServerId;
+
     if (realtimeChannelRef.current) {
+      const rChan = realtimeChannelRef.current;
+      realtimeChannelRef.current = null;
       try {
         if (userRef.current) {
-          realtimeChannelRef.current.send({
+          rChan.send({
             type: 'broadcast',
             event: 'voice_user_left',
-            payload: { userId: userRef.current.id },
+            payload: { userId: userRef.current.id, channelId: prevChanId },
           });
         }
-        realtimeChannelRef.current.untrack();
+        rChan.untrack();
         const supabase = getBrowserClient();
         if (supabase) {
-          supabase.removeChannel(realtimeChannelRef.current);
+          supabase.removeChannel(rChan);
         }
       } catch {}
-      realtimeChannelRef.current = null;
     }
 
     if (serverRealtimeChannelRef.current) {
+      const sChan = serverRealtimeChannelRef.current;
+      serverRealtimeChannelRef.current = null;
       try {
         if (userRef.current) {
-          serverRealtimeChannelRef.current.send({
+          sChan.send({
             type: 'broadcast',
             event: 'voice_user_left',
-            payload: { userId: userRef.current.id },
+            payload: { userId: userRef.current.id, channelId: prevChanId },
           });
         }
-        serverRealtimeChannelRef.current.untrack();
+        sChan.untrack();
         const supabase = getBrowserClient();
         if (supabase) {
-          supabase.removeChannel(serverRealtimeChannelRef.current);
+          supabase.removeChannel(sChan);
         }
       } catch {}
-      serverRealtimeChannelRef.current = null;
     }
 
-    if (activeChannelId) {
-      updateChannelOccupantsMap(activeChannelId, []);
-    }
+    // Clean up all DOM audio elements from remote LiveKit and mesh
+    audioElementsRef.current.forEach((audio) => {
+      try {
+        audio.srcObject = null;
+        audio.pause();
+        if (audio.parentNode) {
+          audio.parentNode.removeChild(audio);
+        }
+      } catch {}
+    });
+    audioElementsRef.current.clear();
 
+    setChannelOccupants(new Map());
     cleanUpAllPeers();
     activeChannelIdRef.current = null;
     setIsVoiceConnected(false);
@@ -1486,7 +1500,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     setActiveServerId(null);
     setActiveChannelName(null);
     setActiveServerName(null);
-  }, [stopAllMediaStreams, activeChannelId, updateChannelOccupantsMap, cleanUpAllPeers]);
+
+    // Notify window that voice disconnected so sidebar and views immediately remove user
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('nexus_voice_disconnected', {
+          detail: { channelId: prevChanId, serverId: prevServerId, userId: userRef.current?.id },
+        })
+      );
+    }
+  }, [stopAllMediaStreams, activeChannelId, activeServerId, cleanUpAllPeers]);
 
   // Toggle microphone
   const toggleMic = React.useCallback(() => {

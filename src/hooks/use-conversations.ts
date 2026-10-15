@@ -6,15 +6,35 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { Conversation } from '@/lib/types/messaging';
 import { UserProfile } from '@/lib/types/profile';
 
+const getCachedConversations = (uId?: string): Conversation[] => {
+  if (!uId || typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(`nexus_conversations_${uId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+};
+
 export function useConversations() {
   const { user, isConfigured } = useAuth();
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
-  const [conversations, setConversations] = React.useState<Conversation[]>([]);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [conversations, setConversations] = React.useState<Conversation[]>(() =>
+    getCachedConversations(user?.id)
+  );
+  const [isLoading, setIsLoading] = React.useState<boolean>(() =>
+    getCachedConversations(user?.id).length === 0
+  );
   const isFetchingRef = React.useRef(false);
+  const conversationsCountRef = React.useRef(conversations.length);
+  React.useEffect(() => {
+    conversationsCountRef.current = conversations.length;
+  }, [conversations.length]);
 
-  const fetchConversations = React.useCallback(async () => {
+  const fetchConversations = React.useCallback(async (silent = false) => {
     if (!user) {
       setConversations([]);
       setIsLoading(false);
@@ -22,7 +42,9 @@ export function useConversations() {
     }
 
     try {
-      setIsLoading(true);
+      if (!silent && conversationsCountRef.current === 0) {
+        setIsLoading(true);
+      }
 
       // Fetch conversations where current user is a member
       const { data: memberRows, error: memberErr } = await supabase
@@ -92,6 +114,11 @@ export function useConversations() {
       });
 
       setConversations(parsed);
+      try {
+        if (user?.id) {
+          localStorage.setItem(`nexus_conversations_${user.id}`, JSON.stringify(parsed));
+        }
+      } catch {}
     } catch (err) {
       console.error('Error fetching conversations:', err);
     } finally {

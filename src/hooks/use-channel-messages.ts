@@ -9,14 +9,26 @@ import { debugLogger } from '@/lib/logger/debug-logger';
 
 const STORAGE_KEY_PREFIX = 'nexus_channel_msgs_';
 
+const getCachedChannelMessages = (chanId: string | null): ChannelMessage[] => {
+  if (!chanId || typeof window === 'undefined') return [];
+  try {
+    const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}${chanId}`);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+};
+
 export function useChannelMessages(channelId: string | null) {
   const { user, profile, isConfigured } = useAuth();
   const supabase = React.useMemo(() => getBrowserClient(), []);
-  const [messages, setMessages] = React.useState<ChannelMessage[]>([]);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [messages, setMessages] = React.useState<ChannelMessage[]>(() => getCachedChannelMessages(channelId));
+  const [isLoading, setIsLoading] = React.useState<boolean>(() => getCachedChannelMessages(channelId).length === 0);
   const channelRef = React.useRef<any>(null);
   const activeChannelIdRef = React.useRef<string | null>(channelId);
-  const prevChannelIdRef = React.useRef<string | null>(null);
+  const prevChannelIdRef = React.useRef<string | null>(channelId);
   const isFetchingRef = React.useRef(false);
 
   React.useEffect(() => {
@@ -39,8 +51,9 @@ export function useChannelMessages(channelId: string | null) {
     const channelChanged = prevChannelIdRef.current !== channelId;
     if (channelChanged) {
       prevChannelIdRef.current = channelId;
-      setMessages([]);
-      setIsLoading(true);
+      const cached = getCachedChannelMessages(channelId);
+      setMessages(cached);
+      setIsLoading(cached.length === 0);
     } else if (isInitial) {
       // Background revalidation: keep existing messages visible while loading
     }
@@ -124,7 +137,9 @@ export function useChannelMessages(channelId: string | null) {
   React.useEffect(() => {
     if (prevChannelIdRef.current !== channelId) {
       prevChannelIdRef.current = channelId;
-      setMessages([]);
+      const cached = getCachedChannelMessages(channelId);
+      setMessages(cached);
+      setIsLoading(cached.length === 0);
     }
 
     if (!channelId || !isConfigured || !userId) {

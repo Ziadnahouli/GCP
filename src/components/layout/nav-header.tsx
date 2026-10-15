@@ -43,6 +43,7 @@ export function NavHeader({ title = 'Friends & Activity', subtitle, onOpenMobile
       <div className="relative w-48 sm:w-64 md:w-72 hidden md:block">
         <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none" />
         <input
+          id="global-search-input"
           type="text"
           placeholder="Search... [Ctrl+K]"
           aria-label="Quick search"

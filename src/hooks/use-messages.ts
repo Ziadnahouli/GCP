@@ -14,15 +14,37 @@ export function useMessages(conversationId: string | null) {
   const currentUsername = profile?.username;
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
-  const [messages, setMessages] = React.useState<Message[]>([]);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [messages, setMessages] = React.useState<Message[]>(() => {
+    if (!conversationId || typeof window === 'undefined') return [];
+    try {
+      const key = userId ? `nexus_dm_msgs_${userId}_${conversationId}` : `nexus_dm_msgs_guest_${conversationId}`;
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+  const [isLoading, setIsLoading] = React.useState<boolean>(() => {
+    if (!conversationId || typeof window === 'undefined') return false;
+    try {
+      const key = userId ? `nexus_dm_msgs_${userId}_${conversationId}` : `nexus_dm_msgs_guest_${conversationId}`;
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return false;
+      }
+    } catch {}
+    return true;
+  });
   const [typingUsers, setTypingUsers] = React.useState<string[]>([]);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showPinnedOnly, setShowPinnedOnly] = React.useState(false);
 
   const chatChannelRef = React.useRef<any>(null);
   const activeConversationIdRef = React.useRef<string | null>(conversationId);
-  const prevConversationIdRef = React.useRef<string | null>(null);
+  const prevConversationIdRef = React.useRef<string | null>(conversationId);
   const isFetchingRef = React.useRef(false);
   const membershipVerifiedRef = React.useRef<Set<string>>(new Set());
   const createdBlobUrlsRef = React.useRef<Set<string>>(new Set());
@@ -88,8 +110,16 @@ export function useMessages(conversationId: string | null) {
         const convChanged = prevConversationIdRef.current !== conversationId;
         if (convChanged) {
           prevConversationIdRef.current = conversationId;
-          setMessages([]);
-          setIsLoading(true);
+          let cached: Message[] = [];
+          try {
+            const raw = localStorage.getItem(cacheKey);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) cached = parsed;
+            }
+          } catch {}
+          setMessages(cached);
+          setIsLoading(cached.length === 0);
         } else if (isInitial) {
           // Keep current messages visible during background revalidation
         }
@@ -232,7 +262,16 @@ export function useMessages(conversationId: string | null) {
   React.useEffect(() => {
     if (prevConversationIdRef.current !== conversationId) {
       prevConversationIdRef.current = conversationId;
-      setMessages([]);
+      let cached: Message[] = [];
+      try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) cached = parsed;
+        }
+      } catch {}
+      setMessages(cached);
+      setIsLoading(cached.length === 0);
     }
 
     if (!conversationId || !isConfigured || !userId || !isUUID) {

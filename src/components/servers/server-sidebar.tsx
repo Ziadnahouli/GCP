@@ -150,7 +150,22 @@ export function ServerSidebar({
       })
       .subscribe();
 
+    const handleVoiceDisconnected = (evt: any) => {
+      const discUserId = evt?.detail?.userId || user?.id;
+      if (!discUserId) return;
+      setRemoteOccupants((prev) => {
+        const next = new Map(prev);
+        next.forEach((list, chId) => {
+          const filtered = list.filter((p) => p.user_id !== discUserId);
+          next.set(chId, filtered);
+        });
+        return next;
+      });
+    };
+    window.addEventListener('nexus_voice_disconnected', handleVoiceDisconnected);
+
     return () => {
+      window.removeEventListener('nexus_voice_disconnected', handleVoiceDisconnected);
       try {
         supabase.removeChannel(chan);
       } catch {}
@@ -164,20 +179,39 @@ export function ServerSidebar({
       const serverList = remoteOccupants.get(cleanChanId) || remoteOccupants.get(channelId) || [];
       const occupantsMap = new Map<string, VoiceParticipant>();
 
-      // Populate from presence
-      serverList.forEach((p) => occupantsMap.set(p.user_id, p));
-
-      // Also merge any occupants known from serverVoice.channelOccupants (LiveKit room state)
-      const contextOccupants = serverVoice.channelOccupants.get(cleanChanId) || serverVoice.channelOccupants.get(channelId) || [];
-      contextOccupants.forEach((p) => occupantsMap.set(p.user_id, p));
-
-      // If current user is connected to this voice channel, overlay local realtime voice state
-      if (
+      const isVoiceConnectedToThis =
         serverVoice.isVoiceConnected &&
         (serverVoice.activeServerId || '').toLowerCase().trim() === (server.id || '').toLowerCase().trim() &&
-        (serverVoice.activeChannelId || '').toLowerCase().trim() === cleanChanId &&
-        user
-      ) {
+        (serverVoice.activeChannelId || '').toLowerCase().trim() === cleanChanId;
+
+      // Populate from presence (strictly omit self if not connected to this channel)
+      serverList.forEach((p) => {
+        if (p.user_id === user?.id) {
+          if (isVoiceConnectedToThis) {
+            occupantsMap.set(p.user_id, p);
+          }
+          return;
+        }
+        occupantsMap.set(p.user_id, p);
+      });
+
+      // Also merge any occupants known from serverVoice.channelOccupants (LiveKit room state)
+      const contextOccupants =
+        serverVoice.channelOccupants.get(cleanChanId) ||
+        serverVoice.channelOccupants.get(channelId) ||
+        [];
+      contextOccupants.forEach((p) => {
+        if (p.user_id === user?.id) {
+          if (isVoiceConnectedToThis) {
+            occupantsMap.set(p.user_id, p);
+          }
+          return;
+        }
+        occupantsMap.set(p.user_id, p);
+      });
+
+      // If current user is connected to this voice channel, overlay local realtime voice state
+      if (isVoiceConnectedToThis && user) {
         occupantsMap.set(user.id, {
           id: user.id,
           user_id: user.id,

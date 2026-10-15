@@ -559,10 +559,13 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   React.useEffect(() => {
     const unlockAudio = () => {
       audioElementsRef.current.forEach((audio) => {
-        if (audio.paused && audio.srcObject) {
+        if (audio.paused) {
           audio.play().catch(() => {});
         }
       });
+      if (livekitRoomRef.current) {
+        livekitRoomRef.current.startAudio().catch(() => {});
+      }
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume().catch(() => {});
       }
@@ -570,9 +573,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
     window.addEventListener('click', unlockAudio, { passive: true });
     window.addEventListener('keydown', unlockAudio, { passive: true });
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
     return () => {
       window.removeEventListener('click', unlockAudio);
       window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
     };
   }, []);
 
@@ -787,11 +792,26 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 const el = track.attach();
                 el.id = `remote-livekit-audio-${peerId}`;
                 el.muted = isDeafenedRef.current;
+                el.volume = 1.0;
+                el.autoplay = true;
+
+                // Position off-screen instead of display: none to prevent browser audio suspension
+                el.style.position = 'fixed';
+                el.style.top = '-9999px';
+                el.style.left = '-9999px';
+                el.style.width = '1px';
+                el.style.height = '1px';
+                el.style.opacity = '0';
+                el.style.pointerEvents = 'none';
+
                 if (!document.body.contains(el)) {
-                  el.style.display = 'none';
                   document.body.appendChild(el);
                 }
                 audioElementsRef.current.set(peerId, el);
+
+                el.play().catch((playErr) => {
+                  console.warn('[LiveKit Voice] Remote audio autoplay deferred waiting for gesture:', playErr);
+                });
               } else if (track.kind === Track.Kind.Video) {
                 if (track.mediaStreamTrack) {
                   const vStream = new MediaStream([track.mediaStreamTrack]);
@@ -919,6 +939,25 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               setRemoteParticipants(remotes);
             });
 
+            // Listen for browser autoplay restrictions
+            lkRoom.on(RoomEvent.AudioPlaybackStatusChanged, (canPlayAudio: boolean) => {
+              if (!canPlayAudio) {
+                console.warn('[LiveKit Voice] Audio playback blocked by browser. Unlocking on next user gesture...');
+                const unlock = () => {
+                  lkRoom.startAudio().catch(() => {});
+                  audioElementsRef.current.forEach((el) => {
+                    el.play().catch(() => {});
+                  });
+                  window.removeEventListener('click', unlock);
+                  window.removeEventListener('keydown', unlock);
+                  window.removeEventListener('touchstart', unlock);
+                };
+                window.addEventListener('click', unlock, { once: true, passive: true });
+                window.addEventListener('keydown', unlock, { once: true, passive: true });
+                window.addEventListener('touchstart', unlock, { once: true, passive: true });
+              }
+            });
+
             // Connect to LiveKit Cloud SFU
             await lkRoom.connect(tokenData.url, tokenData.token);
             if (currentVoiceSessionIdRef.current !== voiceSessionId) {
@@ -926,6 +965,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               try { lkRoom.disconnect(); } catch {}
               return;
             }
+
+            // Immediately request audio playback authorization
+            await lkRoom.startAudio().catch((err) => {
+              console.warn('[LiveKit Voice] lkRoom.startAudio() notice:', err);
+            });
 
             mediaTransportRef.current = 'livekit';
             setIsLiveKitActive(true);
@@ -955,10 +999,126 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             setRemoteParticipants(initialRemotes);
             updateChannelOccupantsMap(channelId, [getMyVoiceState(), ...initialRemotes]);
 
-            // Publish local audio track with Krisp AI noise filter
+            // Acquire local microphone & setup studio audio pipeline if not already active
+            let stream = localStreamRef.current;
+            const isExistingStreamLive =
+              stream &&
+              stream.active &&
+              stream.getAudioTracks().some((t) => t.readyState === 'live');
+
+            if (!isExistingStreamLive) {
+              try {
+                if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+                  const rawStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                      echoCancellation: true,
+                      noiseSuppression: true,
+                      autoGainControl: true,
+                    },
+                    video: false,
+                  });
+
+                  if (dspPipelineRef.current) {
+                    dspPipelineRef.current.cleanup();
+                    dspPipelineRef.current = null;
+                  }
+                  const dsp = createStudioAudioPipeline(rawStream, isNoiseSuppressionEnabled);
+                  dspPipelineRef.current = dsp;
+                  stream = dsp ? dsp.outputStream : rawStream;
+
+                  setLocalStream(stream);
+                  localStreamRef.current = stream;
+                  setIsMicMuted(false);
+                  isMicMutedRef.current = false;
+                }
+              } catch (micErr) {
+                console.warn('[VoiceLounge] Mic setup notice (joining muted):', micErr);
+                setIsMicMuted(true);
+                isMicMutedRef.current = true;
+              }
+            }
+
+            // Start speech analyzer for RMS meter (never close audioContextRef if active)
+            if (stream) {
+              try {
+                if (animFrameRef.current) {
+                  cancelAnimationFrame(animFrameRef.current);
+                  animFrameRef.current = null;
+                }
+                const AudioCtx =
+                  window.AudioContext ||
+                  (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+                if (AudioCtx) {
+                  let audioCtx = audioContextRef.current;
+                  if (!audioCtx || audioCtx.state === 'closed') {
+                    audioCtx = new AudioCtx();
+                    audioContextRef.current = audioCtx;
+                  }
+                  if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(() => {});
+                  }
+
+                  const source = audioCtx.createMediaStreamSource(stream);
+                  const analyser = audioCtx.createAnalyser();
+                  analyser.fftSize = 512;
+                  analyser.smoothingTimeConstant = 0.3;
+                  source.connect(analyser);
+
+                  const silentGain = audioCtx.createGain();
+                  silentGain.gain.value = 0;
+                  source.connect(silentGain);
+                  silentGain.connect(audioCtx.destination);
+
+                  const pcmData = new Uint8Array(analyser.frequencyBinCount);
+                  let speakingCounter = 0;
+
+                  const checkSpeaking = () => {
+                    if (!analyser) return;
+                    analyser.getByteFrequencyData(pcmData);
+
+                    let sum = 0;
+                    for (let i = 0; i < pcmData.length; i++) {
+                      sum += pcmData[i];
+                    }
+                    const avg = sum / pcmData.length;
+                    const normalized = Math.min(100, Math.round((avg / 128) * 100));
+
+                    if (normalized !== audioLevelRef.current) {
+                      audioLevelRef.current = normalized;
+                      setAudioLevel(normalized);
+                    }
+
+                    const speakingThreshold = 14;
+                    if (normalized > speakingThreshold && !isMicMutedRef.current && !isDeafenedRef.current) {
+                      speakingCounter = 6;
+                      if (!isSpeakingRef.current) {
+                        isSpeakingRef.current = true;
+                        setIsSpeaking(true);
+                        broadcastMyVoiceState({ is_speaking: true });
+                      }
+                    } else if (speakingCounter > 0) {
+                      speakingCounter--;
+                    } else if (isSpeakingRef.current) {
+                      isSpeakingRef.current = false;
+                      setIsSpeaking(false);
+                      broadcastMyVoiceState({ is_speaking: false });
+                    }
+
+                    animFrameRef.current = requestAnimationFrame(checkSpeaking);
+                  };
+
+                  animFrameRef.current = requestAnimationFrame(checkSpeaking);
+                }
+              } catch (audioCtxErr) {
+                console.warn('[VoiceLounge] Audio analyser setup notice:', audioCtxErr);
+              }
+            }
+
+            // Publish local audio track to LiveKit Cloud SFU
             try {
               let localAudioTrack: any;
-              const existingAudioTrack = localStreamRef.current?.getAudioTracks()[0];
+              const existingAudioTrack = stream?.getAudioTracks()[0] || localStreamRef.current?.getAudioTracks()[0];
               if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
                 const { LocalAudioTrack } = await import('livekit-client');
                 localAudioTrack = new LocalAudioTrack(existingAudioTrack);
@@ -975,48 +1135,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 }
               }
 
+              // Attempt Krisp AI noise filter if supported and available; graceful fallback if not licensed
               if (typeof window !== 'undefined') {
                 try {
                   const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
                   if (isKrispNoiseFilterSupported()) {
-                    const rawTrack: MediaStreamTrack | undefined = localAudioTrack.mediaStreamTrack || existingAudioTrack;
-                    if (rawTrack && typeof (rawTrack as any).applyConstraints === 'function') {
-                      const origApply = (rawTrack as any).applyConstraints.bind(rawTrack);
-                      (rawTrack as any).applyConstraints = async (constraints: any) => {
-                        try {
-                          return await origApply(constraints);
-                        } catch (err: any) {
-                          if (err?.name === 'OverconstrainedError' || (err && String(err).includes('constraint'))) {
-                            try {
-                              const relaxed = { ...constraints };
-                              delete relaxed.sampleRate;
-                              delete relaxed.voiceIsolation;
-                              return await origApply(relaxed);
-                            } catch {
-                              return;
-                            }
-                          }
-                          throw err;
-                        }
-                      };
-                    }
-
-                    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-                    if (AudioCtx) {
-                      const trackSampleRate = rawTrack?.getSettings?.()?.sampleRate;
-                      const actx = audioContextRef.current || new AudioCtx({
-                        sampleRate: trackSampleRate || 48000,
-                        latencyHint: 'interactive',
-                      });
-                      audioContextRef.current = actx;
-                      if (actx.state === 'suspended') {
-                        actx.resume().catch(() => {});
-                      }
-                      if (typeof localAudioTrack.setAudioContext === 'function') {
-                        localAudioTrack.setAudioContext(actx);
-                      }
-                    }
-
                     const krisp = KrispNoiseFilter();
                     await localAudioTrack.setProcessor(krisp);
                     krispProcessorRef.current = krisp;
@@ -1024,7 +1147,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     console.log('[LiveKit Voice] Krisp AI noise filter activated!');
                   }
                 } catch (krispErr) {
-                  console.warn('[LiveKit Voice] Krisp processor warning:', krispErr);
+                  console.warn('[LiveKit Voice] Krisp processor unavailable, proceeding with clean studio audio:', krispErr);
+                  try {
+                    await localAudioTrack.stopProcessor();
+                  } catch {}
+                  krispProcessorRef.current = null;
                   setIsKrispActive(false);
                 }
               }
@@ -1048,123 +1175,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       } catch (lkErr) {
         console.error('[LiveKit Voice] Error connecting to LiveKit room, falling back to WebRTC:', lkErr);
         mediaTransportRef.current = 'webrtc';
-      }
-
-      // 2. Microphone capture & Web Audio speech analyzer for RMS meter
-      let stream = localStreamRef.current;
-      const isExistingStreamLive =
-        stream &&
-        stream.active &&
-        stream.getAudioTracks().some((t) => t.readyState === 'live');
-
-      if (!isExistingStreamLive) {
-        try {
-          if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-            const rawStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-              },
-              video: false,
-            });
-
-            if (dspPipelineRef.current) {
-              dspPipelineRef.current.cleanup();
-              dspPipelineRef.current = null;
-            }
-            const dsp = createStudioAudioPipeline(rawStream, isNoiseSuppressionEnabled);
-            dspPipelineRef.current = dsp;
-            stream = dsp ? dsp.outputStream : rawStream;
-
-            setLocalStream(stream);
-            localStreamRef.current = stream;
-            setIsMicMuted(false);
-            isMicMutedRef.current = false;
-          }
-        } catch (micErr) {
-          console.warn('[VoiceLounge] Mic setup notice (joining muted):', micErr);
-          setIsMicMuted(true);
-          isMicMutedRef.current = true;
-        }
-      }
-
-      if (stream) {
-        try {
-          if (animFrameRef.current) {
-            cancelAnimationFrame(animFrameRef.current);
-            animFrameRef.current = null;
-          }
-          if (audioContextRef.current) {
-            try { audioContextRef.current.close(); } catch {}
-            audioContextRef.current = null;
-          }
-
-          const AudioCtx =
-            window.AudioContext ||
-            (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-
-          if (AudioCtx) {
-            const audioCtx = new AudioCtx();
-            audioContextRef.current = audioCtx;
-            if (audioCtx.state === 'suspended') {
-              audioCtx.resume().catch(() => {});
-            }
-
-            const source = audioCtx.createMediaStreamSource(stream);
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 512;
-            analyser.smoothingTimeConstant = 0.3;
-            source.connect(analyser);
-
-            const silentGain = audioCtx.createGain();
-            silentGain.gain.value = 0;
-            source.connect(silentGain);
-            silentGain.connect(audioCtx.destination);
-
-            const pcmData = new Uint8Array(analyser.frequencyBinCount);
-            let speakingCounter = 0;
-
-            const checkSpeaking = () => {
-              if (!analyser) return;
-              analyser.getByteFrequencyData(pcmData);
-
-              let sum = 0;
-              for (let i = 0; i < pcmData.length; i++) {
-                sum += pcmData[i];
-              }
-              const avg = sum / pcmData.length;
-              const normalized = Math.min(100, Math.round((avg / 128) * 100));
-
-              if (normalized !== audioLevelRef.current) {
-                audioLevelRef.current = normalized;
-                setAudioLevel(normalized);
-              }
-
-              const speakingThreshold = 14;
-              if (normalized > speakingThreshold && !isMicMutedRef.current && !isDeafenedRef.current) {
-                speakingCounter = 6;
-                if (!isSpeakingRef.current) {
-                  isSpeakingRef.current = true;
-                  setIsSpeaking(true);
-                  broadcastMyVoiceState({ is_speaking: true });
-                }
-              } else if (speakingCounter > 0) {
-                speakingCounter--;
-              } else if (isSpeakingRef.current) {
-                isSpeakingRef.current = false;
-                setIsSpeaking(false);
-                broadcastMyVoiceState({ is_speaking: false });
-              }
-
-              animFrameRef.current = requestAnimationFrame(checkSpeaking);
-            };
-
-            checkSpeaking();
-          }
-        } catch (audioErr) {
-          console.warn('[VoiceLounge] AudioContext setup warning:', audioErr);
-        }
       }
 
       // 3. Connect Server-wide presence channel so all server members see occupants under the channel in the sidebar

@@ -514,8 +514,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     // Also update remote persistent audio element if this is an audio track
     if (track.kind === 'audio' && remoteAudioElementRef.current) {
-      if (remoteAudioElementRef.current.srcObject !== currentStream) {
-        remoteAudioElementRef.current.srcObject = currentStream;
+      if (mediaTransportRef.current !== 'livekit') {
+        if (remoteAudioElementRef.current.srcObject !== currentStream) {
+          remoteAudioElementRef.current.srcObject = currentStream;
+        }
       }
       remoteAudioElementRef.current.muted = isDeafened;
       remoteAudioElementRef.current.play().catch(() => {});
@@ -734,8 +736,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!audioEl) return;
 
     if (remoteStream) {
-      if (audioEl.srcObject !== remoteStream) {
-        audioEl.srcObject = remoteStream;
+      if (mediaTransportRef.current !== 'livekit') {
+        if (audioEl.srcObject !== remoteStream) {
+          audioEl.srcObject = remoteStream;
+        }
       }
       audioEl.muted = isDeafened;
       audioEl.volume = 1.0;
@@ -762,7 +766,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     } else {
       audioEl.pause();
-      audioEl.srcObject = null;
+      if (mediaTransportRef.current !== 'livekit') {
+        audioEl.srcObject = null;
+      }
     }
   }, [remoteStream, isDeafened]);
 
@@ -776,13 +782,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Global user interaction unblocker for browser audio context and media autoplay policies
   React.useEffect(() => {
     const unlockAudio = async () => {
+      if (livekitRoomRef.current) {
+        livekitRoomRef.current.startAudio().catch(() => {});
+      }
       if (dspAudioCtxRef.current && dspAudioCtxRef.current.state === 'suspended') {
         try {
           await dspAudioCtxRef.current.resume();
         } catch {}
       }
       const audioEl = remoteAudioElementRef.current;
-      if (audioEl && audioEl.paused && remoteStream && remoteStream.getAudioTracks().length > 0) {
+      if (audioEl && audioEl.paused) {
         try {
           await audioEl.play();
         } catch {}
@@ -1378,18 +1387,57 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }
         });
 
+        // Listen for browser autoplay restrictions
+        lkRoom.on(RoomEvent.AudioPlaybackStatusChanged, (canPlayAudio: boolean) => {
+          if (!canPlayAudio) {
+            console.warn('[LiveKit Call] Audio playback blocked by browser. Unlocking on next user gesture...');
+            const unlock = () => {
+              lkRoom.startAudio().catch(() => {});
+              if (remoteAudioElementRef.current) {
+                remoteAudioElementRef.current.play().catch(() => {});
+              }
+              window.removeEventListener('click', unlock);
+              window.removeEventListener('keydown', unlock);
+              window.removeEventListener('touchstart', unlock);
+            };
+            window.addEventListener('click', unlock, { once: true, passive: true });
+            window.addEventListener('keydown', unlock, { once: true, passive: true });
+            window.addEventListener('touchstart', unlock, { once: true, passive: true });
+          }
+        });
+
         // SINGLE AUTHORITATIVE PLAYBACK SINK:
-        // Remote audio is attached ONLY to remoteStreamRef via attachRemoteTrack.
-        // It is NOT attached to a hidden document.body element, eliminating voice duplication!
+        // Remote audio is attached directly to remoteAudioElementRef via LiveKit SDK track.attach
         lkRoom.on(RoomEvent.TrackSubscribed, (track: any, _pub: any, participant: any) => {
           if (activeCallSessionIdRef.current !== callSessionId) return;
           console.log('[LiveKit Call] Authoritative remote track subscribed:', participant.identity, track.kind);
+          if (track.kind === 'audio' || track.kind === Track.Kind.Audio) {
+            if (remoteAudioElementRef.current) {
+              try {
+                track.attach(remoteAudioElementRef.current);
+                remoteAudioElementRef.current.muted = isDeafenedRef.current;
+                remoteAudioElementRef.current.volume = 1.0;
+                remoteAudioElementRef.current.play().catch((playErr: any) => {
+                  console.warn('[LiveKit Call] Remote audio autoplay deferred waiting for gesture:', playErr);
+                });
+              } catch (attachErr) {
+                console.warn('[LiveKit Call] Error attaching track to audio element:', attachErr);
+              }
+            }
+          }
           if (track.mediaStreamTrack) {
             attachRemoteTrack(track.mediaStreamTrack);
           }
         });
 
         lkRoom.on(RoomEvent.TrackUnsubscribed, (track: any) => {
+          if (track.kind === 'audio' || track.kind === Track.Kind.Audio) {
+            if (remoteAudioElementRef.current) {
+              try {
+                track.detach(remoteAudioElementRef.current);
+              } catch {}
+            }
+          }
           if (track.mediaStreamTrack && remoteStreamRef.current) {
             try {
               remoteStreamRef.current.removeTrack(track.mediaStreamTrack);
@@ -1424,6 +1472,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           return false;
         }
 
+        // Authorize audio playback immediately on connect
+        await lkRoom.startAudio().catch((err) => {
+          console.warn('[LiveKit Call] lkRoom.startAudio() notice:', err);
+        });
+
         setIsLiveKitActive(true);
         mediaTransportRef.current = 'livekit';
 
@@ -1442,64 +1495,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             });
           }
 
-          let krispInitialized = false;
           if (typeof window !== 'undefined') {
             try {
               const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
               if (isKrispNoiseFilterSupported()) {
-                const rawTrack: MediaStreamTrack | undefined = localAudioTrack.mediaStreamTrack || existingAudioTrack;
-                if (rawTrack && typeof (rawTrack as any).applyConstraints === 'function') {
-                  const origApply = (rawTrack as any).applyConstraints.bind(rawTrack);
-                  (rawTrack as any).applyConstraints = async (constraints: any) => {
-                    try {
-                      return await origApply(constraints);
-                    } catch (err: any) {
-                      if (err?.name === 'OverconstrainedError' || (err && String(err).includes('constraint'))) {
-                        try {
-                          const relaxed = { ...constraints };
-                          delete relaxed.sampleRate;
-                          delete relaxed.voiceIsolation;
-                          return await origApply(relaxed);
-                        } catch {
-                          return;
-                        }
-                      }
-                      throw err;
-                    }
-                  };
-                }
-
-                const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-                if (AudioCtx) {
-                  const trackSampleRate = rawTrack?.getSettings?.()?.sampleRate;
-                  const actx = new AudioCtx({
-                    sampleRate: trackSampleRate || 48000,
-                    latencyHint: 'interactive',
-                  });
-                  if (actx.state === 'suspended') {
-                    actx.resume().catch(() => {});
-                  }
-                  if (typeof localAudioTrack.setAudioContext === 'function') {
-                    localAudioTrack.setAudioContext(actx);
-                  }
-                }
-
                 const krisp = KrispNoiseFilter();
                 await localAudioTrack.setProcessor(krisp);
                 krispProcessorRef.current = krisp;
-                krispInitialized = true;
                 setIsKrispActive(true);
                 console.log('[LiveKit Call] Krisp AI noise filter activated in private call!');
               }
             } catch (krispErr) {
-              console.warn('[LiveKit Call] Krisp processor setup notice (using DSP fallback):', krispErr);
+              console.warn('[LiveKit Call] Krisp processor setup notice (using studio audio fallback):', krispErr);
+              try {
+                await localAudioTrack.stopProcessor();
+              } catch {}
               krispProcessorRef.current = null;
               setIsKrispActive(false);
             }
-          }
-
-          if (!krispInitialized) {
-            setIsKrispActive(false);
           }
 
           if (isMicMutedRef.current) {

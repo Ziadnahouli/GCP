@@ -25,14 +25,10 @@ import { Gamepad2, MessageSquare, Users, X } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Channel } from '@/lib/types/server';
 import { cn } from '@/lib/utils';
-import { FloatingCallController } from '@/components/call/FloatingCallController';
-import { CookieConsentManager } from '@/components/legal/CookieConsentManager';
-import { useBackgroundCallNotifier } from '@/hooks/useBackgroundCallNotifier';
 
 function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, profile, isLoading } = useAuth();
   useGlobalShortcuts();
-  useBackgroundCallNotifier();
   const call = useCallContext();
   const serverVoice = useServerVoiceContext();
   const [collapsed, setCollapsed] = React.useState(false);
@@ -472,28 +468,6 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
       {/* Global Diagnostics & Live Telemetry Logs Console */}
       <LogsWindow />
-
-      {/* Floating Persistent Call Controls (Document PiP) */}
-      {(call.callStatus === 'in_call' || serverVoice.isVoiceConnected) && (
-        <FloatingCallController
-          localStream={call.callStatus === 'in_call' ? call.localStream : serverVoice.localStream}
-          remotePeerName={
-            call.callStatus === 'in_call'
-              ? (call.participants[0]?.name || 'Direct Peer')
-              : (serverVoice.activeChannelName || 'Voice Lounge')
-          }
-          isMuted={call.callStatus === 'in_call' ? call.isMicMuted : serverVoice.isMicMuted}
-          isCameraOff={call.callStatus === 'in_call' ? !call.isCameraOn : !serverVoice.isCameraOn}
-          isScreenSharing={call.callStatus === 'in_call' ? call.isScreenSharing : serverVoice.isScreenSharing}
-          onToggleMic={call.callStatus === 'in_call' ? call.toggleMic : serverVoice.toggleMic}
-          onToggleCamera={call.callStatus === 'in_call' ? call.toggleCamera : serverVoice.toggleCamera}
-          onToggleScreenShare={call.callStatus === 'in_call' ? call.toggleScreenShare : serverVoice.toggleScreenShare}
-          onEndCall={call.callStatus === 'in_call' ? call.endCall : serverVoice.disconnectVoice}
-        />
-      )}
-
-      {/* Global GDPR/CCPA Privacy & P2P Data Preference Modal */}
-      <CookieConsentManager />
     </div>
   );
 }

@@ -319,6 +319,14 @@ export function useCall() {
       });
     }
 
+    if (pcRef.current) {
+      pcRef.current.getSenders().forEach((s) => {
+        if (s.track?.kind === 'audio') {
+          s.track.enabled = !nextMuted;
+        }
+      });
+    }
+
     setParticipants((prev) =>
       prev.map((p) => (p.id === (user?.id || 'me') ? { ...p, isMuted: nextMuted } : p))
     );

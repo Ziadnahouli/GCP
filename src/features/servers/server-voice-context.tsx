@@ -37,6 +37,7 @@ export interface ServerVoiceContextType {
   isVoiceConnected: boolean;
   isConnecting: boolean;
   isLiveKitActive: boolean;
+  isKrispActive: boolean;
   isMicMuted: boolean;
   isDeafened: boolean;
   isCameraOn: boolean;
@@ -79,8 +80,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const [isVoiceConnected, setIsVoiceConnected] = React.useState(false);
   const [isConnecting, setIsConnecting] = React.useState(false);
   const [isLiveKitActive, setIsLiveKitActive] = React.useState(false);
+  const [isKrispActive, setIsKrispActive] = React.useState(false);
   const livekitRoomRef = React.useRef<Room | null>(null);
   const krispProcessorRef = React.useRef<any>(null);
+  const mediaTransportRef = React.useRef<'livekit' | 'webrtc' | 'none'>('none');
+  const currentVoiceSessionIdRef = React.useRef<string | null>(null);
   const [isMicMuted, setIsMicMuted] = React.useState(false);
   const [isDeafened, setIsDeafened] = React.useState(false);
   const [isCameraOn, setIsCameraOn] = React.useState(false);
@@ -440,6 +444,10 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     async (payload: any) => {
       const u = userRef.current;
       if (!u || !payload || payload.to !== u.id || !payload.from) return;
+      if (mediaTransportRef.current === 'livekit' || livekitRoomRef.current?.state === 'connected') {
+        // LiveKit SFU is authoritative; suppress duplicate P2P WebRTC connections
+        return;
+      }
       const fromPeerId = payload.from;
 
       try {
@@ -640,6 +648,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         } catch {}
       }
 
+      const voiceSessionId = 'voice_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      currentVoiceSessionIdRef.current = voiceSessionId;
+
       console.log('[LiveKit Voice] Initiating joinVoiceChannel:', { serverId, channelId, userId: currentUser.id, serverName, channelName });
       const supabase = getBrowserClient();
 
@@ -689,7 +700,10 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         } catch {}
         livekitRoomRef.current = null;
       }
+      krispProcessorRef.current = null;
+      setIsKrispActive(false);
       setIsLiveKitActive(false);
+      mediaTransportRef.current = 'none';
 
       cleanUpAllPeers();
 
@@ -718,9 +732,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           }),
         });
 
+        if (currentVoiceSessionIdRef.current !== voiceSessionId) {
+          console.log('[LiveKit Voice] Session changed during token request, discarding');
+          return;
+        }
+
         if (!tokenRes.ok) {
           const errText = await tokenRes.text();
           console.error('[LiveKit Voice] Token endpoint error:', tokenRes.status, errText);
+          mediaTransportRef.current = 'webrtc';
         } else {
           const tokenData = await tokenRes.json();
           if (tokenData.isConfigured && tokenData.token && tokenData.url) {
@@ -734,6 +754,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
             lkRoom.on(RoomEvent.Connected, () => {
               console.log('[LiveKit Voice] Connected to LiveKit Cloud Room:', roomName);
+              mediaTransportRef.current = 'livekit';
               setIsLiveKitActive(true);
               setIsVoiceConnected(true);
               setIsConnecting(false);
@@ -742,6 +763,10 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             lkRoom.on(RoomEvent.Disconnected, (reason) => {
               console.log('[LiveKit Voice] Disconnected from LiveKit Cloud SFU, reason:', reason);
               setIsLiveKitActive(false);
+              setIsKrispActive(false);
+              if (mediaTransportRef.current === 'livekit') {
+                mediaTransportRef.current = 'none';
+              }
             });
 
             lkRoom.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant: RemoteParticipant) => {
@@ -749,6 +774,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               console.log('[LiveKit Voice] Remote track subscribed:', peerId, track.kind, track.source);
 
               if (track.kind === Track.Kind.Audio) {
+                // Remove previous DOM audio element if any to prevent duplicate sinks
+                const prevEl = audioElementsRef.current.get(peerId);
+                if (prevEl) {
+                  try {
+                    prevEl.srcObject = null;
+                    prevEl.pause();
+                    prevEl.remove();
+                  } catch {}
+                  audioElementsRef.current.delete(peerId);
+                }
                 const el = track.attach();
                 el.id = `remote-livekit-audio-${peerId}`;
                 el.muted = isDeafenedRef.current;
@@ -800,7 +835,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     try { el.remove(); } catch {}
                   });
                 } catch {}
-                audioElementsRef.current.delete(peerId);
+                const el = audioElementsRef.current.get(peerId);
+                if (el) {
+                  try {
+                    el.srcObject = null;
+                    el.pause();
+                    el.remove();
+                  } catch {}
+                  audioElementsRef.current.delete(peerId);
+                }
               } else if (track.kind === Track.Kind.Video) {
                 remoteVideoStreamsRef.current.delete(peerId);
                 setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
@@ -843,6 +886,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               peersMapRef.current.delete(peerId);
               remoteVideoStreamsRef.current.delete(peerId);
               setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
+              const el = audioElementsRef.current.get(peerId);
+              if (el) {
+                try {
+                  el.srcObject = null;
+                  el.pause();
+                  el.remove();
+                } catch {}
+                audioElementsRef.current.delete(peerId);
+              }
               const remotes = Array.from(peersMapRef.current.values());
               setRemoteParticipants(remotes);
               updateChannelOccupantsMap(channelId, [getMyVoiceState(), ...remotes]);
@@ -869,6 +921,13 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
             // Connect to LiveKit Cloud SFU
             await lkRoom.connect(tokenData.url, tokenData.token);
+            if (currentVoiceSessionIdRef.current !== voiceSessionId) {
+              console.log('[LiveKit Voice] Session cancelled while connecting, disconnecting');
+              try { lkRoom.disconnect(); } catch {}
+              return;
+            }
+
+            mediaTransportRef.current = 'livekit';
             setIsLiveKitActive(true);
             setIsVoiceConnected(true);
             setIsConnecting(false);
@@ -920,8 +979,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 try {
                   const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
                   if (isKrispNoiseFilterSupported()) {
-                    // Safeguard against OverconstrainedError in Chromium on Windows:
-                    // wrap track applyConstraints to strip unsupported sampleRate or voiceIsolation
                     const rawTrack: MediaStreamTrack | undefined = localAudioTrack.mediaStreamTrack || existingAudioTrack;
                     if (rawTrack && typeof (rawTrack as any).applyConstraints === 'function') {
                       const origApply = (rawTrack as any).applyConstraints.bind(rawTrack);
@@ -963,10 +1020,12 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     const krisp = KrispNoiseFilter();
                     await localAudioTrack.setProcessor(krisp);
                     krispProcessorRef.current = krisp;
+                    setIsKrispActive(true);
                     console.log('[LiveKit Voice] Krisp AI noise filter activated!');
                   }
                 } catch (krispErr) {
                   console.warn('[LiveKit Voice] Krisp processor warning:', krispErr);
+                  setIsKrispActive(false);
                 }
               }
 
@@ -974,17 +1033,21 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 try { localAudioTrack.mute(); } catch {}
               }
 
-              await lkRoom.localParticipant.publishTrack(localAudioTrack);
+              await lkRoom.localParticipant.publishTrack(localAudioTrack, {
+                source: Track.Source.Microphone,
+              });
               console.log('[LiveKit Voice] Local audio track published to LiveKit Cloud SFU!');
             } catch (pubErr) {
               console.warn('[LiveKit Voice] Local audio track publish notice:', pubErr);
             }
           } else {
-            console.warn('[LiveKit Voice] LiveKit not configured or missing token/url:', tokenData);
+            console.warn('[LiveKit Voice] LiveKit not configured or missing token/url, using WebRTC fallback:', tokenData);
+            mediaTransportRef.current = 'webrtc';
           }
         }
       } catch (lkErr) {
-        console.error('[LiveKit Voice] Error connecting to LiveKit room:', lkErr);
+        console.error('[LiveKit Voice] Error connecting to LiveKit room, falling back to WebRTC:', lkErr);
+        mediaTransportRef.current = 'webrtc';
       }
 
       // 2. Microphone capture & Web Audio speech analyzer for RMS meter
@@ -1181,7 +1244,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 audio_level: Number(latest.audio_level || existing?.audio_level || 0),
               });
 
-              if (u.id < peerId) {
+              if (u.id < peerId && mediaTransportRef.current === 'webrtc') {
                 getOrCreatePeerConnection(peerId, true);
               }
             }
@@ -1233,7 +1296,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               setRemoteParticipants(remotes);
               updateChannelOccupantsMap(channelId, [getMyVoiceState(), ...remotes]);
 
-              if (u.id < peerId) {
+              if (u.id < peerId && mediaTransportRef.current === 'webrtc') {
                 getOrCreatePeerConnection(peerId, true);
               }
             }
@@ -1291,7 +1354,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             });
           } catch {}
 
-          if (u.id < payload.user_id) {
+          if (u.id < payload.user_id && mediaTransportRef.current === 'webrtc') {
             getOrCreatePeerConnection(payload.user_id, true);
           }
         })
@@ -1303,7 +1366,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           setRemoteParticipants(remotes);
           updateChannelOccupantsMap(channelId, [getMyVoiceState(), ...remotes]);
 
-          if (u.id < payload.user_id) {
+          if (u.id < payload.user_id && mediaTransportRef.current === 'webrtc') {
             getOrCreatePeerConnection(payload.user_id, true);
           }
         })
@@ -1407,6 +1470,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       setIsConnecting(false);
     },
     [
+      user,
       isVoiceConnected,
       activeChannelId,
       isLiveKitActive,
@@ -1422,6 +1486,10 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
   // Disconnect from current voice channel
   const disconnectVoice = React.useCallback(() => {
+    currentVoiceSessionIdRef.current = null;
+    mediaTransportRef.current = 'none';
+    setIsKrispActive(false);
+    krispProcessorRef.current = null;
     stopAllMediaStreams();
 
     if (heartbeatIntervalRef.current) {
@@ -1435,7 +1503,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       } catch {}
       livekitRoomRef.current = null;
     }
-    krispProcessorRef.current = null;
     setIsLiveKitActive(false);
 
     const prevChanId = activeChannelIdRef.current || activeChannelId;
@@ -1525,11 +1592,29 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
     if (livekitRoomRef.current?.localParticipant) {
       try {
-        livekitRoomRef.current.localParticipant.setMicrophoneEnabled(!nextMuted);
+        const lp = livekitRoomRef.current.localParticipant;
+        // Mutate publications directly to prevent LiveKit from spawning new tracks via setMicrophoneEnabled
+        lp.audioTrackPublications.forEach((pub: any) => {
+          if (pub.track) {
+            if (nextMuted) {
+              pub.track.mute();
+            } else {
+              pub.track.unmute();
+            }
+          }
+        });
       } catch (lkErr) {
-        console.warn('[LiveKit] Error setting mic state:', lkErr);
+        console.warn('[LiveKit Voice] Error setting mic state:', lkErr);
       }
     }
+
+    peerConnectionsRef.current.forEach((pc) => {
+      pc.getSenders().forEach((s) => {
+        if (s.track?.kind === 'audio') {
+          s.track.enabled = !nextMuted;
+        }
+      });
+    });
 
     if (nextMuted) {
       setIsSpeaking(false);
@@ -1780,6 +1865,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     isVoiceConnected,
     isConnecting,
     isLiveKitActive,
+    isKrispActive,
     isMicMuted,
     isDeafened,
     isCameraOn,

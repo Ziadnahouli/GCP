@@ -205,6 +205,11 @@ export function useServersInternal() {
     [user]
   );
 
+  const saveServersRef = React.useRef(saveServers);
+  React.useEffect(() => {
+    saveServersRef.current = saveServers;
+  }, [saveServers]);
+
   const notifyServersUpdate = React.useCallback(() => {
     if (serversChannelRef.current) {
       if (serversChannelRef.current.state === 'joined') {
@@ -286,7 +291,7 @@ export function useServersInternal() {
       };
 
       const updated = [...servers, newServer];
-      saveServers(updated);
+      saveServersRef.current(updated);
 
       // Attempt Supabase insert if logged in
       if (user && supabase) {
@@ -355,7 +360,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
 
       if (user && supabase && updatedServer) {
         try {
@@ -409,7 +414,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
 
       if (user && supabase) {
         try {
@@ -469,7 +474,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
 
       if (user && supabase && updatedChan) {
         try {
@@ -505,7 +510,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
 
       if (user && supabase) {
         try {
@@ -524,7 +529,7 @@ export function useServersInternal() {
   const deleteServer = React.useCallback(
     async (serverId: string) => {
       const updated = servers.filter((s) => s.id !== serverId);
-      saveServers(updated);
+      saveServersRef.current(updated);
 
       if (user && supabase) {
         try {
@@ -623,7 +628,7 @@ export function useServersInternal() {
           };
 
           const updated = [...servers.filter((s) => s.id !== parsedServer.id), parsedServer];
-          saveServers(updated);
+          saveServersRef.current(updated);
           notifyServersUpdate();
           return { success: true, server: parsedServer };
         } catch (err: any) {
@@ -646,7 +651,7 @@ export function useServersInternal() {
       }
 
       const updated = servers.filter((s) => s.id !== serverId);
-      saveServers(updated);
+      saveServersRef.current(updated);
 
       if (supabase) {
         try {
@@ -675,7 +680,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
 
       if (user && supabase) {
         try {
@@ -707,7 +712,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
 
       if (user && supabase) {
         try {
@@ -758,7 +763,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
       notifyServersUpdate();
       return newRole;
     },
@@ -781,7 +786,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
       notifyServersUpdate();
       return true;
     },
@@ -801,7 +806,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
       notifyServersUpdate();
       return true;
     },
@@ -839,7 +844,7 @@ export function useServersInternal() {
         return srv;
       });
 
-      saveServers(updated);
+      saveServersRef.current(updated);
       notifyServersUpdate();
       return true;
     },

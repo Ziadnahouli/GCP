@@ -457,7 +457,7 @@ export function useMessages(conversationId: string | null) {
         chatChannelRef.current = null;
       }
     };
-  }, [conversationId, fetchMessages, isConfigured, userId, currentUsername, supabase, isUUID, profile?.username]);
+  }, [conversationId, fetchMessages, isConfigured, userId, currentUsername, supabase, isUUID, profile?.username, cacheKey]);
 
   // Send message with optional file uploads
   const sendMessage = async (
@@ -946,10 +946,27 @@ export function useMessages(conversationId: string | null) {
       return { error: null };
     }
 
-    const { error } = await supabase
-      .from('messages')
-      .update({ is_pinned: nextPinned })
-      .eq('id', messageId);
+    const target = messages.find((m) => m.id === messageId);
+    const isAuthor = !target || target.sender_id === user.id;
+
+    let error: any = null;
+    if (isAuthor) {
+      const directRes = await supabase
+        .from('messages')
+        .update({ is_pinned: nextPinned })
+        .eq('id', messageId);
+      error = directRes.error;
+    } else {
+      try {
+        const rpcRes = await supabase.rpc('pin_conversation_message', {
+          p_message_id: messageId,
+          p_is_pinned: nextPinned,
+        });
+        error = rpcRes.error;
+      } catch (e: any) {
+        error = e;
+      }
+    }
 
     if (error) {
       console.error('Failed to toggle pin:', error);

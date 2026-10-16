@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import {
   Mic,
   MicOff,
@@ -21,6 +22,7 @@ import {
   ShieldCheck,
   GripHorizontal,
   RotateCcw,
+  ExternalLink,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -209,6 +211,59 @@ export function CallModal({
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [isPopUp, setIsPopUp] = React.useState(false);
+  const [pipWindow, setPipWindow] = React.useState<Window | null>(null);
+
+  // Helper to copy stylesheets into Document PiP window so styling matches identically
+  const copyStylesToPip = (targetDoc: Document) => {
+    document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+      targetDoc.head.appendChild(node.cloneNode(true));
+    });
+    targetDoc.documentElement.classList.add('dark');
+    targetDoc.body.style.margin = '0';
+    targetDoc.body.style.backgroundColor = '#0a0c16';
+    targetDoc.body.style.color = '#ffffff';
+    targetDoc.body.style.overflow = 'hidden';
+  };
+
+  const openDocumentPip = React.useCallback(async () => {
+    if (typeof window !== 'undefined' && 'documentPictureInPicture' in window) {
+      try {
+        if (pipWindow) {
+          pipWindow.close();
+          setPipWindow(null);
+          return;
+        }
+
+        const pip = await (window as any).documentPictureInPicture.requestWindow({
+          width: 350,
+          height: 250,
+        });
+
+        copyStylesToPip(pip.document);
+
+        pip.addEventListener('pagehide', () => {
+          setPipWindow(null);
+        });
+
+        setPipWindow(pip);
+        setIsPopUp(false);
+      } catch (err) {
+        console.warn('[PiP] Document Picture-in-Picture notice, falling back to in-app pop-up:', err);
+        setIsPopUp(true);
+      }
+    } else {
+      setIsPopUp(true);
+    }
+  }, [pipWindow]);
+
+  React.useEffect(() => {
+    if ((!open || callStatus === 'idle') && pipWindow) {
+      try {
+        pipWindow.close();
+      } catch {}
+      setPipWindow(null);
+    }
+  }, [open, callStatus, pipWindow]);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
   const [renderedFeeds, setRenderedFeeds] = React.useState<Record<string, boolean>>({});
 
@@ -301,6 +356,197 @@ export function CallModal({
 
   if (!open || callStatus === 'idle') return null;
 
+  if (pipWindow) {
+    const remotePartner = participants.find((p) => p.id !== user?.id);
+    const isSpeaking = remotePartner?.isSpeaking;
+
+    return (
+      <>
+        {createPortal(
+          <div className="flex flex-col h-screen w-screen bg-[#0a0c16] text-white overflow-hidden select-none font-sans">
+            {/* Above-All Header */}
+            <div className="h-9 px-3 border-b border-white/[0.08] flex items-center justify-between shrink-0 bg-[#0d101d]">
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className={cn(
+                    'w-2 h-2 rounded-full shrink-0',
+                    callStatus === 'outgoing_ringing' ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'
+                  )}
+                />
+                <span className="text-xs font-semibold text-white truncate">
+                  {remotePartner?.name || 'Private Call'}
+                </span>
+                {isLiveKitActive && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                    LiveKit SFU
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    pipWindow.close();
+                  } catch {}
+                  setPipWindow(null);
+                  setIsPopUp(true);
+                }}
+                className="p-1 rounded text-white/70 hover:text-white hover:bg-white/[0.08] transition-colors"
+                title="Dock back into app"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Above-All Media Stage: Screen Share / Video / Avatar */}
+            <div className="flex-1 relative bg-black/80 flex items-center justify-center overflow-hidden p-2 min-h-0">
+              {screenSharer && (screenStream || remoteStream) ? (
+                <VideoFeed
+                  stream={screenStream || remoteStream}
+                  muted={true}
+                  className="w-full h-full object-contain rounded-xl"
+                />
+              ) : (isCameraOn || participants.some((p) => p.isCameraOn)) && (remoteStream || localStream) ? (
+                <VideoFeed
+                  stream={remoteStream || localStream}
+                  muted={true}
+                  className="w-full h-full object-cover rounded-xl"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-center space-y-2">
+                  <div className="relative">
+                    {isSpeaking && (
+                      <span className="absolute inset-0 rounded-full bg-emerald-500/30 animate-ping" />
+                    )}
+                    <Avatar
+                      name={remotePartner?.name || 'Squad'}
+                      size="md"
+                      className={cn(
+                        'transition-all',
+                        isSpeaking ? 'ring-2 ring-emerald-400 shadow-glow-sm' : ''
+                      )}
+                    />
+                  </div>
+                  <div className="text-[11px] font-medium text-white/60">
+                    {callStatus === 'outgoing_ringing' ? 'Ringing...' : 'Voice Connected'}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 5 Controls Dock */}
+            <div className="p-2 border-t border-white/[0.08] bg-[#0d101d] flex items-center justify-between gap-1 shrink-0">
+              {/* 1. Mute Microphone */}
+              <button
+                type="button"
+                onClick={onToggleMic}
+                className={cn(
+                  'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
+                  isMicMuted
+                    ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
+                    : 'bg-white/[0.06] text-white hover:bg-white/[0.12]'
+                )}
+                title={isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
+              >
+                {isMicMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+
+              {/* 2. Deafen Audio */}
+              {onToggleDeafen && (
+                <button
+                  type="button"
+                  onClick={onToggleDeafen}
+                  className={cn(
+                    'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
+                    isDeafened
+                      ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
+                      : 'bg-white/[0.06] text-white hover:bg-white/[0.12]'
+                  )}
+                  title={isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
+                >
+                  <Headphones className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* 3. Screen Share */}
+              <button
+                type="button"
+                onClick={onToggleScreenShare}
+                className={cn(
+                  'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
+                  isScreenSharing
+                    ? 'bg-primary/25 text-primary hover:bg-primary/35 shadow-sm'
+                    : 'bg-white/[0.06] text-white/60 hover:text-white hover:bg-white/[0.12]'
+                )}
+                title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+              >
+                <Monitor className="w-4 h-4" />
+              </button>
+
+              {/* 4. Camera */}
+              <button
+                type="button"
+                onClick={onToggleCamera}
+                className={cn(
+                  'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
+                  isCameraOn
+                    ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                    : 'bg-white/[0.06] text-white/60 hover:text-white hover:bg-white/[0.12]'
+                )}
+                title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
+              >
+                {isCameraOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+              </button>
+
+              {/* 5. Close Call */}
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    pipWindow.close();
+                  } catch {}
+                  setPipWindow(null);
+                  onEndCall();
+                }}
+                className="p-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
+                title="Close Call"
+              >
+                <PhoneOff className="w-4 h-4" />
+              </button>
+            </div>
+          </div>,
+          pipWindow.document.body
+        )}
+
+        {/* Docked In-App Indicator pill */}
+        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[99999] pointer-events-auto bg-[#0a0c16]/95 border border-white/[0.12] rounded-2xl shadow-2xl backdrop-blur-xl p-3 flex items-center gap-3">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-foreground">
+              Call popped out above all windows
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              Floating on top of games & external apps
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                pipWindow.close();
+              } catch {}
+              setPipWindow(null);
+            }}
+            className="px-2.5 py-1 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] text-xs font-medium text-foreground transition-colors shrink-0"
+          >
+            Restore to App
+          </button>
+        </div>
+      </>
+    );
+  }
+
   if (isPopUp) {
     const remotePartner = participants.find((p) => p.id !== user?.id);
     const isSpeaking = remotePartner?.isSpeaking;
@@ -324,7 +570,7 @@ export function CallModal({
           position ? 'w-80 rounded-2xl' : 'bottom-4 right-4 sm:bottom-6 sm:right-6 w-80 rounded-2xl'
         )}
       >
-        {/* Pop-Up Header with Drag Handle & Maximize */}
+        {/* Pop-Up Header with Drag Handle, Above All & Maximize */}
         <div
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -356,6 +602,18 @@ export function CallModal({
                 <RotateCcw className="w-3 h-3" />
               </button>
             )}
+
+            {/* Float Above All (Picture-in-Picture) */}
+            <button
+              type="button"
+              onClick={openDocumentPip}
+              className="px-2 py-0.5 rounded text-primary hover:text-primary-foreground hover:bg-primary/20 text-[10px] font-semibold flex items-center gap-1 transition-colors border border-primary/30"
+              title="Pop out above all games & desktop windows (Picture-in-Picture)"
+              aria-label="Above All"
+            >
+              <ExternalLink className="w-3 h-3" />
+              <span>Above All</span>
+            </button>
 
             {/* Expand / Restore Full Stage */}
             <button
@@ -582,7 +840,22 @@ export function CallModal({
             <span>{stats.rttMs ?? 0}ms</span>
           </button>
 
-          {/* Pop-Up Screen (Minimize to floating widget) */}
+          {/* Pop out Above All (Floats above all games and desktop windows) */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsFullscreen(false);
+              openDocumentPip();
+            }}
+            className="px-2 py-1 rounded-md text-primary hover:text-primary-foreground hover:bg-primary/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors border border-primary/30"
+            title="Pop out above all games & desktop windows (Picture-in-Picture)"
+            aria-label="Above All"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Above All</span>
+          </button>
+
+          {/* In-App Pop-up Screen */}
           <button
             type="button"
             onClick={() => {
@@ -590,11 +863,11 @@ export function CallModal({
               setIsPopUp(true);
             }}
             className="px-2 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.04] text-[11px] font-medium flex items-center gap-1 transition-colors border border-white/[0.06]"
-            title="Pop-up Screen (Minimize)"
+            title="Pop-up Screen (In-App Dock)"
             aria-label="Pop-up Screen"
           >
-            <Minimize2 className="w-3.5 h-3.5 text-primary" />
-            <span className="hidden sm:inline">Pop-up</span>
+            <Minimize2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Dock</span>
           </button>
 
           {/* Fullscreen Toggle */}
@@ -607,15 +880,15 @@ export function CallModal({
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
 
-          {/* Minimize to bottom screen (pop-up dock) */}
+          {/* Minimize / Float Above All */}
           <button
             type="button"
             onClick={() => {
               setIsFullscreen(false);
-              setIsPopUp(true);
+              openDocumentPip();
             }}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.08] transition-colors ml-1"
-            title="Minimize to bottom screen"
+            title="Float above all games / minimize"
             aria-label="Minimize Call"
           >
             <X className="w-4 h-4" />

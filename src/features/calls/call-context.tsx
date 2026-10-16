@@ -1617,16 +1617,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             });
           }
 
-          // Attempt Krisp AI filter if supported and available; graceful fallback to Web Audio DSP
-          if (typeof window !== 'undefined' && !dspFilterNodesRef.current) {
+          // Attempt Krisp AI neural noise cancellation filter
+          if (typeof window !== 'undefined') {
             try {
               const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
-              if (isKrispNoiseFilterSupported()) {
+              const isSupported = isKrispNoiseFilterSupported();
+              console.log('[LiveKit Call] Checking Krisp AI noise filter support:', isSupported);
+              if (isSupported) {
                 const krisp = KrispNoiseFilter();
                 await localAudioTrack.setProcessor(krisp);
+                try {
+                  await krisp.setEnabled(true);
+                } catch {}
                 krispProcessorRef.current = krisp;
                 setIsKrispActive(true);
                 console.log('[LiveKit Call] Krisp AI noise filter activated in private call!');
+              } else {
+                console.log('[LiveKit Call] Krisp AI is not supported by this browser; clean studio DSP active.');
               }
             } catch (krispErr) {
               console.warn('[LiveKit Call] Krisp processor setup notice (using studio audio fallback):', krispErr);

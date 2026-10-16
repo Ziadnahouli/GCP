@@ -1282,20 +1282,26 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 }
               }
 
-              // Attempt Krisp AI noise filter if supported and available; graceful fallback if not licensed
-              // Krisp requires a raw hardware MediaStreamTrack; Web Audio destination streams already run studio DSP
-              if (typeof window !== 'undefined' && !dspPipelineRef.current) {
+              // Attempt Krisp AI neural noise cancellation filter
+              if (typeof window !== 'undefined') {
                 try {
                   const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
-                  if (isKrispNoiseFilterSupported()) {
+                  const isSupported = isKrispNoiseFilterSupported();
+                  console.log('[LiveKit Voice] Checking Krisp AI noise filter support:', isSupported);
+                  if (isSupported) {
                     const krisp = KrispNoiseFilter();
                     await localAudioTrack.setProcessor(krisp);
+                    try {
+                      await krisp.setEnabled(true);
+                    } catch {}
                     krispProcessorRef.current = krisp;
                     setIsKrispActive(true);
                     console.log('[LiveKit Voice] Krisp AI noise filter activated!');
+                  } else {
+                    console.log('[LiveKit Voice] Krisp AI is not supported by this browser; clean studio DSP active.');
                   }
                 } catch (krispErr) {
-                  console.warn('[LiveKit Voice] Krisp processor unavailable, proceeding with clean studio audio:', krispErr);
+                  console.warn('[LiveKit Voice] Krisp processor notice (using clean studio audio fallback):', krispErr);
                   try {
                     await localAudioTrack.stopProcessor();
                   } catch {}

@@ -288,6 +288,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     const prevEl = audioElementsRef.current.get(peerId);
     if (prevEl) {
       try {
+        track.detach(prevEl);
         prevEl.srcObject = null;
         prevEl.pause();
         prevEl.remove();
@@ -316,43 +317,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     }
     audioElementsRef.current.set(peerId, el);
 
-    // 3. Dual-route through master Web Audio Context (resumed during user join gesture)
-    if (track.mediaStreamTrack && typeof window !== 'undefined') {
-      try {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioCtx) {
-          if (!masterAudioContextRef.current || masterAudioContextRef.current.state === 'closed') {
-            masterAudioContextRef.current = new AudioCtx({ latencyHint: 'interactive' });
-          }
-          const ctx = masterAudioContextRef.current;
-          if (ctx.state === 'suspended') {
-            ctx.resume().catch(() => {});
-          }
-          if (ctx.state === 'running') {
-            const existingNode = remoteAudioNodesRef.current.get(peerId);
-            if (existingNode) {
-              try {
-                existingNode.source.disconnect();
-                existingNode.gain.disconnect();
-              } catch {}
-              remoteAudioNodesRef.current.delete(peerId);
-            }
-
-            const source = ctx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
-            const gain = ctx.createGain();
-            gain.gain.value = isDeafenedRef.current ? 0 : 1;
-            source.connect(gain);
-            gain.connect(ctx.destination);
-            remoteAudioNodesRef.current.set(peerId, { source, gain });
-          }
-        }
-      } catch (err) {
-        console.warn('[LiveKit Voice] Master audio context routing fallback:', err);
-      }
-    }
-
     el.play().catch((playErr) => {
       console.warn('[LiveKit Voice] Remote audio autoplay deferred waiting for gesture:', playErr);
+      if (livekitRoomRef.current) {
+        livekitRoomRef.current.startAudio().catch(() => {});
+      }
     });
   }, []);
 
@@ -1152,16 +1121,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     video: false,
                   });
 
-                  if (dspPipelineRef.current) {
-                    dspPipelineRef.current.cleanup();
-                    dspPipelineRef.current = null;
-                  }
-                  const dsp = createStudioAudioPipeline(rawStream, isNoiseSuppressionEnabled);
-                  dspPipelineRef.current = dsp;
-                  stream = dsp ? dsp.outputStream : rawStream;
-
-                  setLocalStream(stream);
-                  localStreamRef.current = stream;
+                  // Directly publish the raw hardware microphone stream to LiveKit Cloud SFU
+                  // LiveKit's Opus codec and Krisp AI filter process the clean hardware audio directly
+                  setLocalStream(rawStream);
+                  localStreamRef.current = rawStream;
+                  stream = rawStream;
 
                   const pttActive = isPushToTalkEnabled(settingsRef.current);
                   if (pttActive) {
@@ -1266,9 +1230,19 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             try {
               let localAudioTrack: any;
               const existingAudioTrack = stream?.getAudioTracks()[0] || localStreamRef.current?.getAudioTracks()[0];
+              const { LocalAudioTrack, createLocalAudioTrack } = await import('livekit-client');
+
+              // Obtain an active AudioContext for LocalAudioTrack processor support
+              const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+              const audioCtx =
+                (lkRoom as any).audioContext ||
+                (AudioCtx ? new AudioCtx({ latencyHint: 'interactive' }) : undefined);
+              if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(() => {});
+              }
+
               if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
-                const { LocalAudioTrack } = await import('livekit-client');
-                localAudioTrack = new LocalAudioTrack(existingAudioTrack);
+                localAudioTrack = new LocalAudioTrack(existingAudioTrack, undefined, true, audioCtx);
               } else {
                 localAudioTrack = await createLocalAudioTrack({
                   echoCancellation: true,
@@ -1280,6 +1254,12 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                   setLocalStream(s);
                   localStreamRef.current = s;
                 }
+              }
+
+              if (audioCtx && !localAudioTrack.audioContext) {
+                try {
+                  localAudioTrack.setAudioContext(audioCtx);
+                } catch {}
               }
 
               // Attempt Krisp AI neural noise cancellation filter
@@ -1296,9 +1276,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     } catch {}
                     krispProcessorRef.current = krisp;
                     setIsKrispActive(true);
-                    console.log('[LiveKit Voice] Krisp AI noise filter activated!');
+                    console.log('[LiveKit Voice] Krisp AI noise filter activated in voice lounge!');
                   } else {
-                    console.log('[LiveKit Voice] Krisp AI is not supported by this browser; clean studio DSP active.');
+                    console.log('[LiveKit Voice] Krisp AI is not supported by this browser; clean studio audio active.');
                   }
                 } catch (krispErr) {
                   console.warn('[LiveKit Voice] Krisp processor notice (using clean studio audio fallback):', krispErr);
@@ -1639,7 +1619,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       isVoiceConnected,
       activeChannelId,
       isLiveKitActive,
-      isNoiseSuppressionEnabled,
       cleanUpAllPeers,
       getMyVoiceState,
       updateChannelOccupantsMap,

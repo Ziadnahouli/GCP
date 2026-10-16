@@ -1605,16 +1605,35 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         // Publish local audio with explicit Track.Source.Microphone
         try {
           let localAudioTrack: any;
-          const existingAudioTrack = currentLocalStream?.getAudioTracks()[0] || localStreamRef.current?.getAudioTracks()[0];
+          const existingAudioTrack =
+            rawMicStreamRef.current?.getAudioTracks()[0] ||
+            currentLocalStream?.getAudioTracks()[0] ||
+            localStreamRef.current?.getAudioTracks()[0];
+          const { LocalAudioTrack, createLocalAudioTrack } = await import('livekit-client');
+
+          // Obtain an active AudioContext for LocalAudioTrack processor support
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          const audioCtx =
+            (lkRoom as any).audioContext ||
+            (AudioCtx ? new AudioCtx({ latencyHint: 'interactive' }) : undefined);
+          if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+          }
+
           if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
-            localAudioTrack = new LocalAudioTrack(existingAudioTrack);
+            localAudioTrack = new LocalAudioTrack(existingAudioTrack, undefined, true, audioCtx);
           } else {
-            const { createLocalAudioTrack } = await import('livekit-client');
             localAudioTrack = await createLocalAudioTrack({
               echoCancellation: true,
               noiseSuppression: true,
               autoGainControl: true,
             });
+          }
+
+          if (audioCtx && !localAudioTrack.audioContext) {
+            try {
+              localAudioTrack.setAudioContext(audioCtx);
+            } catch {}
           }
 
           // Attempt Krisp AI neural noise cancellation filter

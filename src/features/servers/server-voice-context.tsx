@@ -70,8 +70,20 @@ export interface ServerVoiceContextType {
 
 const ServerVoiceContext = React.createContext<ServerVoiceContextType | null>(null);
 
+function isPushToTalkEnabled(settings?: any): boolean {
+  if (settings?.push_to_talk_enabled) return true;
+  try {
+    const rawPrefs = localStorage.getItem('nexus_audio_prefs');
+    if (rawPrefs) {
+      const prefs = JSON.parse(rawPrefs);
+      return Boolean(prefs?.pushToTalk);
+    }
+  } catch {}
+  return false;
+}
+
 export function ServerVoiceProvider({ children }: { children: React.ReactNode }) {
-  const { user, profile } = useAuth();
+  const { user, profile, settings } = useAuth();
 
   const [activeServerId, setActiveServerId] = React.useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = React.useState<string | null>(null);
@@ -114,6 +126,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   React.useEffect(() => {
     profileRef.current = profile;
   }, [profile]);
+
+  const settingsRef = React.useRef(settings);
+  React.useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   const isMicMutedRef = React.useRef(isMicMuted);
   React.useEffect(() => {
@@ -802,6 +819,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                   } catch {}
                   audioElementsRef.current.delete(peerId);
                 }
+                if (track.mediaStreamTrack) {
+                  track.mediaStreamTrack.enabled = !isDeafenedRef.current;
+                }
                 const el = track.attach();
                 el.id = `remote-livekit-audio-${peerId}`;
                 el.muted = isDeafenedRef.current;
@@ -1041,8 +1061,21 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
                   setLocalStream(stream);
                   localStreamRef.current = stream;
-                  setIsMicMuted(false);
-                  isMicMutedRef.current = false;
+
+                  const pttActive = isPushToTalkEnabled(settingsRef.current);
+                  if (pttActive) {
+                    stream.getAudioTracks().forEach((track) => {
+                      track.enabled = false;
+                    });
+                    setIsMicMuted(true);
+                    isMicMutedRef.current = true;
+                    if (livekitRoomRef.current?.localParticipant) {
+                      livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+                    }
+                  } else {
+                    setIsMicMuted(false);
+                    isMicMutedRef.current = false;
+                  }
                 }
               } catch (micErr) {
                 console.warn('[VoiceLounge] Mic setup notice (joining muted):', micErr);
@@ -1645,6 +1678,29 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       isSpeakingRef.current = false;
       setAudioLevel(0);
       audioLevelRef.current = 0;
+    } else if (isDeafenedRef.current) {
+      setIsDeafened(false);
+      isDeafenedRef.current = false;
+      audioElementsRef.current.forEach((audio) => {
+        audio.muted = false;
+      });
+      if (livekitRoomRef.current?.remoteParticipants) {
+        livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
+          rp.audioTrackPublications?.forEach((pub: any) => {
+            if (pub.track) {
+              if (pub.track.mediaStreamTrack) {
+                pub.track.mediaStreamTrack.enabled = true;
+              }
+              if (pub.track.attachedElements) {
+                pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+                  el.muted = false;
+                });
+              }
+            }
+          });
+        });
+      }
+      broadcastMyVoiceState({ is_deafened: false });
     }
 
     broadcastMyVoiceState({ is_muted: nextMuted, is_speaking: false });
@@ -1660,6 +1716,24 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     audioElementsRef.current.forEach((audio) => {
       audio.muted = nextDeafened;
     });
+
+    // Mute/unmute all LiveKit remote audio publications & tracks
+    if (livekitRoomRef.current?.remoteParticipants) {
+      livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
+        rp.audioTrackPublications?.forEach((pub: any) => {
+          if (pub.track) {
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !nextDeafened;
+            }
+            if (pub.track.attachedElements) {
+              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+                el.muted = nextDeafened;
+              });
+            }
+          }
+        });
+      });
+    }
 
     if (nextDeafened && !isMicMuted) {
       toggleMic();

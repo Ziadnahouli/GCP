@@ -458,3 +458,7 @@ export function useAuth() {
   }
   return context;
 }
+
+export function useOptionalAuth() {
+  return React.useContext(AuthContext);
+}

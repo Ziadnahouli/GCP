@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Mic, MicOff, Headphones, Settings, ChevronUp, Sparkles, LogOut, Terminal } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useCallContext } from '@/features/calls/call-context';
+import { useServerVoiceContext } from '@/features/servers/server-voice-context';
 import { Avatar } from '@/components/ui/avatar';
 import { StatusSelector } from './status-selector';
 import { SettingsModal } from './settings-modal';
@@ -18,6 +19,7 @@ export function UserBar() {
   const { profile, updateProfile, signOut } = useAuth();
   const { toast } = useToast();
   const call = useCallContext();
+  const serverVoice = useServerVoiceContext();
 
   const [localMuted, setLocalMuted] = React.useState(false);
   const [localDeafened, setLocalDeafened] = React.useState(false);
@@ -26,9 +28,20 @@ export function UserBar() {
   const [showSoundboard, setShowSoundboard] = React.useState(false);
   const [hasErrors, setHasErrors] = React.useState(false);
 
-  const isInCall = call.callStatus !== 'idle' || Boolean(call.activeConversationId);
-  const isMuted = isInCall ? call.isMicMuted : localMuted;
-  const isDeafened = isInCall ? call.isDeafened : localDeafened;
+  const isInPrivateCall = call.callStatus !== 'idle';
+  const isInServerVoice = Boolean(serverVoice.isVoiceConnected);
+
+  const isMuted = isInPrivateCall
+    ? call.isMicMuted
+    : isInServerVoice
+    ? serverVoice.isMicMuted
+    : localMuted;
+
+  const isDeafened = isInPrivateCall
+    ? call.isDeafened
+    : isInServerVoice
+    ? serverVoice.isDeafened
+    : localDeafened;
 
   React.useEffect(() => {
     setHasErrors(debugLogger.getLogs().some((l) => l.level === 'error'));
@@ -39,9 +52,12 @@ export function UserBar() {
   }, []);
 
   const handleToggleMic = () => {
-    if (call.callStatus !== 'idle' || call.activeConversationId) {
+    if (isInPrivateCall) {
       call.toggleMic();
-      setLocalMuted(!call.isMicMuted);
+      return;
+    }
+    if (isInServerVoice) {
+      serverVoice.toggleMic();
       return;
     }
     const next = !localMuted;
@@ -55,9 +71,12 @@ export function UserBar() {
   };
 
   const handleToggleDeafen = () => {
-    if (call.callStatus !== 'idle' || call.activeConversationId) {
+    if (isInPrivateCall) {
       call.toggleDeafen();
-      setLocalDeafened(!call.isDeafened);
+      return;
+    }
+    if (isInServerVoice) {
+      serverVoice.toggleDeafen();
       return;
     }
     const next = !localDeafened;

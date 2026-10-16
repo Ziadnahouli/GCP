@@ -348,6 +348,13 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     try {
       if (typeof window !== 'undefined') {
         localStorage.setItem('nexus_noise_suppression', String(noiseSuppression));
+        localStorage.setItem(
+          'nexus_audio_prefs',
+          JSON.stringify({
+            pushToTalk,
+            pushToTalkKey: 'KeyV',
+          })
+        );
       }
       await updateSettings({
         sound_effects_enabled: soundEffects,
@@ -996,7 +1003,19 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
               {/* Krisp AI Noise Suppression Switch */}
               <div
-                onClick={() => setNoiseSuppression(!noiseSuppression)}
+                onClick={() => {
+                  const nextNs = !noiseSuppression;
+                  setNoiseSuppression(nextNs);
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('nexus_noise_suppression', String(nextNs));
+                  }
+                  toast({
+                    title: nextNs ? 'Krisp AI Enabled' : 'Krisp AI Disabled',
+                    description: nextNs ? 'Background noise filter is active.' : 'Raw microphone feed.',
+                    type: 'info',
+                    duration: 2000,
+                  });
+                }}
                 className={cn(
                   'flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all',
                   noiseSuppression
@@ -1032,7 +1051,28 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
               {/* Push to talk vs Voice Activity */}
               <div
-                onClick={() => setPushToTalk(!pushToTalk)}
+                onClick={() => {
+                  const nextPtt = !pushToTalk;
+                  setPushToTalk(nextPtt);
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem(
+                      'nexus_audio_prefs',
+                      JSON.stringify({
+                        pushToTalk: nextPtt,
+                        pushToTalkKey: 'KeyV',
+                      })
+                    );
+                  }
+                  updateSettings({ push_to_talk_enabled: nextPtt }).catch(() => {});
+                  toast({
+                    title: nextPtt ? 'Push-to-Talk Enabled' : 'Voice Activity Enabled',
+                    description: nextPtt
+                      ? 'Hold Space or V key to transmit microphone.'
+                      : 'Microphone is active on speech detection.',
+                    type: 'info',
+                    duration: 2000,
+                  });
+                }}
                 className={cn(
                   'flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all',
                   pushToTalk
@@ -1041,9 +1081,16 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 )}
               >
                 <div className="space-y-0.5">
-                  <div className="text-xs font-bold text-foreground">Push-to-Talk (PTT) Mode</div>
+                  <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                    <span>Push-to-Talk (PTT) Mode</span>
+                    {pushToTalk && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono font-semibold">
+                        SPACE or V
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[11px] text-muted-foreground">
-                    Hold keyboard hotkey to transmit mic audio. Defaults to Voice Activity when off.
+                    Hold keyboard hotkey (<kbd className="px-1 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">Space</kbd> or <kbd className="px-1 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">V</kbd>) to transmit mic audio.
                   </div>
                 </div>
                 <div

@@ -36,7 +36,7 @@ export interface IncomingCallData {
   targetUserId: string;
   conversationId: string;
   isVideo: boolean;
-  sdp: RTCSessionDescriptionInit;
+  sdp?: RTCSessionDescriptionInit | null;
   callerZeroTierIp?: string | null;
 }
 
@@ -171,8 +171,20 @@ class RingtonePlayer {
   }
 }
 
+function isPushToTalkEnabled(settings?: any): boolean {
+  if (settings?.push_to_talk_enabled) return true;
+  try {
+    const rawPrefs = localStorage.getItem('nexus_audio_prefs');
+    if (rawPrefs) {
+      const prefs = JSON.parse(rawPrefs);
+      return Boolean(prefs?.pushToTalk);
+    }
+  } catch {}
+  return false;
+}
+
 export function CallProvider({ children }: { children: React.ReactNode }) {
-  const { user, profile } = useAuth();
+  const { user, profile, settings } = useAuth();
   const { toast } = useToast();
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
@@ -218,6 +230,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     profileRef.current = profile;
   }, [profile]);
+
+  const settingsRef = React.useRef(settings);
+  React.useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   const isDeafenedRef = React.useRef(isDeafened);
   React.useEffect(() => {
@@ -748,9 +765,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       audioEl.volume = 1.0;
 
       remoteStream.getAudioTracks().forEach((track) => {
-        track.enabled = true;
+        track.enabled = !isDeafened;
         track.onunmute = () => {
-          audioEl.play().catch(() => {});
+          if (!isDeafened) {
+            audioEl.play().catch(() => {});
+          }
         };
       });
 
@@ -1483,6 +1502,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           );
 
           if (track.kind === 'audio' || track.kind === Track.Kind.Audio) {
+            if (track.mediaStreamTrack) {
+              track.mediaStreamTrack.enabled = !isDeafenedRef.current;
+            }
             if (remoteAudioElementRef.current) {
               try {
                 track.attach(remoteAudioElementRef.current);
@@ -1975,6 +1997,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           const currentConv = incomingCallRef.current?.conversationId;
           if (currentCaller === payload.callerId || currentConv === payload.conversationId) {
             console.log('[CallSignaling] Duplicate incoming call beacon received, keeping single active ringtone.');
+            if (payload.sdp && !incomingCallRef.current?.sdp) {
+              incomingCallRef.current = { ...incomingCallRef.current, ...payload };
+              setIncomingCall((prev) => (prev ? { ...prev, sdp: payload.sdp } : (payload as IncomingCallData)));
+            }
             if (payload.callerZeroTierIp && !peerZeroTierIpRef.current) {
               peerZeroTierIpRef.current = payload.callerZeroTierIp;
               setPeerZeroTierIpState(payload.callerZeroTierIp);
@@ -2006,6 +2032,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           player.start();
           ringtoneRef.current = player;
         }
+      })
+      .on('broadcast', { event: 'call_accepted' }, ({ payload }) => {
+        if (!payload || payload.calleeId === user.id) return;
+        console.log('[CallSignaling] Instant call_accepted received from callee:', payload.calleeId);
+        RingtonePlayer.stopAll();
+        if (ringtoneRef.current) {
+          ringtoneRef.current.stop();
+          ringtoneRef.current = null;
+        }
+        if (ringingTimerRef.current) {
+          clearTimeout(ringingTimerRef.current);
+          ringingTimerRef.current = null;
+        }
+        if (ringingBeaconRef.current) {
+          clearInterval(ringingBeaconRef.current);
+          ringingBeaconRef.current = null;
+        }
+        callStatusRef.current = 'in_call';
+        setCallStatus('in_call');
       })
       .on('broadcast', { event: 'call_answer' }, async ({ payload }) => {
         if (payload?.calleeZeroTierIp) {
@@ -2218,20 +2263,118 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     peerUserIdRef.current = recipientId;
     setIsVideoCall(video);
     setIsCameraOn(video);
-    setIsMicMuted(false);
+
+    const pttActive = isPushToTalkEnabled(settingsRef.current);
+    setIsMicMuted(pttActive);
+    isMicMutedRef.current = pttActive;
+
     setCallStatus('outgoing_ringing');
     callStatusRef.current = 'outgoing_ringing';
 
     const callSessionId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     activeCallSessionIdRef.current = callSessionId;
 
+    const initialCallPayload: IncomingCallData = {
+      callerId: user.id,
+      callerName: profile?.display_name || profile?.username || user.email?.split('@')[0] || 'Squadmate',
+      callerAvatar: profile?.avatar_url || null,
+      targetUserId: recipientId,
+      conversationId,
+      isVideo: video,
+      callerZeroTierIp: getLocalZeroTierIp(),
+    };
+    activeCallPayloadRef.current = initialCallPayload;
+
+    // Send immediate incoming_call signal so callee rings instantly without waiting for SFU or WebRTC negotiation
+    sendSignalToUser(recipientId, 'incoming_call', initialCallPayload);
+
+    // Persist call session to database immediately for cross-app/late opener synchronization
+    try {
+      supabase
+        .from('call_sessions')
+        .insert({
+          conversation_id: conversationId,
+          caller_id: user.id,
+          livekit_room_name: `call-room-${conversationId}`,
+          is_video: video,
+          status: 'ringing',
+          started_at: new Date().toISOString(),
+        })
+        .select('id')
+        .maybeSingle()
+        .then(({ data: sessData }: any) => {
+          if (sessData) {
+            dbCallSessionIdRef.current = sessData.id;
+          }
+        }, () => {});
+    } catch {}
+
+    // Pulse beacon every 2 seconds during outgoing_ringing so recipient reliably catches it
+    if (ringingBeaconRef.current) clearInterval(ringingBeaconRef.current);
+    ringingBeaconRef.current = setInterval(() => {
+      if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
+        sendSignalToUser(recipientId, 'incoming_call', activeCallPayloadRef.current);
+        const room = roomChannelRef.current;
+        if (room && room.state === 'joined') {
+          room.send({
+            type: 'broadcast',
+            event: 'incoming_call',
+            payload: activeCallPayloadRef.current,
+          }).catch(() => {});
+        }
+      } else {
+        if (ringingBeaconRef.current) {
+          clearInterval(ringingBeaconRef.current);
+          ringingBeaconRef.current = null;
+        }
+      }
+    }, 2000);
+
+    // Start outgoing ringtone immediately
+    if (!ringtoneRef.current && !RingtonePlayer.isPlaying()) {
+      const player = new RingtonePlayer();
+      player.start();
+      ringtoneRef.current = player;
+    }
+
+    // Outgoing ringing timeout (35s)
+    if (ringingTimerRef.current) clearTimeout(ringingTimerRef.current);
+    ringingTimerRef.current = setTimeout(() => {
+      if (callStatusRef.current === 'outgoing_ringing') {
+        toast({ title: 'No Answer', description: 'Squadmate did not pick up.', type: 'info' });
+        endCall();
+      }
+    }, 35000);
+
+    setParticipants([
+      {
+        id: user.id,
+        name: profile?.display_name || 'You',
+        isSpeaking: false,
+        isMuted: pttActive,
+        isCameraOn: video,
+        isScreenSharing: false,
+      },
+    ]);
+    isStartingCallRef.current = false;
+
     // Acquire microphone & optional camera
     const stream = await getMedia(video);
     if (activeCallSessionIdRef.current !== callSessionId) return;
 
+    if (pttActive && stream) {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
+
     // Connect LiveKit Cloud SFU with Krisp AI Filter
     const livekitOk = await connectLiveKitCall(conversationId, stream, callSessionId);
     if (activeCallSessionIdRef.current !== callSessionId) return;
+
+    if (pttActive && livekitRoomRef.current?.localParticipant) {
+      livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+    }
 
     // Setup WebRTC Peer Connection with TURN relay support and candidate pre-fetching
     const pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
@@ -2506,6 +2649,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setCallStatus('idle');
         toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
       })
+      .on('broadcast', { event: 'call_accepted' }, ({ payload }) => {
+        if (!payload || payload.calleeId === user.id) return;
+        console.log('[CallSignaling] Instant call_accepted in caller room channel');
+        RingtonePlayer.stopAll();
+        if (ringtoneRef.current) {
+          ringtoneRef.current.stop();
+          ringtoneRef.current = null;
+        }
+        if (ringingTimerRef.current) {
+          clearTimeout(ringingTimerRef.current);
+          ringingTimerRef.current = null;
+        }
+        if (ringingBeaconRef.current) {
+          clearInterval(ringingBeaconRef.current);
+          ringingBeaconRef.current = null;
+        }
+        callStatusRef.current = 'in_call';
+        setCallStatus('in_call');
+      })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           flushRoomQueue();
@@ -2526,28 +2688,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
             activeCallPayloadRef.current = callPayload;
 
-            // Persist call session to database for cross-app/late opener synchronization
-            try {
-              supabase
-                .from('call_sessions')
-                .insert({
-                  conversation_id: conversationId,
-                  caller_id: user.id,
-                  livekit_room_name: `call-room-${conversationId}`,
-                  is_video: video,
-                  status: 'ringing',
-                  started_at: new Date().toISOString(),
-                })
-                .select('id')
-                .maybeSingle()
-                .then(({ data: sessData }: any) => {
-                  if (sessData) {
-                    dbCallSessionIdRef.current = sessData.id;
-                  }
-                }, () => {});
-            } catch {}
-
-            // Notify recipient directly via persistent user mailbox
+            // Notify recipient directly via persistent user mailbox with SDP
             sendSignalToUser(recipientId, 'incoming_call', callPayload);
 
             // Also broadcast on the shared room channel
@@ -2556,58 +2697,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               event: 'incoming_call',
               payload: callPayload,
             }).catch(() => {});
-
-            // Pulse beacon every 2 seconds during outgoing_ringing so any newly opened client catches it
-            if (ringingBeaconRef.current) clearInterval(ringingBeaconRef.current);
-            ringingBeaconRef.current = setInterval(() => {
-              if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
-                sendSignalToUser(recipientId, 'incoming_call', activeCallPayloadRef.current);
-                const room = roomChannelRef.current;
-                if (room && room.state === 'joined') {
-                  room.send({
-                    type: 'broadcast',
-                    event: 'incoming_call',
-                    payload: activeCallPayloadRef.current,
-                  }).catch(() => {});
-                }
-              } else {
-                if (ringingBeaconRef.current) {
-                  clearInterval(ringingBeaconRef.current);
-                  ringingBeaconRef.current = null;
-                }
-              }
-            }, 2000);
           } catch (e) {
             console.warn('[CallSignaling] Error creating offer:', e);
           }
         }
       });
-
-    setParticipants([
-      {
-        id: user.id,
-        name: profile?.display_name || 'You',
-        isSpeaking: false,
-        isMuted: false,
-        isCameraOn: video,
-        isScreenSharing: false,
-      },
-    ]);
-
-    if (!ringtoneRef.current && !RingtonePlayer.isPlaying()) {
-      const player = new RingtonePlayer();
-      player.start();
-      ringtoneRef.current = player;
-    }
-    isStartingCallRef.current = false;
-
-    // Ringing timeout (35s)
-    ringingTimerRef.current = setTimeout(() => {
-      if (callStatusRef.current === 'outgoing_ringing') {
-        toast({ title: 'No Answer', description: 'Squadmate did not pick up.', type: 'info' });
-        endCall();
-      }
-    }, 35000);
   };
 
   // 3. ACCEPT INCOMING CALL
@@ -2626,6 +2720,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     const { callerId, callerName, conversationId, isVideo, sdp } = incomingCall;
 
+    // Immediately notify caller that the call was accepted so caller stops ringing right away
+    const acceptPayload = {
+      conversationId,
+      calleeId: user.id,
+      calleeName: profile?.display_name || user.email?.split('@')[0] || 'Squadmate',
+    };
+    sendSignalToUser(callerId, 'call_accepted', acceptPayload);
+    try {
+      supabase
+        .from('call_sessions')
+        .update({ status: 'in_call' })
+        .eq('conversation_id', conversationId)
+        .then(() => {}, () => {});
+    } catch {}
+
     // Immediately dismiss incoming call modal and transition call status
     setIncomingCall(null);
     incomingCallRef.current = null;
@@ -2636,7 +2745,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     // Pre-unlock the audio element under the user click gesture
     if (remoteAudioElementRef.current) {
-      remoteAudioElementRef.current.muted = false;
+      remoteAudioElementRef.current.muted = isDeafenedRef.current;
       remoteAudioElementRef.current.play().catch(() => {});
     }
 
@@ -2645,7 +2754,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setPeerName(callerName);
     setIsVideoCall(isVideo);
     setIsCameraOn(isVideo);
-    setIsMicMuted(false);
+
+    const pttActive = isPushToTalkEnabled(settingsRef.current);
+    setIsMicMuted(pttActive);
+    isMicMutedRef.current = pttActive;
 
     const callSessionId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     activeCallSessionIdRef.current = callSessionId;
@@ -2654,9 +2766,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const stream = await getMedia(isVideo);
     if (activeCallSessionIdRef.current !== callSessionId) return;
 
+    if (pttActive && stream) {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
+
     // Connect LiveKit Cloud SFU with Krisp AI Filter
     const livekitOk = await connectLiveKitCall(conversationId, stream, callSessionId);
     if (activeCallSessionIdRef.current !== callSessionId) return;
+
+    if (pttActive && livekitRoomRef.current?.localParticipant) {
+      livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+    }
 
     // Setup WebRTC Peer Connection with TURN relay and candidate pre-fetching
     const pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
@@ -2892,63 +3014,72 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (status === 'SUBSCRIBED') {
           flushRoomQueue();
           try {
-            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-            await drainPendingRemoteCandidates();
-
-            pc.getTransceivers().forEach((t) => {
-              if (t.direction !== 'sendrecv') {
-                t.direction = 'sendrecv';
-              }
-              const recTrack = t.receiver?.track;
-              if (recTrack) {
-                recTrack.onunmute = () => {
-                  console.log('[CallSignaling] Callee transceiver track unmuted:', recTrack.kind);
-                  recTrack.enabled = true;
-                  attachRemoteTrack(recTrack);
-                  if (recTrack.kind === 'video') {
-                    setParticipants((prev) =>
-                      prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
-                    );
-                  }
-                };
-                if (recTrack.readyState === 'live' && !recTrack.muted) {
-                  recTrack.enabled = true;
-                  attachRemoteTrack(recTrack);
-                  if (recTrack.kind === 'video') {
-                    setParticipants((prev) =>
-                      prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
-                    );
-                  }
-                }
-              }
-            });
-
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-
-            const localZtIp = getLocalZeroTierIp();
-            const answerPayload = {
-              sdp: answer,
-              conversationId,
-              calleeId: user.id,
-              calleeZeroTierIp: localZtIp,
-            };
-
-            // Broadcast answer on room channel
+            // Also broadcast accept on room channel
             roomChannel.send({
               type: 'broadcast',
-              event: 'call_answer',
-              payload: answerPayload,
+              event: 'call_accepted',
+              payload: acceptPayload,
             }).catch(() => {});
 
-            // Also send directly to caller's mailbox
-            sendSignalToUser(callerId, 'call_answer', answerPayload);
+            if (sdp) {
+              await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+              await drainPendingRemoteCandidates();
 
-            // Flush all gathered local candidates to room & caller
-            localIceCandidatesRef.current.forEach((candidate) => {
-              sendSignalToRoom('ice_candidate', { candidate, senderId: user.id, senderZeroTierIp: localZtIp });
-              sendSignalToUser(callerId, 'ice_candidate', { candidate, senderId: user.id, senderZeroTierIp: localZtIp });
-            });
+              pc.getTransceivers().forEach((t) => {
+                if (t.direction !== 'sendrecv') {
+                  t.direction = 'sendrecv';
+                }
+                const recTrack = t.receiver?.track;
+                if (recTrack) {
+                  recTrack.onunmute = () => {
+                    console.log('[CallSignaling] Callee transceiver track unmuted:', recTrack.kind);
+                    recTrack.enabled = true;
+                    attachRemoteTrack(recTrack);
+                    if (recTrack.kind === 'video') {
+                      setParticipants((prev) =>
+                        prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
+                      );
+                    }
+                  };
+                  if (recTrack.readyState === 'live' && !recTrack.muted) {
+                    recTrack.enabled = true;
+                    attachRemoteTrack(recTrack);
+                    if (recTrack.kind === 'video') {
+                      setParticipants((prev) =>
+                        prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
+                      );
+                    }
+                  }
+                }
+              });
+
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+
+              const localZtIp = getLocalZeroTierIp();
+              const answerPayload = {
+                sdp: answer,
+                conversationId,
+                calleeId: user.id,
+                calleeZeroTierIp: localZtIp,
+              };
+
+              // Broadcast answer on room channel
+              roomChannel.send({
+                type: 'broadcast',
+                event: 'call_answer',
+                payload: answerPayload,
+              }).catch(() => {});
+
+              // Also send directly to caller's mailbox
+              sendSignalToUser(callerId, 'call_answer', answerPayload);
+
+              // Flush all gathered local candidates to room & caller
+              localIceCandidatesRef.current.forEach((candidate) => {
+                sendSignalToRoom('ice_candidate', { candidate, senderId: user.id, senderZeroTierIp: localZtIp });
+                sendSignalToUser(callerId, 'ice_candidate', { candidate, senderId: user.id, senderZeroTierIp: localZtIp });
+              });
+            }
           } catch (e) {
             console.warn('[CallSignaling] Error creating answer:', e);
           }
@@ -2960,7 +3091,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         id: user.id,
         name: profile?.display_name || 'You',
         isSpeaking: false,
-        isMuted: false,
+        isMuted: pttActive,
         isCameraOn: isVideo,
         isScreenSharing: false,
       },
@@ -3023,7 +3154,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           .from('call_sessions')
           .update({ status: 'ended', ended_at: new Date().toISOString() })
           .eq('conversation_id', convId)
-          .in('status', ['ringing', 'active'])
+          .in('status', ['ringing', 'active', 'in_call'])
           .then(() => {}, () => {});
       } catch {}
     }
@@ -3112,6 +3243,29 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     if (remoteAudioElementRef.current) {
       remoteAudioElementRef.current.muted = nextDeafened;
+    }
+
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !nextDeafened;
+      });
+    }
+
+    if (livekitRoomRef.current?.remoteParticipants) {
+      livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
+        rp.audioTrackPublications?.forEach((pub: any) => {
+          if (pub.track) {
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !nextDeafened;
+            }
+            if (pub.track.attachedElements) {
+              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+                el.muted = nextDeafened;
+              });
+            }
+          }
+        });
+      });
     }
 
     if (nextDeafened && !isMicMutedRef.current) {

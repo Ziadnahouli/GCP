@@ -1,15 +1,23 @@
 'use client';
 
 import * as React from 'react';
+import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { useCallContext } from '@/features/calls/call-context';
 import { useServerVoiceContext } from '@/features/servers/server-voice-context';
 import { useToast } from '@/components/ui/toast';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
 
 export function useGlobalShortcuts() {
+  const auth = useOptionalAuth();
+  const settings = auth?.settings;
   const call = useCallContext();
   const serverVoice = useServerVoiceContext();
   const { toast } = useToast();
+
+  const settingsRef = React.useRef(settings);
+  React.useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   const callRef = React.useRef(call);
   React.useEffect(() => {
@@ -32,13 +40,10 @@ export function useGlobalShortcuts() {
   React.useEffect(() => {
     const isTextInput = (target: EventTarget | null): boolean => {
       if (!target || !(target instanceof HTMLElement)) return false;
-      const tag = target.tagName.toLowerCase();
-      return (
-        tag === 'input' ||
-        tag === 'textarea' ||
-        target.isContentEditable ||
-        target.classList.contains('ProseMirror')
+      const el = target.closest(
+        'input, textarea, select, [contenteditable="true"], [role="textbox"], .ProseMirror'
       );
+      return el !== null;
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -141,23 +146,44 @@ export function useGlobalShortcuts() {
         return;
       }
 
-      // 5. Push-To-Talk Default Key: [V] (Only when push-to-talk mode is enabled in Audio Preferences)
-      if (!inInput && (e.key === 'v' || e.key === 'V') && !e.repeat && !isCtrlOrMeta && !e.altKey) {
+      // Helper to detect if PTT is enabled from database settings or localStorage
+      const isPttActive = (): boolean => {
+        if (settingsRef.current?.push_to_talk_enabled) return true;
         try {
           const rawPrefs = localStorage.getItem('nexus_audio_prefs');
-          const prefs = rawPrefs ? JSON.parse(rawPrefs) : null;
-          if (prefs?.pushToTalk) {
-            isPttHeldRef.current = true;
-            const sv = serverVoiceRef.current;
-            const cl = callRef.current;
-
-            if (sv?.isVoiceConnected && sv.isMicMuted) {
-              sv.toggleMic();
-            } else if (cl?.callStatus === 'in_call' && cl.isMicMuted) {
-              cl.toggleMic();
-            }
+          if (rawPrefs) {
+            const prefs = JSON.parse(rawPrefs);
+            return Boolean(prefs?.pushToTalk);
           }
         } catch {}
+        return false;
+      };
+
+      // Helper to check if event matches configured PTT key (supports Space, KeyV, or custom settings key)
+      const isPttTrigger = (evt: KeyboardEvent): boolean => {
+        const configuredKey = settingsRef.current?.push_to_talk_key || 'KeyV';
+        return (
+          evt.code === configuredKey ||
+          evt.code === 'KeyV' ||
+          evt.key.toLowerCase() === 'v' ||
+          evt.code === 'Space'
+        );
+      };
+
+      // 5. Push-To-Talk Keydown (Hold to transmit)
+      if (!inInput && isPttActive() && isPttTrigger(e) && !e.repeat && !isCtrlOrMeta && !e.altKey) {
+        if (e.code === 'Space') {
+          e.preventDefault(); // Prevent page scroll on spacebar press
+        }
+        isPttHeldRef.current = true;
+        const sv = serverVoiceRef.current;
+        const cl = callRef.current;
+
+        if (sv?.isVoiceConnected && sv.isMicMuted) {
+          sv.toggleMic();
+        } else if (cl?.callStatus === 'in_call' && cl.isMicMuted) {
+          cl.toggleMic();
+        }
       }
 
       // 6. Escape: Exit fullscreen or dismiss active modal
@@ -172,34 +198,67 @@ export function useGlobalShortcuts() {
       const target = e.target;
       const inInput = isTextInput(target);
 
+      const isPttActive = (): boolean => {
+        if (settingsRef.current?.push_to_talk_enabled) return true;
+        try {
+          const rawPrefs = localStorage.getItem('nexus_audio_prefs');
+          if (rawPrefs) {
+            const prefs = JSON.parse(rawPrefs);
+            return Boolean(prefs?.pushToTalk);
+          }
+        } catch {}
+        return false;
+      };
+
+      const isPttTrigger = (evt: KeyboardEvent): boolean => {
+        const configuredKey = settingsRef.current?.push_to_talk_key || 'KeyV';
+        return (
+          evt.code === configuredKey ||
+          evt.code === 'KeyV' ||
+          evt.key.toLowerCase() === 'v' ||
+          evt.code === 'Space'
+        );
+      };
+
       // Push-To-Talk release: Re-mute mic
-      if (!inInput && (e.key === 'v' || e.key === 'V')) {
+      if (!inInput && isPttTrigger(e)) {
         if (isPttHeldRef.current) {
           isPttHeldRef.current = false;
-          try {
-            const rawPrefs = localStorage.getItem('nexus_audio_prefs');
-            const prefs = rawPrefs ? JSON.parse(rawPrefs) : null;
-            if (prefs?.pushToTalk) {
-              const sv = serverVoiceRef.current;
-              const cl = callRef.current;
+          if (isPttActive()) {
+            const sv = serverVoiceRef.current;
+            const cl = callRef.current;
 
-              if (sv?.isVoiceConnected && !sv.isMicMuted) {
-                sv.toggleMic();
-              } else if (cl?.callStatus === 'in_call' && !cl.isMicMuted) {
-                cl.toggleMic();
-              }
+            if (sv?.isVoiceConnected && !sv.isMicMuted) {
+              sv.toggleMic();
+            } else if (cl?.callStatus === 'in_call' && !cl.isMicMuted) {
+              cl.toggleMic();
             }
-          } catch {}
+          }
+        }
+      }
+    };
+
+    const handleBlur = () => {
+      if (isPttHeldRef.current) {
+        isPttHeldRef.current = false;
+        const sv = serverVoiceRef.current;
+        const cl = callRef.current;
+        if (sv?.isVoiceConnected && !sv.isMicMuted) {
+          sv.toggleMic();
+        } else if (cl?.callStatus === 'in_call' && !cl.isMicMuted) {
+          cl.toggleMic();
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, []);
 }

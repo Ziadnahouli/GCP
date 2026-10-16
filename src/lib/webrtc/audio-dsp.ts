@@ -126,10 +126,10 @@ export function createStudioAudioPipeline(
         isGateOpen = false;
       }
 
-      // Smooth gain transition: 4ms attack, 30ms release down to -14dB (0.20)
-      // Soft downward expansion ensures voice is never muted completely
-      const targetGain = isGateOpen ? 1.0 : 0.20;
-      const timeConstant = isGateOpen ? 0.004 : 0.035;
+      // Smooth gain transition: 5ms attack, 35ms release down to -54dB (0.002)
+      // Completely silences ambient fan noise, room reverb, and mechanical keyboard clicks when silent
+      const targetGain = isGateOpen ? 1.0 : 0.002;
+      const timeConstant = isGateOpen ? 0.005 : 0.035;
       gateGain.gain.setTargetAtTime(targetGain, ctx.currentTime, timeConstant);
 
       animFrame = requestAnimationFrame(updateGate);
@@ -140,8 +140,8 @@ export function createStudioAudioPipeline(
     const setNoiseSuppression = (enabled: boolean) => {
       isSuppressionActive = enabled;
       const t = ctx.currentTime;
-      notch.gain.setTargetAtTime(enabled ? 2.5 : 0, t, 0.05);
-      highshelf.gain.setTargetAtTime(enabled ? -4.5 : 0, t, 0.05);
+      notch.gain.setTargetAtTime(enabled ? 3.0 : 0, t, 0.05);
+      highshelf.gain.setTargetAtTime(enabled ? -6.0 : 0, t, 0.05);
       if (!enabled) {
         gateGain.gain.setTargetAtTime(1.0, t, 0.02);
       }

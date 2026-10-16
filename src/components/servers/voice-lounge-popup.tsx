@@ -109,7 +109,7 @@ export function VoiceLoungePopup() {
           : undefined
       }
       className={cn(
-        'fixed z-40 flex flex-col overflow-hidden bg-[#0a0c16]/95 border border-white/[0.12] shadow-2xl shadow-black/95 backdrop-blur-xl',
+        'fixed z-[99999] pointer-events-auto flex flex-col overflow-hidden bg-[#0a0c16]/95 border border-white/[0.12] shadow-2xl shadow-black/95 backdrop-blur-xl',
         isDragging ? 'select-none transition-none shadow-primary/20' : 'transition-all duration-150',
         position ? 'w-80 rounded-2xl' : 'bottom-20 right-6 w-80 rounded-2xl'
       )}

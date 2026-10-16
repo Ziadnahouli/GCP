@@ -190,6 +190,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const peerConnectionsRef = React.useRef<Map<string, RTCPeerConnection>>(new Map());
   const audioElementsRef = React.useRef<Map<string, HTMLAudioElement>>(new Map());
   const pendingCandidatesRef = React.useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  const masterAudioContextRef = React.useRef<AudioContext | null>(null);
+  const remoteAudioNodesRef = React.useRef<Map<string, { source: MediaStreamAudioSourceNode; gain: GainNode }>>(new Map());
 
   // Helper to construct current user participant state
   const getMyVoiceState = React.useCallback((): VoiceParticipant => {
@@ -273,6 +275,87 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     [getMyVoiceState]
   );
 
+  // Dual-Route LiveKit Audio Attacher: binds both DOM <audio> and running master Web Audio context
+  // This guarantees remote participants (e.g. user 3 joining later) are heard immediately without autoplay blocks
+  const attachLiveKitAudioTrack = React.useCallback((track: RemoteTrack, peerId: string) => {
+    if (track.kind !== Track.Kind.Audio) return;
+
+    if (track.mediaStreamTrack) {
+      track.mediaStreamTrack.enabled = !isDeafenedRef.current;
+    }
+
+    // 1. Remove previous DOM audio element if any
+    const prevEl = audioElementsRef.current.get(peerId);
+    if (prevEl) {
+      try {
+        prevEl.srcObject = null;
+        prevEl.pause();
+        prevEl.remove();
+      } catch {}
+      audioElementsRef.current.delete(peerId);
+    }
+
+    // 2. Attach track to a DOM audio element
+    const el = track.attach();
+    el.id = `remote-livekit-audio-${peerId}`;
+    el.muted = isDeafenedRef.current;
+    el.volume = 1.0;
+    el.autoplay = true;
+    el.setAttribute('playsinline', 'true');
+
+    el.style.position = 'fixed';
+    el.style.top = '-9999px';
+    el.style.left = '-9999px';
+    el.style.width = '1px';
+    el.style.height = '1px';
+    el.style.opacity = '0';
+    el.style.pointerEvents = 'none';
+
+    if (!document.body.contains(el)) {
+      document.body.appendChild(el);
+    }
+    audioElementsRef.current.set(peerId, el);
+
+    // 3. Dual-route through master Web Audio Context (resumed during user join gesture)
+    if (track.mediaStreamTrack && typeof window !== 'undefined') {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          if (!masterAudioContextRef.current || masterAudioContextRef.current.state === 'closed') {
+            masterAudioContextRef.current = new AudioCtx({ latencyHint: 'interactive' });
+          }
+          const ctx = masterAudioContextRef.current;
+          if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+          }
+          if (ctx.state === 'running') {
+            const existingNode = remoteAudioNodesRef.current.get(peerId);
+            if (existingNode) {
+              try {
+                existingNode.source.disconnect();
+                existingNode.gain.disconnect();
+              } catch {}
+              remoteAudioNodesRef.current.delete(peerId);
+            }
+
+            const source = ctx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+            const gain = ctx.createGain();
+            gain.gain.value = isDeafenedRef.current ? 0 : 1;
+            source.connect(gain);
+            gain.connect(ctx.destination);
+            remoteAudioNodesRef.current.set(peerId, { source, gain });
+          }
+        }
+      } catch (err) {
+        console.warn('[LiveKit Voice] Master audio context routing fallback:', err);
+      }
+    }
+
+    el.play().catch((playErr) => {
+      console.warn('[LiveKit Voice] Remote audio autoplay deferred waiting for gesture:', playErr);
+    });
+  }, []);
+
   // Clean up all WebRTC peer connections and DOM audio elements
   const cleanUpAllPeers = React.useCallback(() => {
     peerConnectionsRef.current.forEach((pc) => {
@@ -292,6 +375,15 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       } catch {}
     });
     audioElementsRef.current.clear();
+
+    remoteAudioNodesRef.current.forEach(({ source, gain }) => {
+      try {
+        source.disconnect();
+        gain.disconnect();
+      } catch {}
+    });
+    remoteAudioNodesRef.current.clear();
+
     pendingCandidatesRef.current.clear();
 
     peersMapRef.current.clear();
@@ -674,6 +766,21 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       const voiceSessionId = 'voice_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
       currentVoiceSessionIdRef.current = voiceSessionId;
 
+      // Resume master Web Audio Context within the active user gesture
+      if (typeof window !== 'undefined') {
+        try {
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioCtx) {
+            if (!masterAudioContextRef.current || masterAudioContextRef.current.state === 'closed') {
+              masterAudioContextRef.current = new AudioCtx({ latencyHint: 'interactive' });
+            }
+            if (masterAudioContextRef.current.state === 'suspended') {
+              masterAudioContextRef.current.resume().catch(() => {});
+            }
+          }
+        } catch {}
+      }
+
       console.log('[LiveKit Voice] Initiating joinVoiceChannel:', { serverId, channelId, userId: currentUser.id, serverName, channelName });
       const supabase = getBrowserClient();
 
@@ -809,42 +916,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               console.log('[LiveKit Voice] Remote track subscribed:', peerId, track.kind, track.source);
 
               if (track.kind === Track.Kind.Audio) {
-                // Remove previous DOM audio element if any to prevent duplicate sinks
-                const prevEl = audioElementsRef.current.get(peerId);
-                if (prevEl) {
-                  try {
-                    prevEl.srcObject = null;
-                    prevEl.pause();
-                    prevEl.remove();
-                  } catch {}
-                  audioElementsRef.current.delete(peerId);
-                }
-                if (track.mediaStreamTrack) {
-                  track.mediaStreamTrack.enabled = !isDeafenedRef.current;
-                }
-                const el = track.attach();
-                el.id = `remote-livekit-audio-${peerId}`;
-                el.muted = isDeafenedRef.current;
-                el.volume = 1.0;
-                el.autoplay = true;
-
-                // Position off-screen instead of display: none to prevent browser audio suspension
-                el.style.position = 'fixed';
-                el.style.top = '-9999px';
-                el.style.left = '-9999px';
-                el.style.width = '1px';
-                el.style.height = '1px';
-                el.style.opacity = '0';
-                el.style.pointerEvents = 'none';
-
-                if (!document.body.contains(el)) {
-                  document.body.appendChild(el);
-                }
-                audioElementsRef.current.set(peerId, el);
-
-                el.play().catch((playErr) => {
-                  console.warn('[LiveKit Voice] Remote audio autoplay deferred waiting for gesture:', playErr);
-                });
+                attachLiveKitAudioTrack(track, peerId);
               } else if (track.kind === Track.Kind.Video) {
                 if (track.mediaStreamTrack) {
                   const vStream = new MediaStream([track.mediaStreamTrack]);
@@ -880,6 +952,12 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               }
             });
 
+            lkRoom.on(RoomEvent.TrackPublished, (pub, participant: RemoteParticipant) => {
+              if (pub.kind === Track.Kind.Audio && !pub.isSubscribed) {
+                pub.setSubscribed(true);
+              }
+            });
+
             lkRoom.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, pub, participant: RemoteParticipant) => {
               const peerId = participant.identity;
               if (track.kind === Track.Kind.Audio) {
@@ -896,6 +974,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     el.remove();
                   } catch {}
                   audioElementsRef.current.delete(peerId);
+                }
+                const existingNode = remoteAudioNodesRef.current.get(peerId);
+                if (existingNode) {
+                  try {
+                    existingNode.source.disconnect();
+                    existingNode.gain.disconnect();
+                  } catch {}
+                  remoteAudioNodesRef.current.delete(peerId);
                 }
               } else if (track.kind === Track.Kind.Video) {
                 remoteVideoStreamsRef.current.delete(peerId);
@@ -947,6 +1033,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                   el.remove();
                 } catch {}
                 audioElementsRef.current.delete(peerId);
+              }
+              const existingNode = remoteAudioNodesRef.current.get(peerId);
+              if (existingNode) {
+                try {
+                  existingNode.source.disconnect();
+                  existingNode.gain.disconnect();
+                } catch {}
+                remoteAudioNodesRef.current.delete(peerId);
               }
               const remotes = Array.from(peersMapRef.current.values());
               setRemoteParticipants(remotes);
@@ -1009,7 +1103,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             setIsVoiceConnected(true);
             setIsConnecting(false);
 
-            // Populate any existing participants already present in the room upon connection
+            // Populate and attach tracks for all existing participants already present in the room upon connection
             lkRoom.remoteParticipants.forEach((participant: RemoteParticipant) => {
               const peerId = participant.identity;
               if (!peersMapRef.current.has(peerId)) {
@@ -1027,6 +1121,13 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                   audio_level: 0,
                 });
               }
+
+              // Attach all already published & subscribed audio tracks so joining user hears everyone
+              participant.trackPublications.forEach((pub) => {
+                if (pub.isSubscribed && pub.track && pub.track.kind === Track.Kind.Audio) {
+                  attachLiveKitAudioTrack(pub.track as RemoteTrack, peerId);
+                }
+              });
             });
             const initialRemotes = Array.from(peersMapRef.current.values());
             setRemoteParticipants(initialRemotes);
@@ -1203,13 +1304,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 }
               }
 
-              if (isMicMutedRef.current) {
-                try { localAudioTrack.mute(); } catch {}
-              }
-
               await lkRoom.localParticipant.publishTrack(localAudioTrack, {
                 source: Track.Source.Microphone,
               });
+              if (isMicMutedRef.current) {
+                try {
+                  await localAudioTrack.mute();
+                } catch {}
+              }
               console.log('[LiveKit Voice] Local audio track published to LiveKit Cloud SFU!');
             } catch (pubErr) {
               console.warn('[LiveKit Voice] Local audio track publish notice:', pubErr);
@@ -1538,6 +1640,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       getOrCreatePeerConnection,
       handleRtcSignal,
       broadcastMyVoiceState,
+      attachLiveKitAudioTrack,
     ]
   );
 
@@ -1712,9 +1815,12 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     setIsDeafened(nextDeafened);
     isDeafenedRef.current = nextDeafened;
 
-    // Mute/unmute all remote audio elements
+    // Mute/unmute all remote audio elements & Web Audio mixer nodes
     audioElementsRef.current.forEach((audio) => {
       audio.muted = nextDeafened;
+    });
+    remoteAudioNodesRef.current.forEach(({ gain }) => {
+      gain.gain.value = nextDeafened ? 0 : 1;
     });
 
     // Mute/unmute all LiveKit remote audio publications & tracks

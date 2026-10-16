@@ -319,9 +319,9 @@ export function CallModal({
             : undefined
         }
         className={cn(
-          'fixed z-50 flex flex-col overflow-hidden bg-[#0a0c16]/95 border border-white/[0.12] shadow-2xl shadow-black/95 backdrop-blur-xl',
+          'fixed z-[99999] pointer-events-auto flex flex-col overflow-hidden bg-[#0a0c16]/95 border border-white/[0.12] shadow-2xl shadow-black/95 backdrop-blur-xl',
           isDragging ? 'select-none transition-none shadow-primary/20' : 'transition-all duration-150',
-          position ? 'w-80 rounded-2xl' : 'bottom-6 right-6 w-80 rounded-2xl'
+          position ? 'w-80 rounded-2xl' : 'bottom-4 right-4 sm:bottom-6 sm:right-6 w-80 rounded-2xl'
         )}
       >
         {/* Pop-Up Header with Drag Handle & Maximize */}
@@ -607,15 +607,18 @@ export function CallModal({
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
 
-          {/* Close Call */}
+          {/* Minimize to bottom screen (pop-up dock) */}
           <button
             type="button"
-            onClick={onEndCall}
-            className="p-1.5 rounded-md text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors ml-1"
-            title="Close Call"
-            aria-label="Close Call"
+            onClick={() => {
+              setIsFullscreen(false);
+              setIsPopUp(true);
+            }}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.08] transition-colors ml-1"
+            title="Minimize to bottom screen"
+            aria-label="Minimize Call"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>

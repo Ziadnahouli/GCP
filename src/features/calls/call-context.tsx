@@ -1256,8 +1256,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 if (isGateOpen && now - lastSpeechTime > GATE_HOLD_MS) {
                   isGateOpen = false;
                   gateGain.gain.cancelScheduledValues(ctx.currentTime);
-                  // Soft downward expansion (-14 dB floor) so quiet speech is never muted completely
-                  gateGain.gain.linearRampToValueAtTime(0.20, ctx.currentTime + 0.06);
+                  // Full acoustic downward expansion (-54 dB floor) so fans, hum, and keyboards are silenced when silent
+                  gateGain.gain.linearRampToValueAtTime(0.002, ctx.currentTime + 0.04);
                 }
               }
             } else {
@@ -1570,11 +1570,32 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           console.warn('[LiveKit Call] lkRoom.startAudio() notice:', err);
         });
 
-        // Check if remote participants are already in the room upon connection
+        // Clear WebRTC ICE watchdog timer so it doesn't fire and restart ICE while LiveKit SFU is active
+        if (iceWatchdogTimerRef.current) {
+          clearTimeout(iceWatchdogTimerRef.current);
+          iceWatchdogTimerRef.current = null;
+        }
+
+        // Check if remote participants are already in the room upon connection & attach their tracks
         if (lkRoom.remoteParticipants.size > 0) {
           console.log('[LiveKit Call] Remote participant(s) already in room on connect');
           lkRoom.remoteParticipants.forEach((rp: any) => {
             markCallConnected(rp.identity, rp.name || 'Squadmate', false);
+            rp.trackPublications?.forEach((pub: any) => {
+              if (pub.isSubscribed && pub.track) {
+                if (pub.track.mediaStreamTrack) {
+                  attachRemoteTrack(pub.track.mediaStreamTrack);
+                }
+                if (pub.track.kind === 'audio' || pub.track.kind === Track.Kind.Audio) {
+                  if (remoteAudioElementRef.current) {
+                    try {
+                      pub.track.attach(remoteAudioElementRef.current);
+                      remoteAudioElementRef.current.play().catch(() => {});
+                    } catch {}
+                  }
+                }
+              }
+            });
           });
         }
 
@@ -1596,9 +1617,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             });
           }
 
-          // Apply Krisp AI filter only if not already processed by Web Audio studio DSP
-          // Web Audio destination tracks do not support dynamic sampleRate applyConstraints
-          if (typeof window !== 'undefined' && !dspAudioCtxRef.current) {
+          // Attempt Krisp AI filter if supported and available; graceful fallback to Web Audio DSP
+          if (typeof window !== 'undefined' && !dspFilterNodesRef.current) {
             try {
               const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
               if (isKrispNoiseFilterSupported()) {
@@ -1618,13 +1638,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
+          // Authoritative publish to LiveKit SFU first, then sync mute state to avoid unpublished track warning
+          await lkRoom.localParticipant.publishTrack(localAudioTrack, { source: Track.Source.Microphone });
           if (isMicMutedRef.current) {
             try {
-              localAudioTrack.mute();
+              await localAudioTrack.mute();
             } catch {}
           }
-
-          await lkRoom.localParticipant.publishTrack(localAudioTrack, { source: Track.Source.Microphone });
 
           // If camera was requested on call start, also publish camera track
           const existingVideoTrack = currentLocalStream?.getVideoTracks()[0] || localStreamRef.current?.getVideoTracks()[0];
@@ -1719,6 +1739,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Dynamic ICE restart to bypass Symmetric NAT, CGNAT, or firewall timeouts
   const restartIceConnection = React.useCallback(async () => {
+    if (mediaTransportRef.current === 'livekit' || isLiveKitActive) {
+      console.log('[CallNAT] Suppressing P2P ICE restart because LiveKit SFU is active.');
+      return;
+    }
     const pc = pcRef.current;
     if (!pc || iceRestartingRef.current) return;
     iceRestartingRef.current = true;
@@ -1764,7 +1788,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         iceRestartingRef.current = false;
       }, 4000);
     }
-  }, [peerUserId, incomingCall?.callerId, user?.id, activeConversationId, sendSignalToRoom, sendSignalToUser, toast]);
+  }, [peerUserId, incomingCall?.callerId, user?.id, activeConversationId, sendSignalToRoom, sendSignalToUser, toast, isLiveKitActive]);
 
   // Manually configure squadmate's ZeroTier IP for immediate direct routing
   const setPeerZeroTierDirectIp = React.useCallback(
@@ -2489,6 +2513,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
 
     pc.onconnectionstatechange = () => {
+      if (mediaTransportRef.current === 'livekit' || isLiveKitActive) {
+        return;
+      }
       if (pc.connectionState === 'connected') {
         if (iceWatchdogTimerRef.current) {
           clearTimeout(iceWatchdogTimerRef.current);
@@ -2867,6 +2894,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
 
     pc.onconnectionstatechange = () => {
+      if (mediaTransportRef.current === 'livekit' || isLiveKitActive) {
+        return;
+      }
       if (pc.connectionState === 'connected') {
         if (iceWatchdogTimerRef.current) {
           clearTimeout(iceWatchdogTimerRef.current);

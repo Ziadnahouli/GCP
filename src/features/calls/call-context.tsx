@@ -1,5 +1,6 @@
 'use client';
 
+import '@/lib/webrtc/safe-constraints';
 import * as React from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useToast } from '@/components/ui/toast';
@@ -240,6 +241,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const iceRestartingRef = React.useRef<boolean>(false);
   const activeCallPayloadRef = React.useRef<IncomingCallData | null>(null);
   const activeCallSessionIdRef = React.useRef<string | null>(null);
+  const dbCallSessionIdRef = React.useRef<string | null>(null);
   const ringingBeaconRef = React.useRef<NodeJS.Timeout | null>(null);
   const callStatusRef = React.useRef<CallStatus>('idle');
   callStatusRef.current = callStatus;
@@ -687,6 +689,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Reset synchronous references
     activeCallPayloadRef.current = null;
     activeCallSessionIdRef.current = null;
+    dbCallSessionIdRef.current = null;
     activeConversationIdRef.current = null;
     peerUserIdRef.current = null;
     incomingCallRef.current = null;
@@ -1328,13 +1331,27 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const cleanConvId = (conversationId || '').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
 
         console.log('[LiveKit Call] Requesting SFU token for private call:', cleanConvId);
+
+        let authHeader = '';
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session?.access_token) {
+            authHeader = `Bearer ${sessionData.session.access_token}`;
+          }
+        } catch {}
+
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId || '');
         const tokenRes = await fetch('/api/calls/token', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(authHeader ? { Authorization: authHeader } : {}),
           },
           body: JSON.stringify({
-            conversationId: cleanConvId,
+            conversationId: isUUID ? conversationId : undefined,
+            roomName: !isUUID ? `nexus-dm-${cleanConvId}` : undefined,
+            userId: currentUser.id,
+            userName: profileRef.current?.display_name || currentUser.email?.split('@')[0],
           }),
         });
 
@@ -1406,11 +1423,65 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }
         });
 
+        // Stop outgoing ringtone and transition to 'in_call' helper
+        const markCallConnected = (peerId?: string, peerName?: string, isVideoTrack: boolean = false) => {
+          RingtonePlayer.stopAll();
+          if (ringtoneRef.current) {
+            ringtoneRef.current.stop();
+            ringtoneRef.current = null;
+          }
+          if (ringingTimerRef.current) {
+            clearTimeout(ringingTimerRef.current);
+            ringingTimerRef.current = null;
+          }
+          if (ringingBeaconRef.current) {
+            clearInterval(ringingBeaconRef.current);
+            ringingBeaconRef.current = null;
+          }
+          callStatusRef.current = 'in_call';
+          setCallStatus('in_call');
+
+          if (peerId) {
+            setParticipants((prev) => {
+              if (prev.some((p) => p.id === peerId)) {
+                return prev.map((p) =>
+                  p.id === peerId && isVideoTrack ? { ...p, isCameraOn: true } : p
+                );
+              }
+              return [
+                ...prev,
+                {
+                  id: peerId,
+                  name: peerName || 'Squadmate',
+                  isSpeaking: false,
+                  isMuted: false,
+                  isCameraOn: isVideoTrack,
+                  isScreenSharing: false,
+                },
+              ];
+            });
+          }
+        };
+
+        // When remote participant connects to the SFU room
+        lkRoom.on(RoomEvent.ParticipantConnected, (participant: any) => {
+          if (activeCallSessionIdRef.current !== callSessionId) return;
+          console.log('[LiveKit Call] Authoritative remote participant joined SFU room:', participant.identity);
+          markCallConnected(participant.identity, participant.name || 'Squadmate', false);
+        });
+
         // SINGLE AUTHORITATIVE PLAYBACK SINK:
         // Remote audio is attached directly to remoteAudioElementRef via LiveKit SDK track.attach
         lkRoom.on(RoomEvent.TrackSubscribed, (track: any, _pub: any, participant: any) => {
           if (activeCallSessionIdRef.current !== callSessionId) return;
           console.log('[LiveKit Call] Authoritative remote track subscribed:', participant.identity, track.kind);
+
+          markCallConnected(
+            participant.identity,
+            participant.name || 'Squadmate',
+            track.kind === 'video'
+          );
+
           if (track.kind === 'audio' || track.kind === Track.Kind.Audio) {
             if (remoteAudioElementRef.current) {
               try {
@@ -1477,6 +1548,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           console.warn('[LiveKit Call] lkRoom.startAudio() notice:', err);
         });
 
+        // Check if remote participants are already in the room upon connection
+        if (lkRoom.remoteParticipants.size > 0) {
+          console.log('[LiveKit Call] Remote participant(s) already in room on connect');
+          lkRoom.remoteParticipants.forEach((rp: any) => {
+            markCallConnected(rp.identity, rp.name || 'Squadmate', false);
+          });
+        }
+
         setIsLiveKitActive(true);
         mediaTransportRef.current = 'livekit';
 
@@ -1495,7 +1574,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             });
           }
 
-          if (typeof window !== 'undefined') {
+          // Apply Krisp AI filter only if not already processed by Web Audio studio DSP
+          // Web Audio destination tracks do not support dynamic sampleRate applyConstraints
+          if (typeof window !== 'undefined' && !dspAudioCtxRef.current) {
             try {
               const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
               if (isKrispNoiseFilterSupported()) {
@@ -1543,7 +1624,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [user, attachRemoteTrack]
+    [user, attachRemoteTrack, supabase]
   );
 
   // Helper to add a remote ICE candidate cleanly with ZeroTier unmasking & deduplication
@@ -2461,7 +2542,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 .maybeSingle()
                 .then(({ data: sessData }: any) => {
                   if (sessData) {
-                    activeCallSessionIdRef.current = sessData.id;
+                    dbCallSessionIdRef.current = sessData.id;
                   }
                 }, () => {});
             } catch {}

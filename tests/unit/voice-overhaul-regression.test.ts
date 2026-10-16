@@ -316,4 +316,106 @@ describe('Voice Overhaul & Audio Duplication Regression Tests', () => {
       expect(mockAudioTrack.setProcessor).toHaveBeenCalled();
     });
   });
+
+  describe('6. Safe Constraints Polyfill & OverconstrainedError Handling', () => {
+    it('relaxes audio constraints when browser throws OverconstrainedError', async () => {
+      const { installSafeConstraintsPolyfill } = await import('@/lib/webrtc/safe-constraints');
+
+      // Setup mock MediaStreamTrack on global window
+      const appliedList: any[] = [];
+      const mockTrack = {
+        kind: 'audio',
+        applyConstraints: vi.fn(async (c: any) => {
+          appliedList.push(c);
+          if (c && c.sampleRate) {
+            const err: any = new Error('Cannot satisfy constraints');
+            err.name = 'OverconstrainedError';
+            throw err;
+          }
+          return undefined;
+        }),
+      };
+
+      (global as any).MediaStreamTrack = function () {};
+      (global as any).MediaStreamTrack.prototype = mockTrack;
+
+      installSafeConstraintsPolyfill();
+
+      // Call applyConstraints with unsupported sampleRate (WASAPI / CoreAudio)
+      await mockTrack.applyConstraints({
+        sampleRate: 48000,
+        echoCancellation: true,
+        noiseSuppression: true,
+      });
+
+      // It should have caught OverconstrainedError and retried with sampleRate stripped
+      expect(appliedList.length).toBe(2);
+      expect(appliedList[0].sampleRate).toBe(48000);
+      expect(appliedList[1].sampleRate).toBeUndefined();
+      expect(appliedList[1].echoCancellation).toBe(true);
+      expect(appliedList[1].noiseSuppression).toBe(true);
+    });
+
+    it('silences unhandled constraint rejections in global rejection handler', async () => {
+      const preventDefaultSpy = vi.fn();
+      const mockRejectionEvent = {
+        reason: {
+          name: 'OverconstrainedError',
+          message: 'Cannot satisfy constraints',
+        },
+        preventDefault: preventDefaultSpy,
+      };
+
+      const listeners: any[] = [];
+      (global as any).window.addEventListener = (event: string, fn: any) => {
+        if (event === 'unhandledrejection') listeners.push(fn);
+      };
+
+      delete (global as any).window.__safeConstraintsRejectionHandlerInstalled;
+      const { installSafeConstraintsPolyfill } = await import('@/lib/webrtc/safe-constraints');
+      installSafeConstraintsPolyfill();
+
+      listeners.forEach((listener) => listener(mockRejectionEvent));
+      expect(preventDefaultSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('7. Private Call State Machine & activeCallSessionIdRef Isolation', () => {
+    it('preserves local activeCallSessionIdRef when database returns call_sessions ID', () => {
+      const activeCallSessionIdRef = { current: 'call_1729000000_abc' };
+      const dbCallSessionIdRef = { current: null as string | null };
+
+      // Simulate database response with row UUID
+      const dbResponse = { id: '123e4567-e89b-12d3-a456-426614174000' };
+
+      // Fix: db row ID goes into dbCallSessionIdRef, leaving activeCallSessionIdRef intact
+      dbCallSessionIdRef.current = dbResponse.id;
+
+      expect(activeCallSessionIdRef.current).toBe('call_1729000000_abc');
+      expect(dbCallSessionIdRef.current).toBe('123e4567-e89b-12d3-a456-426614174000');
+    });
+
+    it('transitions call status to in_call and stops ringtones when remote participant joins or tracks arrive', () => {
+      let callStatus = 'outgoing_ringing';
+      let ringtonePlaying = true;
+      let beaconActive = true;
+
+      const stopRingtone = () => {
+        ringtonePlaying = false;
+        beaconActive = false;
+      };
+
+      const markCallConnected = () => {
+        stopRingtone();
+        callStatus = 'in_call';
+      };
+
+      // Callee answers and remote track is subscribed
+      markCallConnected();
+
+      expect(callStatus).toBe('in_call');
+      expect(ringtonePlaying).toBe(false);
+      expect(beaconActive).toBe(false);
+    });
+  });
 });

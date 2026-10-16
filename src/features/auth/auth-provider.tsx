@@ -1,5 +1,6 @@
 'use client';
 
+import '@/lib/webrtc/safe-constraints';
 import * as React from 'react';
 import { User } from '@supabase/supabase-js';
 import { getBrowserClient } from '@/lib/supabase/client';

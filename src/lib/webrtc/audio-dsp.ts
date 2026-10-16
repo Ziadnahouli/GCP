@@ -107,12 +107,15 @@ export function createStudioAudioPipeline(
         sumSquares += pcmBuffer[i] * pcmBuffer[i];
       }
       const rms = Math.sqrt(sumSquares / pcmBuffer.length);
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
       const now = performance.now();
 
-      // Hysteresis thresholds: open at -42dB (0.008), close at -48dB (0.004)
-      const speechOpenThreshold = 0.008;
-      const speechHoldThreshold = 0.004;
-      const hangoverMs = 250; // Smooth 250ms tail so word endings never cut off
+      // Hysteresis thresholds calibrated for quiet microphones and headsets
+      const speechOpenThreshold = 0.003;
+      const speechHoldThreshold = 0.0015;
+      const hangoverMs = 350; // Smooth 350ms tail so word endings never cut off
 
       if (rms >= speechOpenThreshold) {
         isGateOpen = true;
@@ -123,8 +126,9 @@ export function createStudioAudioPipeline(
         isGateOpen = false;
       }
 
-      // Smooth gain transition: 4ms attack, 30ms release down to -32dB (0.025)
-      const targetGain = isGateOpen ? 1.0 : 0.025;
+      // Smooth gain transition: 4ms attack, 30ms release down to -14dB (0.20)
+      // Soft downward expansion ensures voice is never muted completely
+      const targetGain = isGateOpen ? 1.0 : 0.20;
       const timeConstant = isGateOpen ? 0.004 : 0.035;
       gateGain.gain.setTargetAtTime(targetGain, ctx.currentTime, timeConstant);
 

@@ -1,5 +1,6 @@
 'use client';
 
+import '@/lib/webrtc/safe-constraints';
 import * as React from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useToast } from '@/components/ui/toast';

@@ -141,8 +141,27 @@ export function useMessages(conversationId: string | null) {
         if (activeConversationIdRef.current !== conversationId) return;
 
         if (msgsErr) {
-          debugLogger.error('messaging', `Error fetching messages from database: ${msgsErr.message}`, msgsErr);
-          console.warn('Error fetching messages from database:', msgsErr);
+          const errMsg = String(msgsErr.message || msgsErr || '');
+          const isTransientNetwork =
+            errMsg.includes('Failed to fetch') ||
+            errMsg.includes('NetworkError') ||
+            errMsg.includes('network') ||
+            msgsErr.name === 'AbortError';
+
+          if (isTransientNetwork) {
+            debugLogger.warn('messaging', `Transient network glitch fetching messages (will retry): ${errMsg}`);
+            console.warn('Transient network glitch fetching messages:', msgsErr);
+            if (activeConversationIdRef.current === conversationId) {
+              setTimeout(() => {
+                if (activeConversationIdRef.current === conversationId && !isFetchingRef.current) {
+                  fetchMessages(false);
+                }
+              }, 1500);
+            }
+          } else {
+            debugLogger.error('messaging', `Error fetching messages from database: ${msgsErr.message}`, msgsErr);
+            console.warn('Error fetching messages from database:', msgsErr);
+          }
           return;
         }
 
@@ -246,8 +265,20 @@ export function useMessages(conversationId: string | null) {
         try {
           if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(parsed));
         } catch {}
-      } catch (err) {
-        console.error('Error fetching messages:', err);
+      } catch (err: any) {
+        const errMsg = String(err?.message || err || '');
+        if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
+          debugLogger.warn('messaging', `Network fetch error (will retry): ${errMsg}`);
+          if (activeConversationIdRef.current === conversationId) {
+            setTimeout(() => {
+              if (activeConversationIdRef.current === conversationId && !isFetchingRef.current) {
+                fetchMessages(false);
+              }
+            }, 1500);
+          }
+        } else {
+          console.error('Error fetching messages:', err);
+        }
       } finally {
         isFetchingRef.current = false;
         if (activeConversationIdRef.current === conversationId) {

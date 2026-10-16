@@ -1,5 +1,6 @@
 'use client';
 
+import '@/lib/webrtc/safe-constraints';
 import * as React from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
@@ -725,9 +726,21 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
       try {
         console.log('[LiveKit Voice] Requesting SFU token for room:', roomName, 'as user:', currentUser.id);
+
+        let authHeader = '';
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session?.access_token) {
+            authHeader = `Bearer ${sessionData.session.access_token}`;
+          }
+        } catch {}
+
         const tokenRes = await fetch('/api/calls/token', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authHeader ? { Authorization: authHeader } : {}),
+          },
           body: JSON.stringify({
             serverId: serverId || undefined,
             channelId: channelId || undefined,
@@ -1136,7 +1149,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               }
 
               // Attempt Krisp AI noise filter if supported and available; graceful fallback if not licensed
-              if (typeof window !== 'undefined') {
+              // Krisp requires a raw hardware MediaStreamTrack; Web Audio destination streams already run studio DSP
+              if (typeof window !== 'undefined' && !dspPipelineRef.current) {
                 try {
                   const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
                   if (isKrispNoiseFilterSupported()) {
@@ -1841,10 +1855,12 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track) => {
         try {
-          track.applyConstraints({
-            noiseSuppression: next,
-            echoCancellation: true,
-          });
+          track
+            .applyConstraints({
+              noiseSuppression: next,
+              echoCancellation: true,
+            })
+            .catch(() => {});
         } catch {}
       });
     }

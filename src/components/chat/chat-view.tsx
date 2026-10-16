@@ -39,6 +39,7 @@ import { usePresence } from '@/features/presence/presence-context';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
+import { MessageContent } from '@/components/chat/message-content';
 
 interface ChatViewProps {
   conversationId: string;
@@ -597,7 +598,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                           : 'bg-surface-elevated/80 border border-subtle text-foreground rounded-tl-sm'
                       )}
                     >
-                      <span>{msg.content}</span>
+                      <MessageContent content={msg.content} isMe={isMe} />
                       {msg.is_edited && (
                         <span className="text-[10px] opacity-60 ml-1.5 italic">(edited)</span>
                       )}

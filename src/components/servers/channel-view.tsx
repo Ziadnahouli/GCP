@@ -52,6 +52,7 @@ import { InviteModal } from './invite-modal';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
+import { MessageContent } from '@/components/chat/message-content';
 
 function StreamVideo({
   stream,
@@ -1270,9 +1271,9 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         )}
                       </div>
 
-                      <p className="text-xs text-foreground/85 mt-1 leading-relaxed break-words font-normal">
-                        {msg.content}
-                      </p>
+                      <div className="text-xs text-foreground/85 mt-1 leading-relaxed break-words font-normal">
+                        <MessageContent content={msg.content} />
+                      </div>
                     </div>
                   </div>
                 );

@@ -208,6 +208,7 @@ export function CallModal({
   const { user } = useAuth();
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
+  const [isPopUp, setIsPopUp] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
   const [renderedFeeds, setRenderedFeeds] = React.useState<Record<string, boolean>>({});
 
@@ -300,6 +301,194 @@ export function CallModal({
 
   if (!open || callStatus === 'idle') return null;
 
+  if (isPopUp) {
+    const remotePartner = participants.find((p) => p.id !== user?.id);
+    const isSpeaking = remotePartner?.isSpeaking;
+
+    return (
+      <div
+        ref={containerRef}
+        style={
+          position
+            ? {
+                left: `${position.x}px`,
+                top: `${position.y}px`,
+                right: 'auto',
+                bottom: 'auto',
+              }
+            : undefined
+        }
+        className={cn(
+          'fixed z-50 flex flex-col overflow-hidden bg-[#0a0c16]/95 border border-white/[0.12] shadow-2xl shadow-black/95 backdrop-blur-xl',
+          isDragging ? 'select-none transition-none shadow-primary/20' : 'transition-all duration-150',
+          position ? 'w-80 rounded-2xl' : 'bottom-6 right-6 w-80 rounded-2xl'
+        )}
+      >
+        {/* Pop-Up Header with Drag Handle & Maximize */}
+        <div
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          className="h-10 border-b border-white/[0.08] px-3 flex items-center justify-between shrink-0 bg-surface-header/90 select-none cursor-grab active:cursor-grabbing backdrop-blur-md"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <GripHorizontal className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0" />
+            <span
+              className={cn(
+                'w-2 h-2 rounded-full shrink-0',
+                callStatus === 'outgoing_ringing' ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'
+              )}
+            />
+            <span className="text-xs font-semibold text-foreground truncate">
+              {remotePartner?.name || 'Private Call'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {position && (
+              <button
+                type="button"
+                onClick={() => setPosition(null)}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+                title="Snap back to corner"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            )}
+
+            {/* Expand / Restore Full Stage */}
+            <button
+              type="button"
+              onClick={() => setIsPopUp(false)}
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              title="Expand to Full Stage"
+              aria-label="Expand to Full Stage"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Pop-Up Media Stage */}
+        <div className="relative h-44 bg-black/80 flex items-center justify-center overflow-hidden p-2">
+          {screenSharer && (screenStream || remoteStream) ? (
+            <VideoFeed
+              stream={screenStream || remoteStream}
+              muted={true}
+              className="w-full h-full object-contain rounded-xl"
+            />
+          ) : (isCameraOn || participants.some((p) => p.isCameraOn)) && (remoteStream || localStream) ? (
+            <VideoFeed
+              stream={remoteStream || localStream}
+              muted={true}
+              className="w-full h-full object-cover rounded-xl"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-center space-y-2">
+              <div className="relative">
+                {isSpeaking && (
+                  <span className="absolute inset-0 rounded-full bg-emerald-500/30 animate-ping" />
+                )}
+                <Avatar
+                  name={remotePartner?.name || 'Squad'}
+                  size="md"
+                  className={cn(
+                    'transition-all',
+                    isSpeaking ? 'ring-2 ring-emerald-400 shadow-glow-sm' : ''
+                  )}
+                />
+              </div>
+              <div className="text-[11px] font-medium text-muted-foreground">
+                {callStatus === 'outgoing_ringing' ? 'Ringing...' : 'Voice Connected'}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Pop-Up Control Dock (1. Mute, 2. Deafen, 3. Screen Share, 4. Camera, 5. Close Call) */}
+        <div className="p-2.5 border-t border-white/[0.08] bg-surface-header/80 flex items-center justify-between gap-1.5 shrink-0">
+          {/* 1. Mute Microphone */}
+          <button
+            type="button"
+            onClick={onToggleMic}
+            className={cn(
+              'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
+              isMicMuted
+                ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
+                : 'bg-white/[0.06] text-foreground hover:bg-white/[0.12]'
+            )}
+            title={isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
+            aria-label="Toggle Microphone"
+          >
+            {isMicMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+          </button>
+
+          {/* 2. Deafen Audio */}
+          {onToggleDeafen && (
+            <button
+              type="button"
+              onClick={onToggleDeafen}
+              className={cn(
+                'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
+                isDeafened
+                  ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
+                  : 'bg-white/[0.06] text-foreground hover:bg-white/[0.12]'
+              )}
+              title={isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
+              aria-label="Toggle Deafen"
+            >
+              <Headphones className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* 3. Screen Share */}
+          <button
+            type="button"
+            onClick={onToggleScreenShare}
+            className={cn(
+              'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
+              isScreenSharing
+                ? 'bg-primary/25 text-primary hover:bg-primary/35 shadow-sm'
+                : 'bg-white/[0.06] text-muted-foreground hover:text-foreground hover:bg-white/[0.12]'
+            )}
+            title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+            aria-label="Toggle Screen Share"
+          >
+            <Monitor className="w-4 h-4" />
+          </button>
+
+          {/* 4. Camera */}
+          <button
+            type="button"
+            onClick={onToggleCamera}
+            className={cn(
+              'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
+              isCameraOn
+                ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                : 'bg-white/[0.06] text-muted-foreground hover:text-foreground hover:bg-white/[0.12]'
+            )}
+            title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
+            aria-label="Toggle Camera"
+          >
+            {isCameraOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+          </button>
+
+          {/* 5. Close Call (End Call / Hang up) */}
+          <button
+            type="button"
+            onClick={onEndCall}
+            className="p-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
+            title="Close Call"
+            aria-label="Close Call"
+          >
+            <PhoneOff className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -364,7 +553,7 @@ export function CallModal({
           ) : null}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           {/* Dock Reset Button if user dragged modal */}
           {!isFullscreen && position && (
             <button
@@ -393,6 +582,21 @@ export function CallModal({
             <span>{stats.rttMs ?? 0}ms</span>
           </button>
 
+          {/* Pop-Up Screen (Minimize to floating widget) */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsFullscreen(false);
+              setIsPopUp(true);
+            }}
+            className="px-2 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.04] text-[11px] font-medium flex items-center gap-1 transition-colors border border-white/[0.06]"
+            title="Pop-up Screen (Minimize)"
+            aria-label="Pop-up Screen"
+          >
+            <Minimize2 className="w-3.5 h-3.5 text-primary" />
+            <span className="hidden sm:inline">Pop-up</span>
+          </button>
+
           {/* Fullscreen Toggle */}
           <button
             onClick={() => setIsFullscreen((prev) => !prev)}
@@ -401,6 +605,17 @@ export function CallModal({
             aria-label={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
+
+          {/* Close Call */}
+          <button
+            type="button"
+            onClick={onEndCall}
+            className="p-1.5 rounded-md text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors ml-1"
+            title="Close Call"
+            aria-label="Close Call"
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

@@ -1091,6 +1091,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   </div>
                   <div className="text-[11px] text-muted-foreground">
                     Hold keyboard hotkey (<kbd className="px-1 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">Space</kbd> or <kbd className="px-1 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">V</kbd>) to transmit mic audio.
+                    {pushToTalk && (
+                      <span className="block text-[10px] text-primary/80 mt-1">
+                        💡 Gaming Tip: When playing external games outside the browser window, web browsers sandbox keyboard input. Switch to Voice Activity with Krisp AI filter for seamless background gaming audio!
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div

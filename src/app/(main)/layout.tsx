@@ -18,6 +18,7 @@ import { IncomingCallModal } from '@/components/calls/incoming-call-modal';
 import { CallModal } from '@/components/calls/call-modal';
 import { PermissionsModal } from '@/components/layout/permissions-modal';
 import { LogsWindow } from '@/components/diagnostics/logs-window';
+import { VoiceLoungePopup } from '@/components/servers/voice-lounge-popup';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers, ServersProvider } from '@/hooks/use-servers';
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
@@ -465,6 +466,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         onToggleNoiseSuppression={call.toggleNoiseSuppression}
         onRestartConnection={call.restartConnection}
       />
+
+      {/* Floating Pop-Up Screen for Active Server Voice Lounge */}
+      <VoiceLoungePopup />
 
       {/* Global Diagnostics & Live Telemetry Logs Console */}
       <LogsWindow />

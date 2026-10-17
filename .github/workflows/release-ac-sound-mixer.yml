@@ -1,0 +1,76 @@
+name: Release Assetto Corsa Sound Mixer
+
+on:
+  push:
+    tags:
+      - 'ac-mixer-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Package & Release AC Sound Mixer App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Validate Python 3.3.5 Runtime Compatibility
+        run: |
+          python scripts/validate-ac-ast.py apps/python/ac_sound_mixer/ac_sound_mixer.py
+
+      - name: Resolve Release Version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="v${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "ZIP_NAME=AssettoCorsa-SoundMixer-${VERSION}.zip" >> $GITHUB_OUTPUT
+
+      - name: Package Assetto Corsa App Archive
+        run: |
+          # Package preserving the apps/python/ac_sound_mixer structure for direct AC / Content Manager extraction
+          zip -r "${{ steps.get_version.outputs.ZIP_NAME }}" apps/python/ac_sound_mixer -x "apps/python/ac_sound_mixer/__pycache__/*" "apps/python/ac_sound_mixer/*.pyc"
+          ls -lh "${{ steps.get_version.outputs.ZIP_NAME }}"
+          unzip -l "${{ steps.get_version.outputs.ZIP_NAME }}"
+
+      - name: Create GitHub Release & Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Assetto Corsa Sound Mixer ${{ steps.get_version.outputs.VERSION }}"
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          files: ${{ steps.get_version.outputs.ZIP_NAME }}
+          body: |
+            ## Nexus Assetto Corsa Sound Mixer (${{ steps.get_version.outputs.VERSION }})
+
+            In-game Python audio mixer app for Assetto Corsa.
+            Control and balance **Game SFX** and **Voice Comms** directly from your in-game cockpit.
+
+            ### Installation:
+            1. **Content Manager (Drag-and-Drop)**:
+               - Drag `${{ steps.get_version.outputs.ZIP_NAME }}` directly into Content Manager.
+               - Click **Install** in the top-right menu.
+               - Enable in **Settings > Assetto Corsa > Apps > GCP Sound Mixer**.
+            2. **Manual Installation**:
+               - Extract the ZIP archive directly into your `assettocorsa/` game folder.
+               - Activate via the in-game right-hand app sidebar.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

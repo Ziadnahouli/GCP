@@ -1,4 +1,9 @@
 # Ignored files for Vercel cloud deployments
 desktop/
 tests/
+apps/
+ac_apps/
+integrations/
+**/ac_sound_mixer/**
+*.zip
 *.log

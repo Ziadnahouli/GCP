@@ -161,7 +161,54 @@ class BridgeRequestHandler(BaseHTTPRequestHandler):
         pass
 
 
+def _file_ipc_worker():
+    """Watches state.json for changes made by Assetto Corsa."""
+    import os, time
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "state.json"),
+        r"E:\SteamLibrary\steamapps\common\assettocorsa\apps\python\ac_sound_mixer\state.json"
+    ]
+    last_mtime = 0.0
+
+    while True:
+        try:
+            for state_file in candidates:
+                if os.path.exists(state_file):
+                    mtime = os.path.getmtime(state_file)
+                    if mtime > last_mtime:
+                        last_mtime = mtime
+                        with open(state_file, "r") as fp:
+                            data = json.load(fp)
+                        if isinstance(data, dict) and data.get("source") == "assetto_corsa":
+                            if "sfx_volume" in data:
+                                AUDIO.set_sfx_volume(int(data["sfx_volume"]))
+                            if "sfx_muted" in data:
+                                AUDIO.set_sfx_mute(bool(data["sfx_muted"]))
+                            if "voice_volume" in data:
+                                AUDIO.set_voice_volume(int(data["voice_volume"]))
+                            if "voice_muted" in data:
+                                AUDIO.set_voice_mute(bool(data["voice_muted"]))
+                            # Acknowledge back that bridge is active
+                            data["bridge_online"] = True
+                            data["source"] = "bridge_ack"
+                            tmp_file = state_file + ".tmp"
+                            with open(tmp_file, "w") as fp:
+                                json.dump(data, fp)
+                            if os.path.exists(state_file):
+                                os.remove(state_file)
+                            os.rename(tmp_file, state_file)
+        except Exception as e:
+            pass
+        time.sleep(0.1)
+
+
 def run_bridge_server(host="127.0.0.1", port=48123):
+    import threading
+    t = threading.Thread(target=_file_ipc_worker, daemon=True)
+    t.start()
+    logger.info("File IPC watcher active on state.json")
+
     server = HTTPServer((host, port), BridgeRequestHandler)
     logger.info(f"Nexus Assetto Corsa Audio Bridge running at http://{host}:{port}/")
     logger.info("Ready for Assetto Corsa in-game sound mixer connections.")

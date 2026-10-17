@@ -10,11 +10,13 @@ Compatibility:
 - Strictly compatible with Python 3.3 (NO f-strings, NO type annotations, NO async/await).
 - Non-blocking daemon worker thread to prevent simulation/render stuttering.
 - Float color tuples (0.0 to 1.0) for rock-solid UI rendering.
+- Resilient Dual-IPC: File-based IPC (100% crash-proof across all AC environments without socket dependencies) + HTTP loopback.
 """
 
 import os
 import sys
 import json
+import time
 import threading
 
 try:
@@ -22,12 +24,14 @@ try:
 except ImportError:
     import Queue as queue
 
+# Safe optional import of urllib (Assetto Corsa python33.dll lacks compiled _socket.pyd)
+HAS_URLLIB = False
 try:
     import urllib.request as urllib_request
     import urllib.error as urllib_error
-except ImportError:
-    import urllib2 as urllib_request
-    import urllib2 as urllib_error
+    HAS_URLLIB = True
+except Exception:
+    HAS_URLLIB = False
 
 try:
     import configparser
@@ -106,36 +110,24 @@ except ImportError:
     acsys = None
 
 # ---------------------------------------------------------------------------
-# UI Color Palette (Normalized Floats: 0.0 to 1.0)
+# Constants & App Registration
 # ---------------------------------------------------------------------------
+APP_NAME = "GCP Sound Mixer"
+
+# UI Color Palette (Normalized Floats: 0.0 to 1.0)
 COLOR_LIVE = (0.15, 0.85, 0.35, 1.0)       # Vibrant green
 COLOR_MUTED = (0.92, 0.22, 0.25, 1.0)      # Danger red
 COLOR_WHITE = (0.95, 0.95, 0.95, 1.0)      # High contrast white
 COLOR_GRAY = (0.60, 0.62, 0.66, 1.0)       # Muted subtitle gray
 COLOR_CYAN = (0.22, 0.72, 0.95, 1.0)       # Accent cyan
 COLOR_BTN_BG = (0.18, 0.20, 0.25, 1.0)     # Dark button background
-COLOR_PANEL_BG = (0.12, 0.13, 0.16, 0.95)  # Dark glass panel background
 
 # ---------------------------------------------------------------------------
-# App State & Configuration Management
+# App State & File Paths
 # ---------------------------------------------------------------------------
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(APP_DIR, "config.ini")
-
-DEFAULT_CONFIG = {
-    "General": {
-        "bridge_url": "http://127.0.0.1:48123",
-        "update_interval_sec": "0.5"
-    },
-    "SFX": {
-        "volume": "80",
-        "muted": "False"
-    },
-    "Voice": {
-        "volume": "100",
-        "muted": "False"
-    }
-}
+STATE_JSON_PATH = os.path.join(APP_DIR, "state.json")
 
 
 class AudioState(object):
@@ -149,6 +141,7 @@ class AudioState(object):
         self.bridge_online = False
         self.ui_dirty = True
         self.last_status_message = "Ready (Standalone)"
+        self.last_file_sync_time = 0.0
 
     def load_from_config(self):
         config = configparser.ConfigParser()
@@ -156,43 +149,97 @@ class AudioState(object):
             try:
                 config.read(CONFIG_PATH)
             except Exception as e:
-                ac.log("NexusAudioMixer: Error reading config.ini: " + str(e))
+                ac.log("GCP Sound Mixer: Error reading config.ini: " + str(e))
 
         with self.lock:
             try:
                 if config.has_section("General"):
-                    self.bridge_url = config.get("General", "bridge_url", fallback=DEFAULT_CONFIG["General"]["bridge_url"])
+                    if config.has_option("General", "bridge_url"):
+                        self.bridge_url = config.get("General", "bridge_url")
                 if config.has_section("SFX"):
-                    self.sfx_volume = max(0, min(100, config.getint("SFX", "volume", fallback=80)))
-                    self.sfx_muted = config.getboolean("SFX", "muted", fallback=False)
+                    if config.has_option("SFX", "volume"):
+                        self.sfx_volume = max(0, min(100, config.getint("SFX", "volume")))
+                    if config.has_option("SFX", "muted"):
+                        self.sfx_muted = config.getboolean("SFX", "muted")
                 if config.has_section("Voice"):
-                    self.voice_volume = max(0, min(100, config.getint("Voice", "volume", fallback=100)))
-                    self.voice_muted = config.getboolean("Voice", "muted", fallback=False)
+                    if config.has_option("Voice", "volume"):
+                        self.voice_volume = max(0, min(100, config.getint("Voice", "volume")))
+                    if config.has_option("Voice", "muted"):
+                        self.voice_muted = config.getboolean("Voice", "muted")
             except Exception as e:
-                ac.log("NexusAudioMixer: Parsing config error: " + str(e))
+                ac.log("GCP Sound Mixer: Parsing config error: " + str(e))
             self.ui_dirty = True
 
     def save_to_config(self):
         config = configparser.ConfigParser()
         with self.lock:
-            config["General"] = {
-                "bridge_url": str(self.bridge_url),
-                "update_interval_sec": "0.5"
-            }
-            config["SFX"] = {
-                "volume": str(int(self.sfx_volume)),
-                "muted": str(bool(self.sfx_muted))
-            }
-            config["Voice"] = {
-                "volume": str(int(self.voice_volume)),
-                "muted": str(bool(self.voice_muted))
-            }
+            sfx_v = str(int(self.sfx_volume))
+            sfx_m = str(bool(self.sfx_muted))
+            vox_v = str(int(self.voice_volume))
+            vox_m = str(bool(self.voice_muted))
+            b_url = str(self.bridge_url)
+
+        if not config.has_section("General"):
+            config.add_section("General")
+        config.set("General", "bridge_url", b_url)
+        config.set("General", "update_interval_sec", "0.5")
+
+        if not config.has_section("SFX"):
+            config.add_section("SFX")
+        config.set("SFX", "volume", sfx_v)
+        config.set("SFX", "muted", sfx_m)
+
+        if not config.has_section("Voice"):
+            config.add_section("Voice")
+        config.set("Voice", "volume", vox_v)
+        config.set("Voice", "muted", vox_m)
 
         try:
             with open(CONFIG_PATH, "w") as fp:
                 config.write(fp)
         except Exception as e:
-            ac.log("NexusAudioMixer: Failed to write config.ini: " + str(e))
+            ac.log("GCP Sound Mixer: Failed to write config.ini: " + str(e))
+
+    def write_state_json(self):
+        """File-based IPC: Writes state for companion_bridge to consume."""
+        with self.lock:
+            payload = {
+                "sfx_volume": int(self.sfx_volume),
+                "sfx_muted": bool(self.sfx_muted),
+                "voice_volume": int(self.voice_volume),
+                "voice_muted": bool(self.voice_muted),
+                "timestamp": time.time(),
+                "source": "assetto_corsa"
+            }
+        try:
+            tmp_path = STATE_JSON_PATH + ".tmp"
+            with open(tmp_path, "w") as fp:
+                json.dump(payload, fp)
+            if os.path.exists(STATE_JSON_PATH):
+                os.remove(STATE_JSON_PATH)
+            os.rename(tmp_path, STATE_JSON_PATH)
+        except Exception as e:
+            ac.log("GCP Sound Mixer: write_state_json error: " + str(e))
+
+    def read_bridge_feedback(self):
+        """File-based IPC: Reads status/updates from companion_bridge."""
+        if not os.path.exists(STATE_JSON_PATH):
+            return
+        try:
+            with open(STATE_JSON_PATH, "r") as fp:
+                data = json.load(fp)
+            if isinstance(data, dict):
+                bridge_active = data.get("bridge_online", False)
+                with self.lock:
+                    if self.bridge_online != bridge_active:
+                        self.bridge_online = bridge_active
+                        if bridge_active:
+                            self.last_status_message = "Connected (WASAPI Bridge)"
+                        else:
+                            self.last_status_message = "Ready (Standalone)"
+                        self.ui_dirty = True
+        except Exception:
+            pass
 
 
 STATE = AudioState()
@@ -205,6 +252,8 @@ IS_RUNNING = True
 # Background Daemon Worker (Zero Sim-Thread Micro-Stutter)
 # ---------------------------------------------------------------------------
 def _http_request(url, payload=None, timeout=0.8):
+    if not HAS_URLLIB:
+        return False, "urllib_not_available"
     try:
         data_bytes = None
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
@@ -223,70 +272,50 @@ def _worker_loop():
     poll_counter = 0
     while IS_RUNNING:
         try:
-            # 1. Process any pending UI actions from queue
+            # 1. Process pending UI actions from queue
+            has_action = False
             try:
                 action = ACTION_QUEUE.get(timeout=0.2)
+                has_action = True
                 act_type = action.get("type")
                 target = action.get("target")
 
-                bridge_url = STATE.bridge_url
+                # Always update local config and file-based IPC
                 STATE.save_to_config()
+                STATE.write_state_json()
 
-                if act_type == "set_volume":
-                    vol = action.get("value")
-                    endpoint = bridge_url + "/api/audio/volume"
-                    success, res = _http_request(endpoint, {"target": target, "volume": vol})
-                    with STATE.lock:
-                        STATE.bridge_online = success
-                        if success:
-                            STATE.last_status_message = "Synced with Desktop Bridge"
-                        else:
-                            STATE.last_status_message = "Local (Bridge Offline)"
-                        STATE.ui_dirty = True
-
-                elif act_type == "toggle_mute":
-                    muted = action.get("muted")
-                    endpoint = bridge_url + "/api/audio/mute"
-                    success, res = _http_request(endpoint, {"target": target, "muted": muted})
-                    with STATE.lock:
-                        STATE.bridge_online = success
-                        if success:
-                            STATE.last_status_message = "Synced with Desktop Bridge"
-                        else:
-                            STATE.last_status_message = "Local (Bridge Offline)"
-                        STATE.ui_dirty = True
+                # If HTTP available, notify bridge via HTTP as well
+                if HAS_URLLIB and STATE.bridge_url:
+                    bridge_url = STATE.bridge_url
+                    if act_type == "set_volume":
+                        vol = action.get("value")
+                        endpoint = bridge_url + "/api/audio/volume"
+                        success, _ = _http_request(endpoint, {"target": target, "volume": vol})
+                        with STATE.lock:
+                            STATE.bridge_online = success
+                            STATE.last_status_message = "Synced (WASAPI Bridge)" if success else "Ready (Standalone)"
+                            STATE.ui_dirty = True
+                    elif act_type == "toggle_mute":
+                        muted = action.get("muted")
+                        endpoint = bridge_url + "/api/audio/mute"
+                        success, _ = _http_request(endpoint, {"target": target, "muted": muted})
+                        with STATE.lock:
+                            STATE.bridge_online = success
+                            STATE.last_status_message = "Synced (WASAPI Bridge)" if success else "Ready (Standalone)"
+                            STATE.ui_dirty = True
 
                 ACTION_QUEUE.task_done()
             except queue.Empty:
                 pass
 
-            # 2. Periodic background status poll every ~2 seconds (10 x 0.2s)
+            # 2. Check bridge feedback via file IPC every ~1 sec (5 ticks x 0.2s)
             poll_counter += 1
-            if poll_counter >= 10:
+            if poll_counter >= 5:
                 poll_counter = 0
-                endpoint = STATE.bridge_url + "/api/audio/status"
-                success, res = _http_request(endpoint, timeout=0.5)
-                with STATE.lock:
-                    prev_online = STATE.bridge_online
-                    STATE.bridge_online = success
-                    if success and isinstance(res, dict):
-                        # Merge remote companion volumes if companion changed them
-                        if "sfx_volume" in res:
-                            STATE.sfx_volume = max(0, min(100, int(res["sfx_volume"])))
-                        if "sfx_muted" in res:
-                            STATE.sfx_muted = bool(res["sfx_muted"])
-                        if "voice_volume" in res:
-                            STATE.voice_volume = max(0, min(100, int(res["voice_volume"])))
-                        if "voice_muted" in res:
-                            STATE.voice_muted = bool(res["voice_muted"])
-                        STATE.last_status_message = "Connected to Desktop Bridge"
-                        STATE.ui_dirty = True
-                    elif prev_online != success:
-                        STATE.last_status_message = "Local (Bridge Offline)"
-                        STATE.ui_dirty = True
+                STATE.read_bridge_feedback()
 
         except Exception as ex:
-            ac.log("NexusAudioMixer: Worker exception: " + str(ex))
+            ac.log("GCP Sound Mixer: Worker exception: " + str(ex))
 
 
 # ---------------------------------------------------------------------------
@@ -313,8 +342,9 @@ class MixerUI(object):
         self.last_update_time = 0.0
 
     def init_ui(self):
-        self.app_id = ac.newApp("GCP Sound Mixer")
-        ac.setTitle(self.app_id, "Nexus Audio Mixer")
+        # In Assetto Corsa, ac.newApp(name) MUST match the name returned by acMain!
+        self.app_id = ac.newApp(APP_NAME)
+        ac.setTitle(self.app_id, APP_NAME)
         ac.setSize(self.app_id, 270, 240)
         ac.drawBackground(self.app_id, 1)
         ac.setVisible(self.app_id, 1)
@@ -406,7 +436,7 @@ class MixerUI(object):
         ac.setPosition(self.lbl_bridge_status, 14, 186)
         ac.setFontColor(self.lbl_bridge_status, COLOR_GRAY[0], COLOR_GRAY[1], COLOR_GRAY[2], COLOR_GRAY[3])
 
-        lbl_hint = ac.addLabel(self.app_id, "GCP Platform | 127.0.0.1:48123")
+        lbl_hint = ac.addLabel(self.app_id, "GCP Platform | Sound Mixer")
         ac.setPosition(lbl_hint, 14, 206)
         ac.setFontColor(lbl_hint, COLOR_GRAY[0], COLOR_GRAY[1], COLOR_GRAY[2], 0.7)
 
@@ -553,7 +583,7 @@ def on_spinner_voice(value):
 # ---------------------------------------------------------------------------
 def acMain(ac_version):
     global WORKER_THREAD
-    ac.log("NexusAudioMixer: Initializing version 1.0.0 (AC version {0})".format(ac_version))
+    ac.log("GCP Sound Mixer: Initializing version 1.0.0 (AC version {0})".format(ac_version))
 
     STATE.load_from_config()
     UI.init_ui()
@@ -564,8 +594,9 @@ def acMain(ac_version):
     WORKER_THREAD.daemon = True
     WORKER_THREAD.start()
 
-    ac.console("Nexus Audio Mixer loaded successfully.")
-    return "ac_sound_mixer"
+    ac.console("GCP Sound Mixer loaded successfully.")
+    # In Assetto Corsa, the return value MUST match the name passed to ac.newApp()
+    return APP_NAME
 
 
 def acUpdate(delta_t):
@@ -578,14 +609,15 @@ def acUpdate(delta_t):
 
 def acShutdown():
     global IS_RUNNING
-    ac.log("NexusAudioMixer: Shutting down.")
+    ac.log("GCP Sound Mixer: Shutting down.")
     IS_RUNNING = False
     STATE.save_to_config()
+    STATE.write_state_json()
 
 
 if __name__ == "__main__":
     # Allows offline smoke-testing of the script
-    print("Testing Nexus Audio Mixer Python 3.3 runtime compatibility...")
+    print("Testing GCP Sound Mixer Python 3.3 runtime compatibility...")
     name = acMain("1.16.4")
     print("acMain returned: " + str(name))
     acUpdate(0.016)

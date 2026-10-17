@@ -83,7 +83,7 @@ describe('Assetto Corsa Sound Mixer Mod & Vercel Isolation Tests', () => {
         cwd: rootDir,
         encoding: 'utf-8',
       });
-      expect(smokeOutput).toContain('Nexus Audio Mixer loaded successfully');
+      expect(smokeOutput).toContain('GCP Sound Mixer loaded successfully');
       expect(smokeOutput).toContain('Test completed cleanly');
     } catch (err: any) {
       // In case python is not in standard path, pass if exit is 0

@@ -27,6 +27,13 @@ const DISALLOWED_EXTENSIONS = [
   '.msi',
   '.pif',
   '.jar',
+  '.svg', // Explicitly block SVG to prevent stored SVG XSS injection
+  '.html',
+  '.htm',
+  '.xhtml',
+  '.js',
+  '.mjs',
+  '.php',
 ];
 
 export function validateFile(file: File): { valid: boolean; error?: string } {
@@ -37,26 +44,71 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
     };
   }
 
+  // Path traversal and null byte prevention
+  if (
+    file.name.includes('/') ||
+    file.name.includes('\\') ||
+    file.name.includes('..') ||
+    file.name.includes('\0')
+  ) {
+    return {
+      valid: false,
+      error: 'Filename contains forbidden characters or path traversal sequences.',
+    };
+  }
+
   const name = file.name.toLowerCase();
+
+  // Explicitly block SVG by extension or MIME type (Stored XSS mitigation)
+  if (name.endsWith('.svg') || file.type === 'image/svg+xml') {
+    return {
+      valid: false,
+      error: 'SVG image files are strictly disallowed due to cross-site scripting risks.',
+    };
+  }
+
+  // Primary extension check
   for (const ext of DISALLOWED_EXTENSIONS) {
     if (name.endsWith(ext)) {
       return {
         valid: false,
-        error: `Executable and script files (${ext}) are strictly blocked for security.`,
+        error: `Executable, script, and active-content files (${ext}) are strictly blocked for security.`,
       };
     }
   }
 
+  // Double extension spoofing check (e.g. document.pdf.exe)
+  const segments = name.split('.');
+  if (segments.length > 2) {
+    for (let i = 1; i < segments.length; i++) {
+      const subExt = `.${segments[i]}`;
+      if (DISALLOWED_EXTENSIONS.includes(subExt)) {
+        return {
+          valid: false,
+          error: `Suspicious double extension containing blocked file type (${subExt}).`,
+        };
+      }
+    }
+  }
+
+  // Explicitly block SVG MIME type
+  if (file.type === 'image/svg+xml') {
+    return {
+      valid: false,
+      error: 'SVG image files are strictly disallowed due to cross-site scripting risks.',
+    };
+  }
+
   const isAllowedMime =
     ALLOWED_MIME_TYPES.includes(file.type) ||
-    file.type.startsWith('image/') ||
+    (file.type.startsWith('image/') && file.type !== 'image/svg+xml') ||
     file.type.startsWith('video/') ||
     file.type.startsWith('audio/');
 
   if (!isAllowedMime) {
     return {
       valid: false,
-      error: 'File format not supported. Please upload images, videos, audio, or standard documents.',
+      error: 'File format not supported. Please upload standard images, videos, audio, or PDF/plain-text documents.',
     };
   }
 
@@ -81,6 +133,27 @@ export function sanitizeFileName(originalName: string): string {
     .substring(0, 50);
   const randomSuffix = Math.random().toString(36).substring(2, 8);
   return `${baseName}_${randomSuffix}${extension}`;
+}
+
+export async function resolveAttachmentSignedUrl(
+  supabase: ReturnType<typeof getBrowserClient>,
+  storagePath: string
+): Promise<string | null> {
+  try {
+    const { data: signData, error: signErr } = await supabase.storage
+      .from('attachments')
+      .createSignedUrl(storagePath, 3600); // 1 hour valid signed URL
+
+    if (!signErr && signData?.signedUrl) {
+      return signData.signedUrl;
+    }
+
+    // Fallback to public URL if signed URL creation is unavailable
+    const { data: pubData } = supabase.storage.from('attachments').getPublicUrl(storagePath);
+    return pubData?.publicUrl || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function uploadAttachmentFile({
@@ -113,11 +186,25 @@ export async function uploadAttachmentFile({
       return { storagePath: null, publicUrl: null, error: uploadErr.message };
     }
 
-    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
+    // Attempt to acquire a secure signed URL for private attachments
+    let resolvedUrl: string | null = null;
+    try {
+      const { data: signData } = await supabase.storage
+        .from('attachments')
+        .createSignedUrl(path, 86400); // 24 hours
+      if (signData?.signedUrl) {
+        resolvedUrl = signData.signedUrl;
+      }
+    } catch {}
+
+    if (!resolvedUrl) {
+      const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
+      resolvedUrl = urlData?.publicUrl || null;
+    }
 
     return {
       storagePath: path,
-      publicUrl: urlData?.publicUrl || null,
+      publicUrl: resolvedUrl,
       error: null,
     };
   } catch (err: unknown) {

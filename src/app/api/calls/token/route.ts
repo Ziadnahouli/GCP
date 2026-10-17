@@ -12,6 +12,42 @@ const tokenRequestSchema = z.object({
   userName: z.string().optional().nullable(),
 });
 
+// Sliding-window in-memory rate limiter (30 token requests per 60 seconds per identity)
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const MAX_REQUESTS_PER_WINDOW = 30;
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(key: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+
+  if (entry.count >= MAX_REQUESTS_PER_WINDOW) {
+    return false;
+  }
+
+  entry.count += 1;
+  return true;
+}
+
+// Periodic cleanup of stale rate limit entries
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const now = Date.now();
+    rateLimitMap.forEach((entry, key) => {
+      if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+        rateLimitMap.delete(key);
+      }
+    });
+  }, 5 * 60 * 1000);
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null);
@@ -46,6 +82,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized: Authentication required' }, { status: 401 });
     }
 
+    // Rate limiting by user identity
+    if (!checkRateLimit(user.id)) {
+      return NextResponse.json(
+        { error: 'Too Many Requests: Rate limit exceeded. Please wait before requesting another token.' },
+        { status: 429, headers: { 'Retry-After': '60' } }
+      );
+    }
+
     // Prevent identity spoofing: client cannot request a token for a different user
     if (requestedUserId && requestedUserId !== user.id) {
       return NextResponse.json(
@@ -61,8 +105,8 @@ export async function POST(request: Request) {
       user.email?.split('@')[0] ||
       'Squadmate';
 
-    // 2. Authorize access & resolve authoritative room name
-    let finalRoomName: string;
+    // 2. Authorize access & resolve authoritative room name (Fail-closed design)
+    let finalRoomName: string | null = null;
 
     if (conversationId) {
       // Direct / Group conversation call: Verify caller is a conversation member
@@ -129,61 +173,109 @@ export async function POST(request: Request) {
 
       finalRoomName = `nexus-server-${serverId.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
     } else if (roomName) {
-      // Specific roomName requested: check prefixes
-      if (roomName.startsWith('nexus-dm-')) {
+      // Specific roomName requested: Strictly validate prefix and verify membership
+      if (roomName === 'nexus-voice-lounge') {
+        // Authenticated default lounge
+        finalRoomName = 'nexus-voice-lounge';
+      } else if (roomName.startsWith('nexus-dm-')) {
         const candidateConvId = roomName.replace('nexus-dm-', '');
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (uuidRegex.test(candidateConvId)) {
-          const { data: mem } = await supabase
-            .from('conversation_members')
+        if (!UUID_REGEX.test(candidateConvId)) {
+          return NextResponse.json(
+            { error: 'Invalid room format: Conversation ID must be a valid UUID' },
+            { status: 400 }
+          );
+        }
+
+        const { data: mem } = await supabase
+          .from('conversation_members')
+          .select('id')
+          .eq('conversation_id', candidateConvId)
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
+        if (!mem) {
+          return NextResponse.json(
+            { error: 'Forbidden: You are not a member of this private conversation room' },
+            { status: 403 }
+          );
+        }
+
+        finalRoomName = roomName;
+      } else if (roomName.startsWith('nexus-voice-')) {
+        const candidateChanId = roomName.replace('nexus-voice-', '');
+        if (!UUID_REGEX.test(candidateChanId)) {
+          return NextResponse.json(
+            { error: 'Invalid room format: Channel ID must be a valid UUID' },
+            { status: 400 }
+          );
+        }
+
+        const { data: channel } = await supabase
+          .from('channels')
+          .select('id, server_id')
+          .eq('id', candidateChanId)
+          .maybeSingle();
+
+        if (!channel) {
+          return NextResponse.json({ error: 'Voice channel not found' }, { status: 404 });
+        }
+
+        if (channel.server_id) {
+          const { data: srvMem } = await supabase
+            .from('server_members')
             .select('id')
-            .eq('conversation_id', candidateConvId)
+            .eq('server_id', channel.server_id)
             .eq('user_id', targetUserId)
             .maybeSingle();
 
-          if (!mem) {
+          if (!srvMem) {
             return NextResponse.json(
-              { error: 'Forbidden: You are not a member of this private conversation room' },
+              { error: 'Forbidden: You are not a member of this voice channel server' },
               { status: 403 }
             );
           }
         }
-      } else if (roomName.startsWith('nexus-voice-')) {
-        const candidateChanId = roomName.replace('nexus-voice-', '');
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (uuidRegex.test(candidateChanId)) {
-          const { data: channel } = await supabase
-            .from('channels')
-            .select('server_id')
-            .eq('id', candidateChanId)
-            .maybeSingle();
 
-          if (channel?.server_id) {
-            const { data: srvMem } = await supabase
-              .from('server_members')
-              .select('id')
-              .eq('server_id', channel.server_id)
-              .eq('user_id', targetUserId)
-              .maybeSingle();
-
-            if (!srvMem) {
-              return NextResponse.json(
-                { error: 'Forbidden: You are not a member of this voice channel server' },
-                { status: 403 }
-              );
-            }
-          }
+        finalRoomName = roomName;
+      } else if (roomName.startsWith('nexus-server-')) {
+        const candidateSrvId = roomName.replace('nexus-server-', '');
+        if (!UUID_REGEX.test(candidateSrvId)) {
+          return NextResponse.json(
+            { error: 'Invalid room format: Server ID must be a valid UUID' },
+            { status: 400 }
+          );
         }
-      } else if (roomName !== 'nexus-voice-lounge') {
+
+        const { data: srvMem } = await supabase
+          .from('server_members')
+          .select('id')
+          .eq('server_id', candidateSrvId)
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
+        if (!srvMem) {
+          return NextResponse.json(
+            { error: 'Forbidden: You are not a member of this server' },
+            { status: 403 }
+          );
+        }
+
+        finalRoomName = roomName;
+      } else {
         return NextResponse.json(
           { error: 'Forbidden: Custom unverified room names are not permitted' },
           { status: 403 }
         );
       }
-
-      finalRoomName = roomName;
     } else {
       finalRoomName = 'nexus-voice-lounge';
+    }
+
+    if (!finalRoomName) {
+      return NextResponse.json(
+        { error: 'Forbidden: Unable to verify access to requested room' },
+        { status: 403 }
+      );
     }
 
     // 3. LiveKit Cloud credentials check — fail closed with controlled fallback, no hardcoded secrets!

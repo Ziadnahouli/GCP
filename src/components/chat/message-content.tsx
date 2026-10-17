@@ -136,25 +136,33 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
       <span className="leading-relaxed">
         {parts.map((part, index) => {
           if (part.match(GENERAL_URL_REGEX)) {
-            const href = part.startsWith('www.') ? `https://${part}` : part;
-            return (
-              <a
-                key={index}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className={cn(
-                  'inline-flex items-center gap-0.5 underline underline-offset-2 break-all font-medium transition-colors',
-                  isMe
-                    ? 'text-white hover:text-white/80'
-                    : 'text-sky-400 hover:text-sky-300'
-                )}
-              >
-                <span>{part}</span>
-                <ExternalLink className="w-3 h-3 inline shrink-0 opacity-80" />
-              </a>
-            );
+            const rawHref = part.startsWith('www.') ? `https://${part}` : part;
+            let isSafeUrl = false;
+            try {
+              const u = new URL(rawHref);
+              isSafeUrl = u.protocol === 'http:' || u.protocol === 'https:';
+            } catch {}
+
+            if (isSafeUrl) {
+              return (
+                <a
+                  key={index}
+                  href={rawHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className={cn(
+                    'inline-flex items-center gap-0.5 underline underline-offset-2 break-all font-medium transition-colors',
+                    isMe
+                      ? 'text-white hover:text-white/80'
+                      : 'text-sky-400 hover:text-sky-300'
+                  )}
+                >
+                  <span>{part}</span>
+                  <ExternalLink className="w-3 h-3 inline shrink-0 opacity-80" />
+                </a>
+              );
+            }
           }
           return <span key={index}>{part}</span>;
         })}

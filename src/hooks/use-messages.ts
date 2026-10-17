@@ -197,11 +197,34 @@ export function useMessages(conversationId: string | null) {
 
         if (activeConversationIdRef.current !== conversationId) return;
 
+        const rawAttachments = attachmentsRes.data || [];
+        const signedUrlMap = new Map<string, string>();
+        if (rawAttachments.length > 0) {
+          try {
+            const paths = rawAttachments.map((a: any) => a.storage_path).filter(Boolean);
+            const { data: signedData } = await (supabase.storage.from('attachments') as any).createSignedUrls(paths, 3600);
+            if (Array.isArray(signedData)) {
+              signedData.forEach((s: any) => {
+                if (s.signedUrl && s.path) {
+                  signedUrlMap.set(s.path, s.signedUrl);
+                }
+              });
+            }
+          } catch {}
+        }
+
         const parsed: Message[] = msgsData.map((m) => {
           // Attachments
-          const mAttachments: MessageAttachment[] = (attachmentsRes.data || [])
+          const mAttachments: MessageAttachment[] = rawAttachments
             .filter((a) => a.message_id === m.id)
             .map((a) => {
+              const signed = signedUrlMap.get(a.storage_path);
+              if (signed) {
+                return {
+                  ...a,
+                  url: signed,
+                };
+              }
               const { data: urlData } = supabase.storage
                 .from('attachments')
                 .getPublicUrl(a.storage_path);
@@ -767,12 +790,9 @@ export function useMessages(conversationId: string | null) {
                 .single();
 
               if (attData) {
-                const { data: urlData } = supabase.storage
-                  .from('attachments')
-                  .getPublicUrl(uploadRes.storagePath);
                 uploadedAttachments.push({
                   ...attData,
-                  url: urlData?.publicUrl || undefined,
+                  url: uploadRes.publicUrl || undefined,
                 });
               }
             }

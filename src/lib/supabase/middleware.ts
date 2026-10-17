@@ -12,7 +12,7 @@ export async function updateSession(request: NextRequest) {
   const config = getSupabaseConfig();
   if (!config.isConfigured) {
     // If Supabase is not configured yet, let user proceed to test local/demo UI
-    return response;
+    return { response, user: null };
   }
 
   const supabase = createServerClient(config.url, config.anonKey, {
@@ -57,7 +57,7 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const { data } = await supabase.auth.getUser();
 
-  return response;
+  return { response, user: data?.user || null };
 }

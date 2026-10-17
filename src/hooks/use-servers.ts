@@ -9,7 +9,10 @@ import { UserProfile } from '@/lib/types/profile';
 const STORAGE_KEY = 'nexus_gaming_servers_store';
 const DELETED_CHANS_KEY = 'nexus_deleted_channels_store';
 
-const DUMMY_SERVER_IDS = new Set<string>();
+const DUMMY_SERVER_IDS = new Set([
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000002',
+]);
 
 const getDeletedChannelIds = (): Set<string> => {
   if (typeof window === 'undefined') return new Set();
@@ -44,7 +47,7 @@ export function useServersInternal() {
           return parsed.filter(
             (s) =>
               !DUMMY_SERVER_IDS.has(s.id) &&
-              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id) || s.owner_id === null)
+              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
           );
         }
       }
@@ -75,12 +78,11 @@ export function useServersInternal() {
         const deletedChans = getDeletedChannelIds();
         const parsed: Server[] = srvData
           .filter((s) => !DUMMY_SERVER_IDS.has(s.id))
-          // Show servers where user is the owner, a member, or public community servers
+          // Only show servers where user is the owner or an existing member
           .filter((s) => {
             const isOwner = s.owner_id === user.id;
             const isMember = (s.server_members || []).some((m: any) => m.user_id === user.id);
-            const isPublic = s.owner_id === null;
-            return isOwner || isMember || isPublic;
+            return isOwner || isMember;
           })
           .map((s) => {
             const rawChannels = (s.channels || []).filter((c: Channel) => !deletedChans.has(c.id));
@@ -150,7 +152,7 @@ export function useServersInternal() {
           const cleanServers = parsed.filter(
             (s) =>
               !DUMMY_SERVER_IDS.has(s.id) &&
-              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id) || s.owner_id === null)
+              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
           );
           setServers(cleanServers);
         }
@@ -212,7 +214,7 @@ export function useServersInternal() {
       const userServers = updated.filter(
         (s) =>
           !DUMMY_SERVER_IDS.has(s.id) &&
-          (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id) || s.owner_id === null)
+          (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
       );
       setServers(userServers);
       try {

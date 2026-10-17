@@ -193,27 +193,38 @@ describe('Navigation Resilience & Failover Regression Tests', () => {
       expect(server!.channels.some((c) => c.type === 'voice')).toBe(true);
     });
 
-    it('includes public community servers (owner_id === null)', async () => {
+    it('strictly excludes dummy/unjoined seed servers from user server list', async () => {
       mockState.selectResult = {
         data: [
           {
             id: '00000000-0000-0000-0000-000000000001',
             name: 'Tactical Squad Alpha',
-            description: 'Community server',
+            description: 'Seed public community server',
             icon_url: null,
             owner_id: null,
             created_at: new Date().toISOString(),
-            channels: [
-              {
-                id: 'ch-1',
-                server_id: '00000000-0000-0000-0000-000000000001',
-                name: 'general',
-                type: 'text',
-                position: 0,
-                created_at: new Date().toISOString(),
-              },
-            ],
+            channels: [],
             server_members: [],
+          },
+          {
+            id: '00000000-0000-0000-0000-000000000002',
+            name: 'Cyber Ranked Grinders',
+            description: 'Seed public community server',
+            icon_url: null,
+            owner_id: null,
+            created_at: new Date().toISOString(),
+            channels: [],
+            server_members: [],
+          },
+          {
+            id: 'user-server-den',
+            name: 'The Gamer Den',
+            description: 'User clan server',
+            icon_url: null,
+            owner_id: mockUser.id,
+            created_at: new Date().toISOString(),
+            channels: [],
+            server_members: [{ id: 'm1', server_id: 'user-server-den', user_id: mockUser.id, role: 'owner' }],
           },
         ],
         error: null,
@@ -229,11 +240,12 @@ describe('Navigation Resilience & Failover Regression Tests', () => {
         await result.current.refetch();
       });
 
-      const communityServer = result.current.servers.find(
-        (s) => s.id === '00000000-0000-0000-0000-000000000001'
-      );
-      expect(communityServer).toBeDefined();
-      expect(communityServer!.name).toBe('Tactical Squad Alpha');
+      // Dummy servers must NOT be present
+      expect(result.current.servers.some((s) => s.id === '00000000-0000-0000-0000-000000000001')).toBe(false);
+      expect(result.current.servers.some((s) => s.id === '00000000-0000-0000-0000-000000000002')).toBe(false);
+
+      // User's own server MUST be present
+      expect(result.current.servers.some((s) => s.id === 'user-server-den')).toBe(true);
     });
   });
 });

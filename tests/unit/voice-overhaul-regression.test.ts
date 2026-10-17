@@ -634,6 +634,74 @@ describe('Voice Overhaul & Audio Duplication Regression Tests', () => {
       onTrackUnmuted('user_2');
       expect(playMock).toHaveBeenCalledTimes(1);
     });
+
+    it('toggleDeafen silences receiver track, pauses playback element, and toggles mic in tandem', async () => {
+      let isDeafened = false;
+      let isMicMuted = false;
+
+      const pauseMock = vi.fn();
+      const playMock = vi.fn().mockResolvedValue(undefined);
+      const mockAudioEl = {
+        muted: false,
+        volume: 1.0,
+        pause: pauseMock,
+        play: playMock,
+      };
+
+      const receiverTrack = { enabled: true };
+      const audioElements = new Map([['user_2', mockAudioEl]]);
+      const remoteParticipants = new Map([
+        ['user_2', { audioTrackPublications: new Map([['TR_2', { track: { mediaStreamTrack: receiverTrack, attachedElements: [mockAudioEl] } }]]) }],
+      ]);
+
+      const toggleMic = async () => {
+        isMicMuted = !isMicMuted;
+      };
+
+      const toggleDeafen = async () => {
+        const nextDeafened = !isDeafened;
+        isDeafened = nextDeafened;
+
+        audioElements.forEach((audio) => {
+          audio.muted = nextDeafened;
+          audio.volume = nextDeafened ? 0 : 1.0;
+          if (nextDeafened) audio.pause();
+          else audio.play();
+        });
+
+        remoteParticipants.forEach((rp) => {
+          rp.audioTrackPublications.forEach((pub) => {
+            if (pub.track?.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !nextDeafened;
+            }
+          });
+        });
+
+        if (nextDeafened && !isMicMuted) {
+          await toggleMic();
+        } else if (!nextDeafened && isMicMuted) {
+          await toggleMic();
+        }
+      };
+
+      // 1. Deafen
+      await toggleDeafen();
+      expect(isDeafened).toBe(true);
+      expect(mockAudioEl.muted).toBe(true);
+      expect(mockAudioEl.volume).toBe(0);
+      expect(pauseMock).toHaveBeenCalledTimes(1);
+      expect(receiverTrack.enabled).toBe(false);
+      expect(isMicMuted).toBe(true); // Mic muted automatically
+
+      // 2. Undeafen
+      await toggleDeafen();
+      expect(isDeafened).toBe(false);
+      expect(mockAudioEl.muted).toBe(false);
+      expect(mockAudioEl.volume).toBe(1.0);
+      expect(playMock).toHaveBeenCalledTimes(1);
+      expect(receiverTrack.enabled).toBe(true);
+      expect(isMicMuted).toBe(false); // Mic restored automatically
+    });
   });
 });
 

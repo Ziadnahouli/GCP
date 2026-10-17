@@ -3339,15 +3339,32 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     if (remoteAudioElementRef.current) {
       remoteAudioElementRef.current.muted = nextDeafened;
+      remoteAudioElementRef.current.volume = nextDeafened ? 0 : 1.0;
+      if (nextDeafened) {
+        remoteAudioElementRef.current.pause();
+      } else {
+        remoteAudioElementRef.current.play().catch(() => {});
+      }
     }
 
     if (livekitRoomRef.current?.remoteParticipants) {
       livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
         rp.audioTrackPublications?.forEach((pub: any) => {
-          if (pub.track?.attachedElements) {
-            pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
-              el.muted = nextDeafened;
-            });
+          if (pub.track) {
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !nextDeafened;
+            }
+            if (pub.track.attachedElements) {
+              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+                el.muted = nextDeafened;
+                el.volume = nextDeafened ? 0 : 1.0;
+                if (nextDeafened) {
+                  el.pause();
+                } else {
+                  el.play().catch(() => {});
+                }
+              });
+            }
           }
         });
       });
@@ -3355,6 +3372,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     if (nextDeafened && !isMicMutedRef.current) {
       // Deafening automatically mutes microphone
+      toggleMic();
+    } else if (!nextDeafened && isMicMutedRef.current) {
+      // Undeafening restores microphone
       toggleMic();
     }
 

@@ -18,6 +18,7 @@ import {
   ChevronUp,
   ChevronDown,
   ExternalLink,
+  VolumeX,
 } from 'lucide-react';
 import { useServerVoiceContext } from '@/features/servers/server-voice-context';
 import { Avatar } from '@/components/ui/avatar';
@@ -232,7 +233,7 @@ export function VoiceLoungePopup() {
                 )}
                 title={serverVoice.isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
               >
-                <Headphones className="w-4 h-4" />
+                {serverVoice.isDeafened ? <VolumeX className="w-4 h-4" /> : <Headphones className="w-4 h-4" />}
               </button>
 
               {/* 3. Screen Share */}
@@ -452,7 +453,7 @@ export function VoiceLoungePopup() {
           title={serverVoice.isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
           aria-label="Toggle Deafen"
         >
-          <Headphones className="w-4 h-4" />
+          {serverVoice.isDeafened ? <VolumeX className="w-4 h-4" /> : <Headphones className="w-4 h-4" />}
         </button>
 
         {/* 3. Screen Share */}

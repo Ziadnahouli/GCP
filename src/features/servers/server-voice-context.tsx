@@ -300,7 +300,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     const el = track.attach();
     el.id = `remote-livekit-audio-${peerId}`;
     el.muted = isDeafenedRef.current;
-    el.volume = 1.0;
+    el.volume = isDeafenedRef.current ? 0 : 1.0;
     el.autoplay = true;
     el.setAttribute('playsinline', 'true');
 
@@ -316,6 +316,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       document.body.appendChild(el);
     }
     audioElementsRef.current.set(peerId, el);
+
+    if (isDeafenedRef.current) {
+      el.pause();
+      return;
+    }
 
     const playPromise = el.play();
     if (playPromise !== undefined) {
@@ -1859,16 +1864,23 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       isDeafenedRef.current = false;
       audioElementsRef.current.forEach((audio) => {
         audio.muted = false;
+        audio.volume = 1.0;
         audio.play().catch(() => {});
       });
       if (livekitRoomRef.current?.remoteParticipants) {
         livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
           rp.audioTrackPublications?.forEach((pub: any) => {
-            if (pub.track?.attachedElements) {
-              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
-                el.muted = false;
-                el.play().catch(() => {});
-              });
+            if (pub.track) {
+              if (pub.track.mediaStreamTrack) {
+                pub.track.mediaStreamTrack.enabled = true;
+              }
+              if (pub.track.attachedElements) {
+                pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+                  el.muted = false;
+                  el.volume = 1.0;
+                  el.play().catch(() => {});
+                });
+              }
             }
           });
         });
@@ -1880,43 +1892,60 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   }, [isMicMuted, broadcastMyVoiceState]);
 
   // Toggle deafen
-  const toggleDeafen = React.useCallback(() => {
-    const nextDeafened = !isDeafened;
+  const toggleDeafen = React.useCallback(async () => {
+    const nextDeafened = !isDeafenedRef.current;
     setIsDeafened(nextDeafened);
     isDeafenedRef.current = nextDeafened;
 
-    // Mute/unmute all remote audio elements & Web Audio mixer nodes
+    // 1. Mute/unmute all tracked DOM audio elements
     audioElementsRef.current.forEach((audio) => {
       audio.muted = nextDeafened;
-      if (!nextDeafened) {
+      audio.volume = nextDeafened ? 0 : 1.0;
+      if (nextDeafened) {
+        audio.pause();
+      } else {
         audio.play().catch(() => {});
       }
     });
+
+    // 2. Mute/unmute Web Audio mixer nodes
     remoteAudioNodesRef.current.forEach(({ gain }) => {
       gain.gain.value = nextDeafened ? 0 : 1;
     });
 
-    // Mute/unmute all LiveKit remote audio publications' attached elements
+    // 3. Completely silence/restore remote WebRTC tracks and attached elements
     if (livekitRoomRef.current?.remoteParticipants) {
       livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
         rp.audioTrackPublications?.forEach((pub: any) => {
-          if (pub.track?.attachedElements) {
-            pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
-              el.muted = nextDeafened;
-              if (!nextDeafened) {
-                el.play().catch(() => {});
-              }
-            });
+          if (pub.track) {
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !nextDeafened;
+            }
+            if (pub.track.attachedElements) {
+              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+                el.muted = nextDeafened;
+                el.volume = nextDeafened ? 0 : 1.0;
+                if (nextDeafened) {
+                  el.pause();
+                } else {
+                  el.play().catch(() => {});
+                }
+              });
+            }
           }
         });
       });
     }
 
-    if (nextDeafened && !isMicMuted) {
-      toggleMic();
+    // 4. Mute/unmute microphone in tandem with deafen state
+    if (nextDeafened && !isMicMutedRef.current) {
+      await toggleMic();
+    } else if (!nextDeafened && isMicMutedRef.current) {
+      await toggleMic();
     }
+
     broadcastMyVoiceState({ is_deafened: nextDeafened });
-  }, [isDeafened, isMicMuted, toggleMic, broadcastMyVoiceState]);
+  }, [toggleMic, broadcastMyVoiceState]);
 
   // Toggle camera
   const toggleCamera = React.useCallback(async () => {

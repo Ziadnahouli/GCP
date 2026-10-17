@@ -443,6 +443,10 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       // Handle receiving remote audio and video streams
       pc.ontrack = (event) => {
         if (event.track.kind === 'audio') {
+          if (mediaTransportRef.current === 'livekit' || livekitRoomRef.current?.state === 'connected') {
+            console.log('[WebRTC Lounge] Suppressing WebRTC track playback; LiveKit SFU is authoritative.');
+            return;
+          }
           console.log('[WebRTC] ontrack fired for peer (audio):', remoteUserId);
           const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
 
@@ -869,6 +873,22 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               setIsLiveKitActive(true);
               setIsVoiceConnected(true);
               setIsConnecting(false);
+
+              // LiveKit SFU is authoritative: close and clean up any fallback WebRTC peer connections
+              peerConnectionsRef.current.forEach((peerPc) => {
+                try { peerPc.close(); } catch {}
+              });
+              peerConnectionsRef.current.clear();
+
+              // Clean up any existing WebRTC audio elements to prevent double playback
+              document.querySelectorAll('[id^="remote-voice-audio-"]').forEach((el) => {
+                try {
+                  const mediaEl = el as HTMLMediaElement;
+                  mediaEl.pause();
+                  mediaEl.srcObject = null;
+                  mediaEl.remove();
+                } catch {}
+              });
             });
 
             lkRoom.on(RoomEvent.Disconnected, (reason) => {
@@ -1236,9 +1256,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
               const audioCtx =
                 (lkRoom as any).audioContext ||
+                audioContextRef.current ||
                 (AudioCtx ? new AudioCtx({ latencyHint: 'interactive' }) : undefined);
               if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume().catch(() => {});
+              }
+              if (audioCtx && !(lkRoom as any).audioContext) {
+                try {
+                  (lkRoom as any).audioContext = audioCtx;
+                  (lkRoom as any).setAudioContext?.(audioCtx);
+                } catch {}
               }
 
               if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
@@ -1256,9 +1283,12 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 }
               }
 
-              if (audioCtx && !localAudioTrack.audioContext) {
+              if (audioCtx) {
                 try {
                   localAudioTrack.setAudioContext(audioCtx);
+                } catch {}
+                try {
+                  (localAudioTrack as any).audioContext = audioCtx;
                 } catch {}
               }
 
@@ -1753,13 +1783,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       }
     }
 
-    peerConnectionsRef.current.forEach((pc) => {
-      pc.getSenders().forEach((s) => {
-        if (s.track?.kind === 'audio') {
-          s.track.enabled = !nextMuted;
-        }
+    // Only update WebRTC fallback audio senders if WebRTC is the authoritative transport
+    if (mediaTransportRef.current === 'webrtc') {
+      peerConnectionsRef.current.forEach((pc) => {
+        pc.getSenders().forEach((s) => {
+          if (s.track?.kind === 'audio') {
+            s.track.enabled = !nextMuted;
+          }
+        });
       });
-    });
+    }
 
     if (nextMuted) {
       setIsSpeaking(false);
@@ -1775,15 +1808,10 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       if (livekitRoomRef.current?.remoteParticipants) {
         livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
           rp.audioTrackPublications?.forEach((pub: any) => {
-            if (pub.track) {
-              if (pub.track.mediaStreamTrack) {
-                pub.track.mediaStreamTrack.enabled = true;
-              }
-              if (pub.track.attachedElements) {
-                pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
-                  el.muted = false;
-                });
-              }
+            if (pub.track?.attachedElements) {
+              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+                el.muted = false;
+              });
             }
           });
         });
@@ -1808,19 +1836,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       gain.gain.value = nextDeafened ? 0 : 1;
     });
 
-    // Mute/unmute all LiveKit remote audio publications & tracks
+    // Mute/unmute all LiveKit remote audio publications' attached elements
     if (livekitRoomRef.current?.remoteParticipants) {
       livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
         rp.audioTrackPublications?.forEach((pub: any) => {
-          if (pub.track) {
-            if (pub.track.mediaStreamTrack) {
-              pub.track.mediaStreamTrack.enabled = !nextDeafened;
-            }
-            if (pub.track.attachedElements) {
-              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
-                el.muted = nextDeafened;
-              });
-            }
+          if (pub.track?.attachedElements) {
+            pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+              el.muted = nextDeafened;
+            });
           }
         });
       });

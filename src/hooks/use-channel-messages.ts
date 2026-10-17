@@ -205,6 +205,39 @@ export function useChannelMessages(channelId: string | null) {
               return prev;
             });
           }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'channel_messages',
+            filter: `channel_id=eq.${channelId}`,
+          },
+          () => fetchChannelMessages()
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'channel_messages',
+            filter: `channel_id=eq.${channelId}`,
+          },
+          (payload) => {
+            const oldRow = payload.old as any;
+            if (oldRow?.id) {
+              setMessages((prev) => {
+                const next = prev.filter((m) => m.id !== oldRow.id);
+                try {
+                  localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(next.filter((m) => m.status === 'sent')));
+                } catch {}
+                return next;
+              });
+            } else {
+              fetchChannelMessages();
+            }
+          }
         );
       }
 
@@ -514,11 +547,68 @@ export function useChannelMessages(channelId: string | null) {
       const target = messages.find((m) => m.id === messageId && m.status === 'failed');
       if (!target) return { error: 'Message not found or not in failed state' };
 
+      // Idempotency check: verify if the timed-out message was already committed to the database
+      if (isConfigured && userId && isUUID && channelId) {
+        try {
+          const { data: existing } = await supabase
+            .from('channel_messages')
+            .select('id, created_at')
+            .eq('channel_id', channelId)
+            .eq('user_id', userId)
+            .eq('content', target.content.trim())
+            .gte('created_at', new Date(Date.now() - 60000).toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (existing && existing.length > 0) {
+            debugLogger.info('channel_messaging', 'Retry detected channel message was already committed. Reconciling...');
+            setMessages((prev) => prev.filter((m) => m.id !== messageId));
+            await fetchChannelMessages();
+            return { error: null };
+          }
+        } catch {}
+      }
+
       // Remove the failed message and re-send
       setMessages((prev) => prev.filter((m) => m.id !== messageId));
       return sendMessage(target.content);
     },
-    [messages, sendMessage]
+    [messages, sendMessage, isConfigured, userId, isUUID, channelId, supabase, fetchChannelMessages]
+  );
+
+  const deleteMessage = React.useCallback(
+    async (messageId: string): Promise<{ error: string | null }> => {
+      if (!isConfigured || !user) {
+        setMessages((prev) => {
+          const next = prev.filter((m) => m.id !== messageId);
+          try {
+            localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+        return { error: null };
+      }
+
+      const { error } = await supabase
+        .from('channel_messages')
+        .delete()
+        .eq('id', messageId);
+
+      if (error) {
+        console.error('Failed to delete channel message:', error);
+        return { error: error.message };
+      }
+
+      setMessages((prev) => {
+        const next = prev.filter((m) => m.id !== messageId);
+        try {
+          localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(next.filter((m) => m.status === 'sent')));
+        } catch {}
+        return next;
+      });
+      return { error: null };
+    },
+    [channelId, isConfigured, user, supabase]
   );
 
   return {
@@ -526,5 +616,6 @@ export function useChannelMessages(channelId: string | null) {
     isLoading,
     sendMessage,
     retryMessage,
+    deleteMessage,
   };
 }

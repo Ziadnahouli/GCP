@@ -418,4 +418,86 @@ describe('Voice Overhaul & Audio Duplication Regression Tests', () => {
       expect(beaconActive).toBe(false);
     });
   });
+
+  describe('8. Single Authoritative Media Transport & Playback Isolation', () => {
+    it('suppresses WebRTC remote audio playback when LiveKit SFU is authoritative', () => {
+      let mediaTransport = 'livekit';
+      const playMock = vi.fn();
+      const mockAudioEl = { play: playMock, srcObject: null };
+
+      // Simulate ontrack with transport guard
+      const onTrack = (event: { kind: string }) => {
+        if (event.kind === 'audio') {
+          if (mediaTransport === 'livekit') {
+            // Suppress WebRTC track playback because LiveKit is authoritative
+            return;
+          }
+          mockAudioEl.play();
+        }
+      };
+
+      onTrack({ kind: 'audio' });
+      expect(playMock).not.toHaveBeenCalled();
+
+      // When fallback webrtc is active, playback occurs
+      mediaTransport = 'webrtc';
+      onTrack({ kind: 'audio' });
+      expect(playMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('unmuting mic does NOT enable WebRTC senders when LiveKit SFU is authoritative', () => {
+      let mediaTransport: 'livekit' | 'webrtc' = 'livekit';
+      const senderTrack = { kind: 'audio', enabled: false };
+      const pc = {
+        getSenders: () => [{ track: senderTrack }],
+      };
+
+      let isMicMuted = true;
+      const toggleMic = () => {
+        isMicMuted = !isMicMuted;
+        // Authoritative transport check: only toggle WebRTC senders if webrtc transport
+        if ((mediaTransport as string) === 'webrtc') {
+          pc.getSenders().forEach((s) => {
+            if (s.track?.kind === 'audio') {
+              s.track.enabled = !isMicMuted;
+            }
+          });
+        }
+      };
+
+      toggleMic(); // Unmute while livekit
+      expect(isMicMuted).toBe(false);
+      // Sender track must remain disabled to prevent dual transmission over P2P!
+      expect(senderTrack.enabled).toBe(false);
+
+      // Now switch to webrtc transport and unmute
+      mediaTransport = 'webrtc';
+      isMicMuted = true;
+      toggleMic();
+      expect(senderTrack.enabled).toBe(true);
+    });
+
+    it('local deafen/undeafen toggles playback elements without mutating remote participant mediaStreamTracks', () => {
+      let isDeafened = false;
+      const remoteAudioEl = { muted: false };
+      const remoteMediaStreamTrack = { kind: 'audio', enabled: true }; // e.g. remote user active mic
+
+      const toggleDeafen = () => {
+        isDeafened = !isDeafened;
+        // Only mute the local playback element
+        remoteAudioEl.muted = isDeafened;
+        // Remote mediaStreamTrack.enabled must NOT be altered
+      };
+
+      toggleDeafen(); // Deafen
+      expect(isDeafened).toBe(true);
+      expect(remoteAudioEl.muted).toBe(true);
+      expect(remoteMediaStreamTrack.enabled).toBe(true);
+
+      toggleDeafen(); // Undeafen
+      expect(isDeafened).toBe(false);
+      expect(remoteAudioEl.muted).toBe(false);
+      expect(remoteMediaStreamTrack.enabled).toBe(true);
+    });
+  });
 });

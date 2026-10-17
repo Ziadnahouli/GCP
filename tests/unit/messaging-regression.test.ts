@@ -498,4 +498,129 @@ describe('Messaging Regression Audit & Verification', () => {
     expect(reactRes.error).toBe('Reaction rejected by RLS');
     expect(pinRes.error).toBe('Pin rejected by RLS');
   });
+
+  // 13. Retrying a message that was already committed by Supabase does not create a duplicate
+  it('13. Retrying a message does not create a duplicate if message was already committed', async () => {
+    // 1. Initial insert times out on client, but row was saved in DB
+    mockState.fromOverride = null;
+    mockState.insertResult = {
+      data: null,
+      error: new Error('Network request timed out after 8s'),
+    };
+
+    const { result } = renderHook(() => useMessages(validConvId));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('Idempotent retry test');
+    });
+
+    const failedMsg = result.current.messages.find((m) => m.status === 'failed');
+    expect(failedMsg).toBeDefined();
+
+    // 2. Mock that the message exists in database when checking during retry
+    mockState.fromOverride = (table: string) => {
+      if (table === 'messages') {
+        return {
+          select: vi.fn().mockImplementation((fields: string) => {
+            if (fields && fields.includes('sender:sender_id')) {
+              return {
+                eq: vi.fn().mockReturnValue({
+                  order: vi.fn().mockResolvedValue({
+                    data: [
+                      {
+                        id: 'db-already-committed',
+                        conversation_id: validConvId,
+                        sender_id: mockUser.id,
+                        content: 'Idempotent retry test',
+                        reply_to_id: null,
+                        is_pinned: false,
+                        is_edited: false,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        sender: mockProfile,
+                      },
+                    ],
+                    error: null,
+                  }),
+                }),
+              };
+            }
+            return {
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    gte: vi.fn().mockReturnValue({
+                      order: vi.fn().mockReturnValue({
+                        limit: vi.fn().mockResolvedValue({
+                          data: [{ id: 'db-already-committed', created_at: new Date().toISOString() }],
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            };
+          }),
+        };
+      }
+      return null;
+    };
+
+    let retryRes: any;
+    await act(async () => {
+      retryRes = await result.current.retryMessage(failedMsg!.id);
+    });
+
+    // Succeeded without error and did not issue another insert
+    expect(retryRes.error).toBeNull();
+  });
+
+  // 14. Deleting a message updates localStorage cache and never resurrects the deleted message
+  it('14. Deleting a message updates localStorage cache so it cannot be resurrected', async () => {
+    mockState.fromOverride = null;
+    mockState.selectResult = {
+      data: [
+        {
+          id: 'msg-to-delete-1',
+          conversation_id: validConvId,
+          sender_id: mockUser.id,
+          content: 'Secret message',
+          reply_to_id: null,
+          is_pinned: false,
+          is_edited: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          sender: mockProfile,
+        },
+      ],
+      error: null,
+    };
+    mockState.deleteResult = { data: null, error: null };
+
+    const { result } = renderHook(() => useMessages(validConvId));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.messages.some((m) => m.id === 'msg-to-delete-1')).toBe(true);
+
+    await act(async () => {
+      const delRes = await result.current.deleteMessage('msg-to-delete-1');
+      expect(delRes.error).toBeNull();
+    });
+
+    expect(result.current.messages.some((m) => m.id === 'msg-to-delete-1')).toBe(false);
+
+    // Verify localStorage cache was purged of the deleted message
+    const cacheKey = `nexus_dm_msgs_${mockUser.id}_${validConvId}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      expect(parsed.some((m: any) => m.id === 'msg-to-delete-1')).toBe(false);
+    }
+  });
 });

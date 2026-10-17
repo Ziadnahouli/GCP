@@ -442,10 +442,15 @@ export function useSocial() {
       return;
     }
 
-    await supabase.from('blocks').insert({
+    const { error: blockErr } = await supabase.from('blocks').insert({
       blocker_id: user.id,
       blocked_id: targetUserId,
     });
+
+    if (blockErr && (blockErr as any).code !== '23505') {
+      toast({ title: 'Error', description: blockErr.message || 'Failed to block user', type: 'error' });
+      return;
+    }
 
     // Also remove from friendships if exists
     await supabase
@@ -465,7 +470,12 @@ export function useSocial() {
       return;
     }
 
-    await supabase.from('blocks').delete().eq('id', blockId);
+    const { error: unblockErr } = await supabase.from('blocks').delete().eq('id', blockId);
+    if (unblockErr) {
+      toast({ title: 'Error', description: unblockErr.message || 'Failed to unblock user', type: 'error' });
+      return;
+    }
+
     toast({ title: 'User Unblocked', description: 'User unblocked', type: 'success' });
     await fetchSocialData();
   };

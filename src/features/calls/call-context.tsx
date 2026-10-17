@@ -533,10 +533,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     // Also update remote persistent audio element if this is an audio track
     if (track.kind === 'audio' && remoteAudioElementRef.current) {
-      if (mediaTransportRef.current !== 'livekit') {
-        if (remoteAudioElementRef.current.srcObject !== currentStream) {
-          remoteAudioElementRef.current.srcObject = currentStream;
-        }
+      if (mediaTransportRef.current === 'livekit') {
+        // LiveKit SFU is authoritative for audio playback; suppress WebRTC fallback playback
+        return;
+      }
+      if (remoteAudioElementRef.current.srcObject !== currentStream) {
+        remoteAudioElementRef.current.srcObject = currentStream;
       }
       remoteAudioElementRef.current.muted = isDeafened;
       remoteAudioElementRef.current.play().catch(() => {});
@@ -1412,6 +1414,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           console.log('[LiveKit Call] Connected to LiveKit Cloud SFU Room:', `nexus-dm-${cleanConvId}`);
           setIsLiveKitActive(true);
           mediaTransportRef.current = 'livekit';
+
+          // Disable fallback WebRTC audio senders so no duplicate audio packets stream peer-to-peer
+          if (pcRef.current) {
+            try {
+              pcRef.current.getSenders().forEach((sender) => {
+                if (sender.track && sender.track.kind === 'audio') {
+                  sender.track.enabled = false;
+                }
+              });
+            } catch {}
+          }
         });
 
         lkRoom.on(RoomEvent.Disconnected, () => {
@@ -1615,9 +1628,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
           const audioCtx =
             (lkRoom as any).audioContext ||
+            dspAudioCtxRef.current ||
             (AudioCtx ? new AudioCtx({ latencyHint: 'interactive' }) : undefined);
           if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume().catch(() => {});
+          }
+          if (audioCtx && !(lkRoom as any).audioContext) {
+            try {
+              (lkRoom as any).audioContext = audioCtx;
+              (lkRoom as any).setAudioContext?.(audioCtx);
+            } catch {}
           }
 
           if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
@@ -1630,9 +1650,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             });
           }
 
-          if (audioCtx && !localAudioTrack.audioContext) {
+          if (audioCtx) {
             try {
               localAudioTrack.setAudioContext(audioCtx);
+            } catch {}
+            try {
+              (localAudioTrack as any).audioContext = audioCtx;
             } catch {}
           }
 
@@ -2494,6 +2517,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const recTrack = transceiver.receiver?.track;
       if (recTrack) {
         recTrack.onunmute = () => {
+          if (recTrack.kind === 'audio' && mediaTransportRef.current === 'livekit') {
+            return;
+          }
           console.log('[CallSignaling] Caller remote transceiver track unmuted:', recTrack.kind);
           recTrack.enabled = true;
           attachRemoteTrack(recTrack);
@@ -2504,8 +2530,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }
         };
         if (recTrack.readyState === 'live' && !recTrack.muted) {
-          recTrack.enabled = true;
-          attachRemoteTrack(recTrack);
+          if (recTrack.kind !== 'audio' || mediaTransportRef.current !== 'livekit') {
+            recTrack.enabled = true;
+            attachRemoteTrack(recTrack);
+          }
           if (recTrack.kind === 'video' && video) {
             setParticipants((prev) =>
               prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
@@ -2875,6 +2903,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const recTrack = transceiver.receiver?.track;
       if (recTrack) {
         recTrack.onunmute = () => {
+          if (recTrack.kind === 'audio' && mediaTransportRef.current === 'livekit') {
+            return;
+          }
           console.log('[CallSignaling] Callee remote transceiver track unmuted:', recTrack.kind);
           recTrack.enabled = true;
           attachRemoteTrack(recTrack);
@@ -2885,8 +2916,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }
         };
         if (recTrack.readyState === 'live' && !recTrack.muted) {
-          recTrack.enabled = true;
-          attachRemoteTrack(recTrack);
+          if (recTrack.kind !== 'audio' || mediaTransportRef.current !== 'livekit') {
+            recTrack.enabled = true;
+            attachRemoteTrack(recTrack);
+          }
           if (recTrack.kind === 'video' && isVideo) {
             setParticipants((prev) =>
               prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
@@ -3264,8 +3297,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Update WebRTC fallback audio senders if active
-    if (pcRef.current) {
+    // Update WebRTC fallback audio senders ONLY if WebRTC is the active transport
+    if (mediaTransportRef.current === 'webrtc' && pcRef.current) {
       try {
         pcRef.current.getSenders().forEach((sender) => {
           if (sender.track && sender.track.kind === 'audio') {
@@ -3301,24 +3334,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       remoteAudioElementRef.current.muted = nextDeafened;
     }
 
-    if (remoteStreamRef.current) {
-      remoteStreamRef.current.getAudioTracks().forEach((track) => {
-        track.enabled = !nextDeafened;
-      });
-    }
-
     if (livekitRoomRef.current?.remoteParticipants) {
       livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
         rp.audioTrackPublications?.forEach((pub: any) => {
-          if (pub.track) {
-            if (pub.track.mediaStreamTrack) {
-              pub.track.mediaStreamTrack.enabled = !nextDeafened;
-            }
-            if (pub.track.attachedElements) {
-              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
-                el.muted = nextDeafened;
-              });
-            }
+          if (pub.track?.attachedElements) {
+            pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+              el.muted = nextDeafened;
+            });
           }
         });
       });

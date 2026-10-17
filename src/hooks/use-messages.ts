@@ -372,7 +372,15 @@ export function useMessages(conversationId: string | null) {
         (payload) => {
           const oldRow = payload.old as any;
           if (oldRow?.id) {
-            setMessages((prev) => prev.filter((m) => m.id !== oldRow.id));
+            setMessages((prev) => {
+              const next = prev.filter((m) => m.id !== oldRow.id);
+              try {
+                if (cacheKey) {
+                  localStorage.setItem(cacheKey, JSON.stringify(next.filter((m) => m.status === 'sent')));
+                }
+              } catch {}
+              return next;
+            });
           } else {
             fetchMessages();
           }
@@ -890,6 +898,28 @@ export function useMessages(conversationId: string | null) {
     const target = messages.find((m) => m.id === messageId && m.status === 'failed');
     if (!target) return { error: 'Failed message not found' };
 
+    // Idempotency check: verify if the timed-out message was actually committed to the database
+    if (isConfigured && userId && isUUID && conversationId) {
+      try {
+        const { data: existing } = await supabase
+          .from('messages')
+          .select('id, created_at')
+          .eq('conversation_id', conversationId)
+          .eq('sender_id', userId)
+          .eq('content', target.content.trim())
+          .gte('created_at', new Date(Date.now() - 60000).toISOString())
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          debugLogger.info('messaging', 'Retry detected message was already committed. Reconciling...');
+          setMessages((prev) => prev.filter((m) => m.id !== messageId));
+          await fetchMessages();
+          return { error: null };
+        }
+      } catch {}
+    }
+
     // Remove the failed message and re-send
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
     return sendMessage(target.content, target.reply_to_id);
@@ -1073,7 +1103,15 @@ export function useMessages(conversationId: string | null) {
       return { error: error.message };
     }
 
-    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    setMessages((prev) => {
+      const next = prev.filter((m) => m.id !== messageId);
+      try {
+        if (cacheKey) {
+          localStorage.setItem(cacheKey, JSON.stringify(next.filter((m) => m.status === 'sent')));
+        }
+      } catch {}
+      return next;
+    });
     return { error: null };
   };
 

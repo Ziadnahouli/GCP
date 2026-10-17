@@ -66,6 +66,11 @@ export interface ServerVoiceContextType {
   toggleScreenShare: () => Promise<void>;
   toggleNoiseSuppression: () => void;
   broadcastSoundboard: (clip: SoundboardClip) => void;
+  incomingVolume: number;
+  setIncomingVolume: (volume: number) => Promise<void>;
+  setMicMutedExplicit: (muted: boolean) => Promise<void>;
+  setDeafenedExplicit: (deafened: boolean) => Promise<void>;
+  forceMute: () => void;
 }
 
 const ServerVoiceContext = React.createContext<ServerVoiceContextType | null>(null);
@@ -100,6 +105,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const currentVoiceSessionIdRef = React.useRef<string | null>(null);
   const [isMicMuted, setIsMicMuted] = React.useState(false);
   const [isDeafened, setIsDeafened] = React.useState(false);
+  const [incomingVolume, setIncomingVolumeState] = React.useState(100);
+  const incomingVolumeRef = React.useRef(100);
+  const disconnectGateRef = React.useRef(false);
   const [isCameraOn, setIsCameraOn] = React.useState(false);
   const [isScreenSharing, setIsScreenSharing] = React.useState(false);
   const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = React.useState(true);
@@ -300,7 +308,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     const el = track.attach();
     el.id = `remote-livekit-audio-${peerId}`;
     el.muted = isDeafenedRef.current;
-    el.volume = isDeafenedRef.current ? 0 : 1.0;
+    el.volume = isDeafenedRef.current ? 0 : incomingVolumeRef.current / 100;
     el.autoplay = true;
     el.setAttribute('playsinline', 'true');
 
@@ -485,7 +493,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             audioEl.srcObject = stream;
           }
           audioEl.muted = isDeafenedRef.current;
-          audioEl.volume = 1.0;
+          audioEl.volume = isDeafenedRef.current ? 0 : incomingVolumeRef.current / 100;
 
           const playPromise = audioEl.play();
           if (playPromise !== undefined) {
@@ -1203,7 +1211,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                   stream = rawStream;
 
                   const pttActive = isPushToTalkEnabled(settingsRef.current);
-                  if (pttActive) {
+                  if (pttActive || disconnectGateRef.current || isMicMutedRef.current) {
                     stream.getAudioTracks().forEach((track) => {
                       track.enabled = false;
                     });
@@ -1950,6 +1958,173 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     broadcastMyVoiceState({ is_deafened: nextDeafened, is_speaking: false });
   }, [toggleMic, broadcastMyVoiceState]);
 
+  const setIncomingVolume = React.useCallback(async (vol: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(vol)));
+    incomingVolumeRef.current = clamped;
+    setIncomingVolumeState(clamped);
+
+    const gain = isDeafenedRef.current ? 0 : clamped / 100;
+    audioElementsRef.current.forEach((el) => {
+      el.volume = gain;
+    });
+
+    remoteAudioNodesRef.current.forEach(({ gain: gNode }) => {
+      gNode.gain.value = gain;
+    });
+
+    if (livekitRoomRef.current?.remoteParticipants) {
+      livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
+        rp.audioTrackPublications?.forEach((pub: any) => {
+          if (pub.track?.attachedElements) {
+            pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+              el.volume = gain;
+            });
+          }
+        });
+      });
+    }
+  }, []);
+
+  const setMicMutedExplicit = React.useCallback(async (muted: boolean) => {
+    if (!muted) {
+      disconnectGateRef.current = false;
+    }
+    setIsMicMuted(muted);
+    isMicMutedRef.current = muted;
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !muted;
+      });
+    }
+
+    if (livekitRoomRef.current?.localParticipant) {
+      try {
+        const lp = livekitRoomRef.current.localParticipant;
+        const promises: Promise<any>[] = [];
+        lp.audioTrackPublications.forEach((pub: any) => {
+          if (pub.track) {
+            promises.push(muted ? pub.track.mute() : pub.track.unmute());
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !muted;
+            }
+          }
+          if (muted && typeof pub.mute === 'function') {
+            promises.push(pub.mute());
+          } else if (!muted && typeof pub.unmute === 'function') {
+            promises.push(pub.unmute());
+          }
+        });
+        promises.push(lp.setMicrophoneEnabled(!muted));
+        await Promise.allSettled(promises);
+      } catch (lkErr) {
+        console.warn('[LiveKit Voice] Error setting mic state:', lkErr);
+      }
+    }
+
+    if (mediaTransportRef.current === 'webrtc') {
+      peerConnectionsRef.current.forEach((pc) => {
+        pc.getSenders().forEach((s) => {
+          if (s.track?.kind === 'audio') {
+            s.track.enabled = !muted;
+          }
+        });
+      });
+    }
+
+    if (muted) {
+      setIsSpeaking(false);
+      isSpeakingRef.current = false;
+      setAudioLevel(0);
+      audioLevelRef.current = 0;
+    }
+
+    broadcastMyVoiceState({ is_muted: muted, is_speaking: false });
+  }, [broadcastMyVoiceState]);
+
+  const setDeafenedExplicit = React.useCallback(async (deafened: boolean) => {
+    setIsDeafened(deafened);
+    isDeafenedRef.current = deafened;
+
+    const gain = deafened ? 0 : incomingVolumeRef.current / 100;
+
+    audioElementsRef.current.forEach((audio) => {
+      audio.muted = deafened;
+      audio.volume = gain;
+      if (!deafened && audio.paused) {
+        audio.play().catch(() => {});
+      }
+    });
+
+    remoteAudioNodesRef.current.forEach(({ gain: gNode }) => {
+      gNode.gain.value = gain;
+    });
+
+    if (livekitRoomRef.current?.remoteParticipants) {
+      livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
+        rp.audioTrackPublications?.forEach((pub: any) => {
+          if (pub.track) {
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !deafened;
+            }
+            if (pub.track.attachedElements) {
+              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+                el.muted = deafened;
+                el.volume = gain;
+                if (!deafened && el.paused) {
+                  el.play().catch(() => {});
+                }
+              });
+            }
+          }
+        });
+      });
+    }
+
+    // Keep mic state independent as required by mixer contract
+    broadcastMyVoiceState({ is_deafened: deafened });
+  }, [broadcastMyVoiceState]);
+
+  const forceMute = React.useCallback(() => {
+    disconnectGateRef.current = true;
+    setIsMicMuted(true);
+    isMicMutedRef.current = true;
+    setIsSpeaking(false);
+    isSpeakingRef.current = false;
+    setAudioLevel(0);
+    audioLevelRef.current = 0;
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
+
+    if (livekitRoomRef.current?.localParticipant) {
+      const lp = livekitRoomRef.current.localParticipant;
+      lp.audioTrackPublications.forEach((pub: any) => {
+        if (pub.track?.mediaStreamTrack) {
+          pub.track.mediaStreamTrack.enabled = false;
+        }
+        if (typeof pub.track?.mute === 'function') {
+          pub.track.mute().catch(() => {});
+        }
+      });
+    }
+
+    if (mediaTransportRef.current === 'webrtc') {
+      peerConnectionsRef.current.forEach((pc) => {
+        pc.getSenders().forEach((s) => {
+          if (s.track?.kind === 'audio') {
+            s.track.enabled = false;
+          }
+        });
+      });
+    }
+
+    broadcastMyVoiceState({ is_muted: true, is_speaking: false });
+  }, [broadcastMyVoiceState]);
+
   // Toggle camera
   const toggleCamera = React.useCallback(async () => {
     if (isCameraOn) {
@@ -2197,6 +2372,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     toggleScreenShare,
     toggleNoiseSuppression,
     broadcastSoundboard,
+    incomingVolume,
+    setIncomingVolume,
+    setMicMutedExplicit,
+    setDeafenedExplicit,
+    forceMute,
   };
 
   return <ServerVoiceContext.Provider value={value}>{children}</ServerVoiceContext.Provider>;

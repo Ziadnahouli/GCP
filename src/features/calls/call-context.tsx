@@ -70,6 +70,11 @@ interface CallContextType {
   toggleNoiseSuppression: () => void;
   peerZeroTierIp: string | null;
   setPeerZeroTierDirectIp: (ip: string) => void;
+  incomingVolume: number;
+  setIncomingVolume: (volume: number) => Promise<void>;
+  setMicMutedExplicit: (muted: boolean) => Promise<void>;
+  setDeafenedExplicit: (deafened: boolean) => Promise<void>;
+  forceMute: () => void;
 }
 
 export const CallContext = React.createContext<CallContextType | null>(null);
@@ -205,6 +210,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Media toggles
   const [isMicMuted, setIsMicMuted] = React.useState(false);
   const [isDeafened, setIsDeafened] = React.useState(false);
+  const [incomingVolume, setIncomingVolumeState] = React.useState(100);
+  const incomingVolumeRef = React.useRef(100);
+  const disconnectGateRef = React.useRef(false);
   const [isCameraOn, setIsCameraOn] = React.useState(false);
   const [isScreenSharing, setIsScreenSharing] = React.useState(false);
   const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = React.useState<boolean>(() => {
@@ -1163,6 +1171,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
       });
       rawMicStreamRef.current = rawStream;
+      if (disconnectGateRef.current || isMicMutedRef.current) {
+        rawStream.getAudioTracks().forEach((t) => { t.enabled = false; });
+      }
 
       // Construct multi-stage studio voice DSP pipeline
       let finalAudioTrack = rawStream.getAudioTracks()[0];
@@ -3389,6 +3400,155 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const setIncomingVolume = React.useCallback(async (vol: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(vol)));
+    incomingVolumeRef.current = clamped;
+    setIncomingVolumeState(clamped);
+
+    const gain = isDeafenedRef.current ? 0 : clamped / 100;
+    if (remoteAudioElementRef.current) {
+      remoteAudioElementRef.current.volume = gain;
+    }
+
+    if (livekitRoomRef.current?.remoteParticipants) {
+      livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
+        rp.audioTrackPublications?.forEach((pub: any) => {
+          if (pub.track?.attachedElements) {
+            pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+              el.volume = gain;
+            });
+          }
+        });
+      });
+    }
+  }, []);
+
+  const setMicMutedExplicit = React.useCallback(async (muted: boolean) => {
+    if (!muted) {
+      disconnectGateRef.current = false;
+    }
+    isMicMutedRef.current = muted;
+    setIsMicMuted(muted);
+
+    if (rawMicStreamRef.current) {
+      rawMicStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !muted;
+      });
+    }
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !muted;
+      });
+    }
+
+    if (livekitRoomRef.current?.localParticipant) {
+      try {
+        const lp = livekitRoomRef.current.localParticipant;
+        const promises: Promise<any>[] = [];
+        lp.audioTrackPublications.forEach((pub: any) => {
+          if (pub.track) {
+            promises.push(muted ? pub.track.mute() : pub.track.unmute());
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !muted;
+            }
+          }
+        });
+        promises.push(lp.setMicrophoneEnabled(!muted));
+        await Promise.allSettled(promises);
+      } catch (lkErr) {
+        console.warn('[LiveKit Call] Error setting mic state:', lkErr);
+      }
+    }
+
+    if (pcRef.current) {
+      pcRef.current.getSenders().forEach((s: RTCRtpSender) => {
+        if (s.track?.kind === 'audio') {
+          s.track.enabled = !muted;
+        }
+      });
+    }
+
+    sendSignalToRoom('peer_media_toggle', { userId: user?.id, isMuted: muted });
+  }, [sendSignalToRoom, user?.id]);
+
+  const setDeafenedExplicit = React.useCallback(async (deafened: boolean) => {
+    isDeafenedRef.current = deafened;
+    setIsDeafened(deafened);
+
+    const gain = deafened ? 0 : incomingVolumeRef.current / 100;
+    if (remoteAudioElementRef.current) {
+      remoteAudioElementRef.current.muted = deafened;
+      remoteAudioElementRef.current.volume = gain;
+      if (!deafened && remoteAudioElementRef.current.paused) {
+        remoteAudioElementRef.current.play().catch(() => {});
+      }
+    }
+
+    if (livekitRoomRef.current?.remoteParticipants) {
+      livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
+        rp.audioTrackPublications?.forEach((pub: any) => {
+          if (pub.track) {
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !deafened;
+            }
+            if (pub.track.attachedElements) {
+              pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
+                el.muted = deafened;
+                el.volume = gain;
+                if (!deafened && el.paused) {
+                  el.play().catch(() => {});
+                }
+              });
+            }
+          }
+        });
+      });
+    }
+
+    sendSignalToRoom('peer_media_toggle', { userId: user?.id, isDeafened: deafened });
+  }, [sendSignalToRoom, user?.id]);
+
+  const forceMute = React.useCallback(() => {
+    disconnectGateRef.current = true;
+    isMicMutedRef.current = true;
+    setIsMicMuted(true);
+
+    if (rawMicStreamRef.current) {
+      rawMicStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
+
+    if (livekitRoomRef.current?.localParticipant) {
+      const lp = livekitRoomRef.current.localParticipant;
+      lp.audioTrackPublications.forEach((pub: any) => {
+        if (pub.track?.mediaStreamTrack) {
+          pub.track.mediaStreamTrack.enabled = false;
+        }
+        if (typeof pub.track?.mute === 'function') {
+          pub.track.mute().catch(() => {});
+        }
+      });
+    }
+
+    if (pcRef.current) {
+      pcRef.current.getSenders().forEach((s: RTCRtpSender) => {
+        if (s.track?.kind === 'audio') {
+          s.track.enabled = false;
+        }
+      });
+    }
+
+    sendSignalToRoom('peer_media_toggle', { userId: user?.id, isMuted: true });
+  }, [sendSignalToRoom, user?.id]);
+
   const toggleCamera = async () => {
     const pc = pcRef.current;
     const nextCamera = !isCameraOn;
@@ -3730,6 +3890,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       toggleNoiseSuppression,
       peerZeroTierIp,
       setPeerZeroTierDirectIp,
+      incomingVolume,
+      setIncomingVolume,
+      setMicMutedExplicit,
+      setDeafenedExplicit,
+      forceMute,
     }),
     [
       callStatus,
@@ -3761,6 +3926,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       toggleNoiseSuppression,
       peerZeroTierIp,
       setPeerZeroTierDirectIp,
+      incomingVolume,
+      setIncomingVolume,
+      setMicMutedExplicit,
+      setDeafenedExplicit,
+      forceMute,
     ]
   );
 

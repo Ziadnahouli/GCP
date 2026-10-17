@@ -19,6 +19,7 @@ import { CallModal } from '@/components/calls/call-modal';
 import { PermissionsModal } from '@/components/layout/permissions-modal';
 import { LogsWindow } from '@/components/diagnostics/logs-window';
 import { VoiceLoungePopup } from '@/components/servers/voice-lounge-popup';
+import { MixerAdapterBridge } from '@/components/audio/mixer-adapter-bridge';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers, ServersProvider } from '@/hooks/use-servers';
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
@@ -469,6 +470,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
       {/* Floating Pop-Up Screen for Active Server Voice Lounge */}
       <VoiceLoungePopup />
+
+      {/* Chrome Call Controls Mixer Adapter Bridge */}
+      <MixerAdapterBridge />
 
       {/* Global Diagnostics & Live Telemetry Logs Console */}
       <LogsWindow />

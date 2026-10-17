@@ -312,6 +312,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     el.autoplay = true;
     el.setAttribute('playsinline', 'true');
 
+    // Route audio to user-selected output device if supported
+    try {
+      const savedOutputId = localStorage.getItem('nexus_audio_output_device');
+      if (savedOutputId && 'setSinkId' in el && typeof (el as any).setSinkId === 'function') {
+        (el as any).setSinkId(savedOutputId).catch((sinkErr: any) => {
+          console.warn('[LiveKit Voice] Output setSinkId notice:', sinkErr);
+        });
+      }
+    } catch {}
+
     el.style.position = 'fixed';
     el.style.top = '-9999px';
     el.style.left = '-9999px';
@@ -494,6 +504,13 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           }
           audioEl.muted = isDeafenedRef.current;
           audioEl.volume = isDeafenedRef.current ? 0 : incomingVolumeRef.current / 100;
+
+          try {
+            const savedOutputId = localStorage.getItem('nexus_audio_output_device');
+            if (savedOutputId && 'setSinkId' in audioEl && typeof (audioEl as any).setSinkId === 'function') {
+              (audioEl as any).setSinkId(savedOutputId).catch(() => {});
+            }
+          } catch {}
 
           const playPromise = audioEl.play();
           if (playPromise !== undefined) {
@@ -1195,14 +1212,29 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             if (!isExistingStreamLive) {
               try {
                 if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-                  const rawStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                      echoCancellation: true,
-                      noiseSuppression: true,
-                      autoGainControl: true,
-                    },
-                    video: false,
-                  });
+                  const savedMicId = typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null;
+                  let rawStream: MediaStream;
+                  try {
+                    rawStream = await navigator.mediaDevices.getUserMedia({
+                      audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
+                      },
+                      video: false,
+                    });
+                  } catch (exactErr) {
+                    console.warn('[ServerVoice] Exact mic device failed or unplugged, falling back to default:', exactErr);
+                    rawStream = await navigator.mediaDevices.getUserMedia({
+                      audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                      },
+                      video: false,
+                    });
+                  }
 
                   // Directly publish the raw hardware microphone stream to LiveKit Cloud SFU
                   // LiveKit's Opus codec and Krisp AI filter process the clean hardware audio directly

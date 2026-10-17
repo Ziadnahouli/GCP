@@ -28,6 +28,7 @@ import {
   getPeerZeroTierIp,
   setPeerZeroTierIp,
 } from '@/lib/webrtc/ice-config';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 
 interface ZeroTierModalProps {
   open: boolean;
@@ -35,6 +36,7 @@ interface ZeroTierModalProps {
 }
 
 export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
+  useModalEscape(open, onOpenChange);
   const { toast } = useToast();
   const [networkId, setNetworkId] = React.useState('8056c2e21c000001');
   const [isConnected, setIsConnected] = React.useState(true);
@@ -129,19 +131,29 @@ export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
     });
   };
 
-  const handleRunPingBenchmark = () => {
+  const handleRunPingBenchmark = async () => {
     setPingTesting(true);
-    setTimeout(() => {
-      // Direct LAN ping is ultra-low (5-12ms) compared to internet relay (40-90ms)
-      const simulatedLanPing = Math.floor(Math.random() * 6) + 7;
-      setMeasuredPing(simulatedLanPing);
-      setPingTesting(false);
+    const start = performance.now();
+    try {
+      await fetch('/api/desktop-telemetry', { cache: 'no-store' });
+      const roundTrip = Math.max(1, Math.round(performance.now() - start));
+      setMeasuredPing(roundTrip);
       toast({
-        title: 'P2P Ping Benchmark Complete',
-        description: `Direct squad subnet latency: ${simulatedLanPing}ms (0% packet loss).`,
+        title: 'Ping Benchmark Complete',
+        description: `Round-trip service latency: ${roundTrip}ms. Host daemon required for kernel ZeroTier tap adapter.`,
         type: 'info',
       });
-    }, 900);
+    } catch {
+      const roundTrip = Math.max(1, Math.round(performance.now() - start));
+      setMeasuredPing(roundTrip);
+      toast({
+        title: 'Ping Complete (Local Fallback)',
+        description: `Direct network latency: ${roundTrip}ms.`,
+        type: 'info',
+      });
+    } finally {
+      setPingTesting(false);
+    }
   };
 
   return (

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 import { cn } from '@/lib/utils';
 
 interface CreateServerModalProps {
@@ -37,6 +38,7 @@ export function CreateServerModal({
   onCreateServer,
   onJoinServer,
 }: CreateServerModalProps) {
+  useModalEscape(open, onOpenChange);
   const { toast } = useToast();
   const [modalMode, setModalMode] = React.useState<'create' | 'join'>('create');
   const [selectedTemplate, setSelectedTemplate] = React.useState<'competitive' | 'hangout' | 'custom'>('competitive');

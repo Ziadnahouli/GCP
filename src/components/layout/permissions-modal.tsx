@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { soundboardEngine } from '@/lib/soundboard/audio-engine';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 
 const PERMISSIONS_STORAGE_KEY = 'nexus_permissions_configured_v1';
 
@@ -143,11 +144,13 @@ export function PermissionsModal({
     };
   }, [checkCurrentPermissions, isControlled, onOpenChange]);
 
-  const handleClose = () => {
+  const handleClose = React.useCallback(() => {
     localStorage.setItem(PERMISSIONS_STORAGE_KEY, 'true');
     if (onOpenChange) onOpenChange(false);
     else setInternalOpen(false);
-  };
+  }, [onOpenChange]);
+
+  useModalEscape(isOpen, handleClose);
 
   const handleAuthorizeAll = async () => {
     setIsAuthorizing(true);

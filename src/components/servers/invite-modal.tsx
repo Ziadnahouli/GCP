@@ -21,6 +21,7 @@ import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/auth-provider';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 
 interface InviteModalProps {
   open: boolean;
@@ -29,6 +30,7 @@ interface InviteModalProps {
 }
 
 export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
+  useModalEscape(open, onOpenChange);
   const { user } = useAuth();
   const { friends } = useSocial();
   const { getOrCreateDirectConversation } = useConversations();

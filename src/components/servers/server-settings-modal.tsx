@@ -35,6 +35,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useToast } from '@/components/ui/toast';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 import { cn } from '@/lib/utils';
 
 interface ServerSettingsModalProps {
@@ -75,6 +76,7 @@ export function ServerSettingsModal({
   onDeleteRole,
   onUpdateRolePermissions,
 }: ServerSettingsModalProps) {
+  useModalEscape(open, onOpenChange);
   const { user, profile } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState<'overview' | 'channels' | 'roles' | 'members' | 'danger'>('overview');

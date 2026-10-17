@@ -19,6 +19,7 @@ import { SoundboardClip } from '@/lib/soundboard/audio-engine';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/toast';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 import { cn } from '@/lib/utils';
 
 interface SoundboardModalProps {
@@ -32,6 +33,7 @@ export function SoundboardModal({
   onOpenChange,
   isInCall = false,
 }: SoundboardModalProps) {
+  useModalEscape(open, onOpenChange);
   const {
     filteredClips,
     playingClipId,

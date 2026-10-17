@@ -25,6 +25,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 import { InviteModal } from './invite-modal';
 
 interface ServerSidebarProps {
@@ -57,6 +58,9 @@ export function ServerSidebar({
   const [showInviteModal, setShowInviteModal] = React.useState(false);
   const [newChannelName, setNewChannelName] = React.useState('');
   const [newChannelType, setNewChannelType] = React.useState<ChannelType>('text');
+  const [isCreatingChannel, setIsCreatingChannel] = React.useState(false);
+
+  useModalEscape(showAddChannel, () => setShowAddChannel(false));
 
   // Realtime presence state of server-wide voice channel occupants
   const [remoteOccupants, setRemoteOccupants] = React.useState<Map<string, VoiceParticipant[]>>(new Map());
@@ -245,16 +249,27 @@ export function ServerSidebar({
 
   const handleCreateChannelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newChannelName.trim()) return;
+    if (!newChannelName.trim() || isCreatingChannel) return;
 
-    await onCreateChannel(newChannelName.trim(), newChannelType);
-    toast({
-      title: 'Channel Created',
-      description: `${newChannelType === 'text' ? '#' : '🔊'} ${newChannelName} is live.`,
-      type: 'success',
-    });
-    setNewChannelName('');
-    setShowAddChannel(false);
+    setIsCreatingChannel(true);
+    try {
+      await onCreateChannel(newChannelName.trim(), newChannelType);
+      toast({
+        title: 'Channel Created',
+        description: `${newChannelType === 'text' ? '#' : '🔊'} ${newChannelName} is live.`,
+        type: 'success',
+      });
+      setNewChannelName('');
+      setShowAddChannel(false);
+    } catch (err: any) {
+      toast({
+        title: 'Failed to Create Channel',
+        description: err?.message || 'Could not create channel. Please check your permissions.',
+        type: 'error',
+      });
+    } finally {
+      setIsCreatingChannel(false);
+    }
   };
 
   const memberCount = (server.members?.length || 0) + 1;
@@ -603,12 +618,16 @@ export function ServerSidebar({
             className="fixed inset-0 bg-black/75 backdrop-blur-sm"
             onClick={() => setShowAddChannel(false)}
           />
-          <div className="relative w-full max-w-sm rounded-2xl border border-white/[0.08] bg-surface-default p-5 shadow-modal z-10 space-y-4">
+          <form
+            onSubmit={handleCreateChannelSubmit}
+            className="relative w-full max-w-sm rounded-2xl border border-white/[0.08] bg-surface-default p-5 shadow-modal z-10 space-y-4"
+          >
             <h3 className="text-sm font-bold text-foreground">Create Channel</h3>
 
             <div className="flex gap-2">
               <button
                 type="button"
+                disabled={isCreatingChannel}
                 onClick={() => setNewChannelType('text')}
                 className={cn(
                   'flex-1 p-2 rounded-xl border flex flex-col items-center gap-1 text-xs font-semibold transition-colors',
@@ -622,6 +641,7 @@ export function ServerSidebar({
               </button>
               <button
                 type="button"
+                disabled={isCreatingChannel}
                 onClick={() => setNewChannelType('voice')}
                 className={cn(
                   'flex-1 p-2 rounded-xl border flex flex-col items-center gap-1 text-xs font-semibold transition-colors',
@@ -642,31 +662,34 @@ export function ServerSidebar({
               <input
                 id="new-channel-name-input"
                 type="text"
+                disabled={isCreatingChannel}
                 value={newChannelName}
                 onChange={(e) => setNewChannelName(e.target.value)}
                 placeholder={newChannelType === 'text' ? 'e.g. general' : 'e.g. Scrim Voice'}
-                className="w-full px-3 py-2 rounded-xl border border-white/[0.08] bg-surface-panel text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50"
+                className="w-full px-3 py-2 rounded-xl border border-white/[0.08] bg-surface-panel text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50 disabled:opacity-50"
+                autoFocus
               />
             </div>
 
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
+                disabled={isCreatingChannel}
                 onClick={() => setShowAddChannel(false)}
-                className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                disabled={!newChannelName.trim()}
-                onClick={handleCreateChannelSubmit}
-                className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-subtle hover:bg-primary-hover disabled:opacity-50"
+                type="submit"
+                disabled={!newChannelName.trim() || isCreatingChannel}
+                className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-subtle hover:bg-primary-hover disabled:opacity-50 flex items-center gap-1.5"
               >
-                Create
+                {isCreatingChannel && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                <span>{isCreatingChannel ? 'Creating...' : 'Create'}</span>
               </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 

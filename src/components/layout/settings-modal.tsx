@@ -140,12 +140,15 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const micTestAudioCtxRef = React.useRef<AudioContext | null>(null);
   const micTestAnimRef = React.useRef<number | null>(null);
 
+  // Live audio output testing state
+  const [isTestingOutput, setIsTestingOutput] = React.useState(false);
+
   // Live webcam preview testing state
   const [isTestingCam, setIsTestingCam] = React.useState(false);
   const camTestStreamRef = React.useRef<MediaStream | null>(null);
   const camVideoRef = React.useRef<HTMLVideoElement>(null);
 
-  // Enumerate hardware devices
+  // Enumerate hardware devices and restore persisted preferences
   React.useEffect(() => {
     if (open && typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
       navigator.mediaDevices
@@ -157,13 +160,26 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           setAudioInputDevices(inputs);
           setAudioOutputDevices(outputs);
           setVideoDevices(videos);
-          if (inputs.length > 0 && !selectedInputDevice) setSelectedInputDevice(inputs[0].deviceId);
-          if (outputs.length > 0 && !selectedOutputDevice) setSelectedOutputDevice(outputs[0].deviceId);
-          if (videos.length > 0 && !selectedCamDevice) setSelectedCamDevice(videos[0].deviceId);
+
+          // Restore saved audio devices or fall back to first device
+          const savedIn = localStorage.getItem('nexus_audio_input_device');
+          const savedOut = localStorage.getItem('nexus_audio_output_device');
+
+          if (inputs.length > 0) {
+            const matchIn = savedIn && inputs.some((i) => i.deviceId === savedIn);
+            setSelectedInputDevice(matchIn ? (savedIn as string) : inputs[0].deviceId);
+          }
+          if (outputs.length > 0) {
+            const matchOut = savedOut && outputs.some((o) => o.deviceId === savedOut);
+            setSelectedOutputDevice(matchOut ? (savedOut as string) : outputs[0].deviceId);
+          }
+          if (videos.length > 0 && !selectedCamDevice) {
+            setSelectedCamDevice(videos[0].deviceId);
+          }
         })
         .catch(() => {});
     }
-  }, [open, selectedInputDevice, selectedOutputDevice, selectedCamDevice]);
+  }, [open, selectedCamDevice]);
 
   // Clean up media tests
   const stopMicTest = React.useCallback(() => {
@@ -200,6 +216,86 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       stopCamTest();
     }
   }, [open, stopMicTest, stopCamTest]);
+
+  // Real Web Audio output test using synthesizer chime and device routing
+  const testAudioOutput = async () => {
+    if (isTestingOutput) return;
+    setIsTestingOutput(true);
+
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+      if (!AudioCtx) {
+        throw new Error('Web Audio is not supported in this browser environment.');
+      }
+
+      const ctx = new AudioCtx();
+      let usedSink = false;
+
+      // Handle setSinkId if supported by the browser on AudioContext
+      if ('setSinkId' in ctx && selectedOutputDevice) {
+        try {
+          await (ctx as any).setSinkId(selectedOutputDevice);
+          usedSink = true;
+        } catch (sinkErr) {
+          console.warn('[AudioTest] setSinkId notice (using system default):', sinkErr);
+        }
+      }
+
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      // Play synthesized dual-tone harmonic chime
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+      osc1.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.25); // G5
+
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
+      osc2.frequency.exponentialRampToValueAtTime(1046.5, ctx.currentTime + 0.25); // C6
+
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start();
+      osc2.start();
+      osc1.stop(ctx.currentTime + 0.6);
+      osc2.stop(ctx.currentTime + 0.6);
+
+      setTimeout(() => {
+        ctx.close().catch(() => {});
+        setIsTestingOutput(false);
+      }, 650);
+
+      const deviceLabel = audioOutputDevices.find((d) => d.deviceId === selectedOutputDevice)?.label;
+      toast({
+        title: 'Audio Output Tested',
+        description: usedSink && deviceLabel
+          ? `Sound check played to "${deviceLabel}".`
+          : 'Sound check played through active playback output.',
+        type: 'success',
+        duration: 2500,
+      });
+    } catch (err: any) {
+      setIsTestingOutput(false);
+      toast({
+        title: 'Playback Test Failed',
+        description: err?.message || 'Could not initialize audio playback output.',
+        type: 'error',
+      });
+    }
+  };
 
   // Start live mic test
   const startMicTest = async () => {
@@ -370,6 +466,37 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleToggleDesktopNotifs = async () => {
+    const nextVal = !desktopNotifs;
+    setDesktopNotifs(nextVal);
+    if (nextVal && typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        try {
+          await Notification.requestPermission();
+        } catch {}
+      }
+    }
+    await updateSettings({ desktop_notifications: nextVal });
+    toast({
+      title: nextVal ? 'Desktop Notifications Enabled' : 'Desktop Notifications Disabled',
+      description: nextVal ? 'You will receive OS alerts for incoming squad calls and DMs.' : 'Desktop alerts silenced.',
+      type: 'info',
+      duration: 2000,
+    });
+  };
+
+  const handleToggleSoundEffects = async () => {
+    const nextVal = !soundEffects;
+    setSoundEffects(nextVal);
+    await updateSettings({ sound_effects_enabled: nextVal });
+    toast({
+      title: nextVal ? 'Sound Effects Enabled' : 'Sound Effects Muted',
+      description: nextVal ? 'Acoustic UI feedback and message chimes active.' : 'UI chimes silenced.',
+      type: 'info',
+      duration: 2000,
+    });
   };
 
   return (
@@ -824,7 +951,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   <select
                     value={selectedInputDevice}
                     onChange={(e) => {
-                      setSelectedInputDevice(e.target.value);
+                      const val = e.target.value;
+                      setSelectedInputDevice(val);
+                      try {
+                        localStorage.setItem('nexus_audio_input_device', val);
+                      } catch {}
                       if (isTestingMic) stopMicTest();
                     }}
                     className="w-full bg-[#10121a] border border-white/[0.08] text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
@@ -971,21 +1102,45 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     <Headphones className="w-3.5 h-3.5 text-primary" />
                     <span>Playback / Headphone Output</span>
                   </label>
-                  <select
-                    value={selectedOutputDevice}
-                    onChange={(e) => setSelectedOutputDevice(e.target.value)}
-                    className="w-full bg-[#10121a] border border-white/[0.08] text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
-                  >
-                    {audioOutputDevices.length === 0 ? (
-                      <option value="">Default Audio Output (System Default)</option>
-                    ) : (
-                      audioOutputDevices.map((d) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {d.label || `Speaker ${d.deviceId.slice(0, 5)}`}
-                        </option>
-                      ))
-                    )}
-                  </select>
+                  <div className="flex gap-2 items-center">
+                    <select
+                      value={selectedOutputDevice}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedOutputDevice(val);
+                        try {
+                          localStorage.setItem('nexus_audio_output_device', val);
+                        } catch {}
+                      }}
+                      className="flex-1 bg-[#10121a] border border-white/[0.08] text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
+                    >
+                      {audioOutputDevices.length === 0 ? (
+                        <option value="">Default Audio Output (System Default)</option>
+                      ) : (
+                        audioOutputDevices.map((d) => (
+                          <option key={d.deviceId} value={d.deviceId}>
+                            {d.label || `Speaker ${d.deviceId.slice(0, 5)}`}
+                          </option>
+                        ))
+                      )}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={testAudioOutput}
+                      disabled={isTestingOutput}
+                      className={cn(
+                        'px-3 py-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap',
+                        isTestingOutput
+                          ? 'bg-primary/20 border-primary text-primary animate-pulse'
+                          : 'bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.08] text-foreground'
+                      )}
+                      title="Play live test chime through this output device"
+                    >
+                      <Volume2 className={cn('w-3.5 h-3.5', isTestingOutput && 'animate-bounce')} />
+                      <span>{isTestingOutput ? 'Testing...' : 'Test Audio'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1212,7 +1367,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
               <div className="space-y-3">
                 <div
-                  onClick={() => setDesktopNotifs(!desktopNotifs)}
+                  onClick={handleToggleDesktopNotifs}
                   className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] cursor-pointer"
                 >
                   <div>
@@ -1235,7 +1390,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 </div>
 
                 <div
-                  onClick={() => setSoundEffects(!soundEffects)}
+                  onClick={handleToggleSoundEffects}
                   className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] cursor-pointer"
                 >
                   <div>

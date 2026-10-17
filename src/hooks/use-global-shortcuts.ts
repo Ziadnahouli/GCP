@@ -51,13 +51,16 @@ export function useGlobalShortcuts() {
       const inInput = isTextInput(target);
       const isCtrlOrMeta = e.ctrlKey || e.metaKey;
 
-      // 1. Quick Search: Ctrl + K (allowed everywhere, even when inside an input)
-      if (isCtrlOrMeta && (e.key === 'k' || e.key === 'K')) {
+      // 1. Quick Search: Ctrl + K (opens command palette modal when not typing in inputs)
+      if (!inInput && isCtrlOrMeta && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
         const searchInput = document.getElementById('global-search-input') as HTMLInputElement | null;
         if (searchInput) {
           searchInput.focus();
           searchInput.select();
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('nexus-open-global-search'));
         }
         return;
       }

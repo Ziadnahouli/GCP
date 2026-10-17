@@ -1162,14 +1162,29 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const rawStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: isNoiseSuppressionEnabled,
-          autoGainControl: isNoiseSuppressionEnabled,
-        },
-        video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
-      });
+      const savedMicId = typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null;
+      let rawStream: MediaStream;
+      try {
+        rawStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: isNoiseSuppressionEnabled,
+            autoGainControl: isNoiseSuppressionEnabled,
+            ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
+          },
+          video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
+        });
+      } catch (exactErr) {
+        console.warn('[CallContext] Exact mic device failed or unplugged, falling back to default:', exactErr);
+        rawStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: isNoiseSuppressionEnabled,
+            autoGainControl: isNoiseSuppressionEnabled,
+          },
+          video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
+        });
+      }
       rawMicStreamRef.current = rawStream;
       if (disconnectGateRef.current || isMicMutedRef.current) {
         rawStream.getAudioTracks().forEach((t) => { t.enabled = false; });
@@ -1531,6 +1546,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             }
             if (remoteAudioElementRef.current) {
               try {
+                // Route to saved audio output device if setSinkId is supported
+                const savedOutputId = localStorage.getItem('nexus_audio_output_device');
+                if (savedOutputId && 'setSinkId' in remoteAudioElementRef.current && typeof (remoteAudioElementRef.current as any).setSinkId === 'function') {
+                  (remoteAudioElementRef.current as any).setSinkId(savedOutputId).catch((sinkErr: any) => {
+                    console.warn('[LiveKit Call] Output setSinkId notice:', sinkErr);
+                  });
+                }
                 track.attach(remoteAudioElementRef.current);
                 remoteAudioElementRef.current.muted = isDeafenedRef.current;
                 remoteAudioElementRef.current.volume = 1.0;

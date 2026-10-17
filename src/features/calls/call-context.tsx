@@ -3340,9 +3340,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (remoteAudioElementRef.current) {
       remoteAudioElementRef.current.muted = nextDeafened;
       remoteAudioElementRef.current.volume = nextDeafened ? 0 : 1.0;
-      if (nextDeafened) {
-        remoteAudioElementRef.current.pause();
-      } else {
+      if (!nextDeafened && remoteAudioElementRef.current.paused) {
         remoteAudioElementRef.current.play().catch(() => {});
       }
     }
@@ -3358,9 +3356,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
                 el.muted = nextDeafened;
                 el.volume = nextDeafened ? 0 : 1.0;
-                if (nextDeafened) {
-                  el.pause();
-                } else {
+                if (!nextDeafened && el.paused) {
                   el.play().catch(() => {});
                 }
               });

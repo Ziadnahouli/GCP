@@ -644,6 +644,7 @@ describe('Voice Overhaul & Audio Duplication Regression Tests', () => {
       const mockAudioEl = {
         muted: false,
         volume: 1.0,
+        paused: false,
         pause: pauseMock,
         play: playMock,
       };
@@ -665,8 +666,7 @@ describe('Voice Overhaul & Audio Duplication Regression Tests', () => {
         audioElements.forEach((audio) => {
           audio.muted = nextDeafened;
           audio.volume = nextDeafened ? 0 : 1.0;
-          if (nextDeafened) audio.pause();
-          else audio.play();
+          if (!nextDeafened && (audio as any).paused) (audio as any).play();
         });
 
         remoteParticipants.forEach((rp) => {
@@ -689,11 +689,12 @@ describe('Voice Overhaul & Audio Duplication Regression Tests', () => {
       expect(isDeafened).toBe(true);
       expect(mockAudioEl.muted).toBe(true);
       expect(mockAudioEl.volume).toBe(0);
-      expect(pauseMock).toHaveBeenCalledTimes(1);
+      expect(pauseMock).not.toHaveBeenCalled(); // Must NOT pause live stream to prevent buffer freezes
       expect(receiverTrack.enabled).toBe(false);
       expect(isMicMuted).toBe(true); // Mic muted automatically
 
       // 2. Undeafen
+      mockAudioEl.paused = true;
       await toggleDeafen();
       expect(isDeafened).toBe(false);
       expect(mockAudioEl.muted).toBe(false);

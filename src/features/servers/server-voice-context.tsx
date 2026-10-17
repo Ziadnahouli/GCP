@@ -317,11 +317,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     }
     audioElementsRef.current.set(peerId, el);
 
-    if (isDeafenedRef.current) {
-      el.pause();
-      return;
-    }
-
     const playPromise = el.play();
     if (playPromise !== undefined) {
       playPromise.catch((playErr) => {
@@ -1093,10 +1088,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             lkRoom.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
               const activeIds = new Set(speakers.map((s) => s.identity));
               const u = userRef.current;
-              if (u && activeIds.has(u.id)) {
-                if (!isSpeakingRef.current) {
-                  isSpeakingRef.current = true;
-                  setIsSpeaking(true);
+              if (u) {
+                const isUserActive = activeIds.has(u.id);
+                if (isUserActive && !isMicMutedRef.current && !isDeafenedRef.current) {
+                  if (!isSpeakingRef.current) {
+                    isSpeakingRef.current = true;
+                    setIsSpeaking(true);
+                  }
+                } else if (!isUserActive && isSpeakingRef.current) {
+                  isSpeakingRef.current = false;
+                  setIsSpeaking(false);
                 }
               }
               peersMapRef.current.forEach((peer, peerId) => {
@@ -1897,13 +1898,17 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     setIsDeafened(nextDeafened);
     isDeafenedRef.current = nextDeafened;
 
-    // 1. Mute/unmute all tracked DOM audio elements
+    // Reset speaking indicators immediately so avatar doesn't show old speech
+    setIsSpeaking(false);
+    isSpeakingRef.current = false;
+    setAudioLevel(0);
+    audioLevelRef.current = 0;
+
+    // 1. Mute/unmute all tracked DOM audio elements without pausing to prevent buffer freeze & stale audio playback
     audioElementsRef.current.forEach((audio) => {
       audio.muted = nextDeafened;
       audio.volume = nextDeafened ? 0 : 1.0;
-      if (nextDeafened) {
-        audio.pause();
-      } else {
+      if (!nextDeafened && audio.paused) {
         audio.play().catch(() => {});
       }
     });
@@ -1925,9 +1930,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
                 el.muted = nextDeafened;
                 el.volume = nextDeafened ? 0 : 1.0;
-                if (nextDeafened) {
-                  el.pause();
-                } else {
+                if (!nextDeafened && el.paused) {
                   el.play().catch(() => {});
                 }
               });
@@ -1944,7 +1947,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       await toggleMic();
     }
 
-    broadcastMyVoiceState({ is_deafened: nextDeafened });
+    broadcastMyVoiceState({ is_deafened: nextDeafened, is_speaking: false });
   }, [toggleMic, broadcastMyVoiceState]);
 
   // Toggle camera

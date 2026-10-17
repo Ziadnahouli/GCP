@@ -18,7 +18,7 @@ const getCachedConversations = (uId?: string): Conversation[] => {
   return [];
 };
 
-export function useConversations() {
+export function useConversationsInternal() {
   const { user, isConfigured } = useAuth();
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
@@ -62,7 +62,12 @@ export function useConversations() {
         return;
       }
 
-      const convIds = memberRows.map((r) => r.conversation_id);
+      // Filter out orphaned conversation member rows where conversation row is null
+      const validMemberRows = (memberRows || []).filter(
+        (row) => Boolean(row && row.conversation && typeof row.conversation === 'object' && (row.conversation as any).id)
+      );
+
+      const convIds = validMemberRows.map((r) => r.conversation_id);
       if (convIds.length === 0) {
         setConversations([]);
         return;
@@ -87,16 +92,16 @@ export function useConversations() {
         .in('conversation_id', convIds)
         .order('created_at', { ascending: false });
 
-      const parsed: Conversation[] = memberRows.map((row) => {
+      const parsed: Conversation[] = validMemberRows.map((row) => {
         const conv = row.conversation as unknown as Conversation;
         const members = (allMembers || [])
-          .filter((m) => m.conversation_id === conv.id)
+          .filter((m) => m && m.conversation_id === conv.id)
           .map((m) => ({
             ...m,
-            profile: m.profile as unknown as UserProfile,
+            profile: (m.profile as unknown as UserProfile) || undefined,
           }));
 
-        const lastMsg = (lastMsgs || []).find((m) => m.conversation_id === conv.id) || null;
+        const lastMsg = (lastMsgs || []).find((m) => m && m.conversation_id === conv.id) || null;
 
         return {
           ...conv,
@@ -192,7 +197,10 @@ export function useConversations() {
   const getOrCreateDirectConversation = async (
     targetUserId: string
   ): Promise<{ conversationId: string | null; error: string | null }> => {
-    if (isConfigured && !user) {
+    if (!user) {
+      if (!isConfigured) {
+        return { conversationId: 'demo-conv-1', error: null };
+      }
       return { conversationId: null, error: 'User is not authenticated' };
     }
 
@@ -201,17 +209,62 @@ export function useConversations() {
     }
 
     try {
-      // Call RPC function
+      // 1. First attempt the database RPC
       const { data, error } = await supabase.rpc('create_or_get_direct_conversation', {
         target_user_id: targetUserId,
       });
 
-      if (error) {
-        return { conversationId: null, error: error.message };
+      if (!error && data) {
+        fetchConversations().catch(() => {});
+        return { conversationId: data as string, error: null };
       }
 
-      await fetchConversations();
-      return { conversationId: data as string, error: null };
+      // 2. Fallback: Query conversation_members directly for an existing 1-to-1 conversation
+      const { data: myMemberRows } = await supabase
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', user.id);
+
+      if (myMemberRows && myMemberRows.length > 0) {
+        const myConvIds = myMemberRows.map((r) => r.conversation_id);
+        const { data: targetMemberRows } = await supabase
+          .from('conversation_members')
+          .select('conversation_id')
+          .in('conversation_id', myConvIds)
+          .eq('user_id', targetUserId);
+
+        if (targetMemberRows && targetMemberRows.length > 0) {
+          const existingId = targetMemberRows[0].conversation_id;
+          fetchConversations().catch(() => {});
+          return { conversationId: existingId, error: null };
+        }
+      }
+
+      // 3. Fallback: Create conversation directly as creator
+      const newConvId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `conv-${Date.now()}`;
+
+      const { error: insertConvErr } = await supabase.from('conversations').insert({
+        id: newConvId,
+        type: 'direct',
+        created_by: user.id,
+      });
+
+      if (!insertConvErr) {
+        await supabase.from('conversation_members').insert([
+          { conversation_id: newConvId, user_id: user.id, role: 'member' },
+          { conversation_id: newConvId, user_id: targetUserId, role: 'member' },
+        ]);
+        fetchConversations().catch(() => {});
+        return { conversationId: newConvId, error: null };
+      }
+
+      return {
+        conversationId: null,
+        error: error?.message || insertConvErr?.message || 'Failed to open conversation',
+      };
     } catch (err: unknown) {
       return {
         conversationId: null,
@@ -226,4 +279,21 @@ export function useConversations() {
     getOrCreateDirectConversation,
     refetch: fetchConversations,
   };
+}
+
+export type UseConversationsReturn = ReturnType<typeof useConversationsInternal>;
+
+const ConversationsContext = React.createContext<UseConversationsReturn | null>(null);
+
+export function ConversationsProvider({ children }: { children: React.ReactNode }) {
+  const value = useConversationsInternal();
+  return React.createElement(ConversationsContext.Provider, { value }, children);
+}
+
+export function useConversations(): UseConversationsReturn {
+  const context = React.useContext(ConversationsContext);
+  if (!context) {
+    throw new Error('useConversations must be used within a ConversationsProvider');
+  }
+  return context;
 }

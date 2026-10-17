@@ -73,10 +73,24 @@ function HomePageContent() {
 
   const activeChannel = React.useMemo(() => {
     if (!activeServer) return null;
+    const channels =
+      activeServer.channels && activeServer.channels.length > 0
+        ? activeServer.channels
+        : [
+            {
+              id: `default-chan-${activeServer.id}`,
+              server_id: activeServer.id,
+              name: 'general',
+              type: 'text' as const,
+              topic: 'General squad discussion & announcements',
+              position: 0,
+              created_at: activeServer.created_at || new Date().toISOString(),
+            },
+          ];
     if (channelId) {
-      return activeServer.channels.find((c) => c.id === channelId) || activeServer.channels[0] || null;
+      return channels.find((c) => c.id === channelId) || channels[0];
     }
-    return activeServer.channels[0] || null;
+    return channels[0];
   }, [activeServer, channelId]);
 
   // 1. Direct message conversation takes priority so private chats are ALWAYS accessible
@@ -92,15 +106,32 @@ function HomePageContent() {
 
   // 2. If a server is active, render the ChannelView with unique key per channel
   if (activeServer && activeChannel) {
-    return <ChannelView key={activeChannel.id} server={activeServer} channel={activeChannel} />;
+    const safeServer = {
+      ...activeServer,
+      channels:
+        activeServer.channels && activeServer.channels.length > 0
+          ? activeServer.channels
+          : [activeChannel],
+    };
+    return <ChannelView key={`${activeServer.id}-${activeChannel.id}`} server={safeServer} channel={activeChannel} />;
   }
 
   // 3. If serverId is present in URL but server is still synchronizing/hydrating
   if (serverId) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-background text-muted-foreground text-xs font-mono">
-        <Loader2 className="w-5 h-5 animate-spin text-primary mr-2" />
-        <span>Loading server...</span>
+      <div className="flex h-full w-full flex-col items-center justify-center bg-background text-muted-foreground text-xs font-mono p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          <span>Synchronizing server...</span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-xs h-7 border-white/[0.08]"
+          onClick={() => router.push('/')}
+        >
+          Return to Social Hub
+        </Button>
       </div>
     );
   }

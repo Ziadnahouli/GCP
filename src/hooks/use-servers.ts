@@ -9,10 +9,7 @@ import { UserProfile } from '@/lib/types/profile';
 const STORAGE_KEY = 'nexus_gaming_servers_store';
 const DELETED_CHANS_KEY = 'nexus_deleted_channels_store';
 
-const DUMMY_SERVER_IDS = new Set([
-  '00000000-0000-0000-0000-000000000001',
-  '00000000-0000-0000-0000-000000000002',
-]);
+const DUMMY_SERVER_IDS = new Set<string>();
 
 const getDeletedChannelIds = (): Set<string> => {
   if (typeof window === 'undefined') return new Set();
@@ -47,7 +44,7 @@ export function useServersInternal() {
           return parsed.filter(
             (s) =>
               !DUMMY_SERVER_IDS.has(s.id) &&
-              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
+              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id) || s.owner_id === null)
           );
         }
       }
@@ -78,31 +75,57 @@ export function useServersInternal() {
         const deletedChans = getDeletedChannelIds();
         const parsed: Server[] = srvData
           .filter((s) => !DUMMY_SERVER_IDS.has(s.id))
-          // Only show servers where user is the owner or an existing member
+          // Show servers where user is the owner, a member, or public community servers
           .filter((s) => {
             const isOwner = s.owner_id === user.id;
             const isMember = (s.server_members || []).some((m: any) => m.user_id === user.id);
-            return isOwner || isMember;
+            const isPublic = s.owner_id === null;
+            return isOwner || isMember || isPublic;
           })
-          .map((s) => ({
-            id: s.id,
-            name: s.name,
-            description: s.description,
-            icon_url: s.icon_url,
-            owner_id: s.owner_id,
-            created_at: s.created_at,
-            channels: (s.channels || [])
-              .filter((c: Channel) => !deletedChans.has(c.id))
-              .sort((a: Channel, b: Channel) => a.position - b.position),
-            members: (s.server_members || []).map((m: any) => ({
-              id: m.id,
-              server_id: m.server_id,
-              user_id: m.user_id,
-              role: m.role,
-              joined_at: m.joined_at,
-              profile: (m.profile as unknown as UserProfile) || undefined,
-            })),
-          }));
+          .map((s) => {
+            const rawChannels = (s.channels || []).filter((c: Channel) => !deletedChans.has(c.id));
+            const channels =
+              rawChannels.length > 0
+                ? rawChannels.sort((a: Channel, b: Channel) => a.position - b.position)
+                : [
+                    {
+                      id: `default-chan-${s.id}`,
+                      server_id: s.id,
+                      name: 'general',
+                      type: 'text' as const,
+                      topic: 'General team discussion & lobby chatter',
+                      position: 0,
+                      created_at: s.created_at || new Date().toISOString(),
+                    },
+                    {
+                      id: `default-voice-${s.id}`,
+                      server_id: s.id,
+                      name: 'Voice Lounge',
+                      type: 'voice' as const,
+                      topic: 'Instant squad voice comms',
+                      position: 1,
+                      created_at: s.created_at || new Date().toISOString(),
+                    },
+                  ];
+
+            return {
+              id: s.id,
+              name: s.name,
+              description: s.description,
+              icon_url: s.icon_url,
+              owner_id: s.owner_id,
+              created_at: s.created_at,
+              channels,
+              members: (s.server_members || []).map((m: any) => ({
+                id: m.id,
+                server_id: m.server_id,
+                user_id: m.user_id,
+                role: m.role,
+                joined_at: m.joined_at,
+                profile: (m.profile as unknown as UserProfile) || undefined,
+              })),
+            };
+          });
 
         setServers(parsed);
         try {
@@ -127,7 +150,7 @@ export function useServersInternal() {
           const cleanServers = parsed.filter(
             (s) =>
               !DUMMY_SERVER_IDS.has(s.id) &&
-              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
+              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id) || s.owner_id === null)
           );
           setServers(cleanServers);
         }
@@ -189,7 +212,7 @@ export function useServersInternal() {
       const userServers = updated.filter(
         (s) =>
           !DUMMY_SERVER_IDS.has(s.id) &&
-          (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
+          (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id) || s.owner_id === null)
       );
       setServers(userServers);
       try {
@@ -854,6 +877,7 @@ export function useServersInternal() {
   return {
     servers,
     loading,
+    refetch: fetchServers,
     createServer,
     updateServer,
     deleteServer,

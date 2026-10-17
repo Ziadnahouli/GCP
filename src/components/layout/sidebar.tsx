@@ -222,7 +222,11 @@ export function Sidebar({
               return (
                 <div
                   key={server.id}
-                  onClick={() => router.push(`/?s=${server.id}&ch=${server.channels[0]?.id || ''}`)}
+                  onClick={() =>
+                    router.push(
+                      `/?s=${server.id}&ch=${server.channels?.[0]?.id || `default-chan-${server.id}`}`
+                    )
+                  }
                   className={cn(
                     'flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors hover:bg-white/[0.03] group',
                     collapsed ? 'justify-center' : ''

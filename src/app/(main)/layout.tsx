@@ -22,6 +22,7 @@ import { VoiceLoungePopup } from '@/components/servers/voice-lounge-popup';
 import { MixerAdapterBridge } from '@/components/audio/mixer-adapter-bridge';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers, ServersProvider } from '@/hooks/use-servers';
+import { ConversationsProvider } from '@/hooks/use-conversations';
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { Gamepad2, MessageSquare, Users, X } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
@@ -107,12 +108,8 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const handleSelectServer = (serverId: string | null) => {
     if (serverId) {
       const targetServer = servers.find((s) => s.id === serverId);
-      const firstChannel = targetServer?.channels[0]?.id;
-      if (firstChannel) {
-        router.push(`/?s=${serverId}&ch=${firstChannel}`);
-      } else {
-        router.push(`/?s=${serverId}`);
-      }
+      const firstChannel = targetServer?.channels?.[0]?.id || `default-chan-${serverId}`;
+      router.push(`/?s=${serverId}&ch=${firstChannel}`);
     } else {
       router.push('/');
     }
@@ -492,9 +489,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       <PresenceProvider>
         <CallProvider>
           <ServersProvider>
-            <ServerVoiceProvider>
-              <MainLayoutContent>{children}</MainLayoutContent>
-            </ServerVoiceProvider>
+            <ConversationsProvider>
+              <ServerVoiceProvider>
+                <MainLayoutContent>{children}</MainLayoutContent>
+              </ServerVoiceProvider>
+            </ConversationsProvider>
           </ServersProvider>
         </CallProvider>
       </PresenceProvider>

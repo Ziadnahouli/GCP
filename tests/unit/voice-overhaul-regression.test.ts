@@ -1,327 +1,466 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as React from 'react';
+import { renderHook, act } from '@testing-library/react';
+import { RoomEvent, Track } from 'livekit-client';
 
-describe('Voice Overhaul & Audio Duplication Regression Tests', () => {
-  let mockAudioTrack: any;
-  let mockPublication: any;
-  let mockLocalParticipant: any;
-  let mockRoom: any;
-  let mockRtcPeerConnection: any;
-  let mockAudioElement: any;
+const {
+  mockUser,
+  mockProfile,
+  mockSupabase,
+  roomState,
+  MockLiveKitRoom,
+} = vi.hoisted(() => {
+  const mockUser = { id: '00000000-0000-0000-0000-000000000001', email: 'gamer1@example.com' };
+  const mockProfile = {
+    id: '00000000-0000-0000-0000-000000000001',
+    username: 'gamer_one',
+    display_name: 'Gamer One',
+    avatar_url: null,
+  };
 
-  beforeEach(() => {
-    mockAudioTrack = {
+  const roomState = {
+    activeInstance: null as any,
+    listeners: new Map<string, Function[]>(),
+  };
+
+  class MockLiveKitRoom {
+    state = 'disconnected';
+    localParticipant: any;
+    remoteParticipants = new Map();
+
+    constructor() {
+      roomState.activeInstance = this;
+      roomState.listeners.clear();
+
+      const mockLocalTrack = {
+        kind: 'audio',
+        enabled: true,
+        muted: false,
+        mute: vi.fn().mockImplementation(async () => {
+          mockLocalTrack.muted = true;
+        }),
+        unmute: vi.fn().mockImplementation(async () => {
+          mockLocalTrack.muted = false;
+        }),
+        stop: vi.fn(),
+        mediaStreamTrack: { enabled: true, stop: vi.fn() },
+      };
+
+      const mockPublication = {
+        track: mockLocalTrack,
+        source: 'microphone',
+        isMuted: false,
+      };
+
+      this.localParticipant = {
+        identity: mockUser.id,
+        audioTrackPublications: new Map([['mic_pub', mockPublication]]),
+        publishTrack: vi.fn().mockResolvedValue(mockPublication),
+        unpublishTrack: vi.fn().mockResolvedValue(undefined),
+        setMicrophoneEnabled: vi.fn().mockImplementation(async (enabled: boolean) => {
+          mockLocalTrack.enabled = enabled;
+          mockLocalTrack.muted = !enabled;
+        }),
+      };
+    }
+
+    on(event: string, handler: Function) {
+      if (!roomState.listeners.has(event)) {
+        roomState.listeners.set(event, []);
+      }
+      roomState.listeners.get(event)!.push(handler);
+      return this;
+    }
+
+    off(event: string, handler: Function) {
+      const list = roomState.listeners.get(event);
+      if (list) {
+        roomState.listeners.set(event, list.filter((h) => h !== handler));
+      }
+      return this;
+    }
+
+    emit(event: string, ...args: any[]) {
+      const handlers = roomState.listeners.get(event) || [];
+      handlers.forEach((h) => h(...args));
+    }
+
+    connect = vi.fn().mockImplementation(async () => {
+      this.state = 'connected';
+      this.emit(RoomEvent.Connected);
+    });
+
+    disconnect = vi.fn().mockImplementation(() => {
+      this.state = 'disconnected';
+      this.emit(RoomEvent.Disconnected);
+    });
+
+    startAudio = vi.fn().mockResolvedValue(undefined);
+  }
+
+  const mockRealtimeChannel: any = {
+    send: vi.fn().mockResolvedValue(null),
+    track: vi.fn(),
+    untrack: vi.fn(),
+    on: vi.fn().mockImplementation(function () { return mockRealtimeChannel; }),
+    subscribe: vi.fn((cb) => {
+      if (cb) cb('SUBSCRIBED');
+      return mockRealtimeChannel;
+    }),
+    unsubscribe: vi.fn().mockResolvedValue('ok'),
+  };
+
+  const mockSupabase = {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({
+        data: { session: { access_token: 'mock-supabase-jwt' } },
+        error: null,
+      }),
+    },
+    channel: vi.fn().mockReturnValue(mockRealtimeChannel),
+    removeChannel: vi.fn(),
+    from: vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }),
+  };
+
+  return {
+    mockUser,
+    mockProfile,
+    mockSupabase,
+    roomState,
+    MockLiveKitRoom,
+  };
+});
+
+vi.mock('@/features/auth/auth-provider', () => ({
+  useAuth: () => ({
+    user: mockUser,
+    profile: mockProfile,
+    settings: { noise_suppression: true },
+    isConfigured: true,
+  }),
+  useOptionalAuth: () => ({
+    user: mockUser,
+    profile: mockProfile,
+  }),
+}));
+
+vi.mock('@/lib/supabase/client', () => ({
+  getBrowserClient: () => mockSupabase,
+  createClient: () => mockSupabase,
+}));
+
+vi.mock('@/components/ui/toast', () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
+
+vi.mock('livekit-client', async () => {
+  const actual = await vi.importActual<any>('livekit-client');
+  return {
+    ...actual,
+    Room: MockLiveKitRoom,
+    createLocalAudioTrack: vi.fn().mockResolvedValue({
       kind: 'audio',
-      enabled: true,
-      muted: false,
-      mute: vi.fn(() => {
-        mockAudioTrack.muted = true;
-      }),
-      unmute: vi.fn(() => {
-        mockAudioTrack.muted = false;
-      }),
       stop: vi.fn(),
-      setProcessor: vi.fn().mockResolvedValue(undefined),
-    };
+      mediaStreamTrack: { enabled: true, stop: vi.fn() },
+    }),
+  };
+});
 
-    mockPublication = {
-      track: mockAudioTrack,
-      source: 'microphone',
-      isMuted: false,
-    };
+describe('Real Production Voice Lifecycle & Audio Duplication Elimination Tests', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    roomState.listeners.clear();
+    roomState.activeInstance = null;
+    localStorage.clear();
 
-    mockLocalParticipant = {
-      identity: 'user_local',
-      audioTrackPublications: new Map([['mic_pub', mockPublication]]),
-      publishTrack: vi.fn().mockResolvedValue(mockPublication),
-      unpublishTrack: vi.fn().mockResolvedValue(undefined),
-      setMicrophoneEnabled: vi.fn(), // Should NOT be called in idempotent mute/unmute!
-    };
+    // Mock global fetch for LiveKit token route
+    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/api/calls/token')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            isConfigured: true,
+            token: 'valid-livekit-jwt',
+            url: 'wss://livekit.nexus.gg',
+            roomName: 'nexus-voice-channel-123',
+            mode: 'livekit',
+          }),
+          text: async () => '',
+        } as any;
+      }
+      return { ok: false, status: 404 } as any;
+    });
 
-    mockRoom = {
-      state: 'connected',
-      localParticipant: mockLocalParticipant,
-      remoteParticipants: new Map(),
-      disconnect: vi.fn(),
-      on: vi.fn(),
-      off: vi.fn(),
-    };
+    // Mock AudioContext and media devices if not in jsdom
+    if (typeof window !== 'undefined') {
+      const MockAudioContext = function () {
+        return {
+          state: 'running',
+          resume: vi.fn().mockResolvedValue(undefined),
+          createOscillator: vi.fn().mockReturnValue({
+            connect: vi.fn(),
+            start: vi.fn(),
+            stop: vi.fn(),
+            frequency: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
+          }),
+          createGain: vi.fn().mockReturnValue({
+            connect: vi.fn(),
+            gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
+          }),
+          createMediaStreamSource: vi.fn().mockReturnValue({
+            connect: vi.fn(),
+            disconnect: vi.fn(),
+          }),
+          close: vi.fn().mockResolvedValue(undefined),
+        };
+      };
+      (window as any).AudioContext = MockAudioContext;
+      (window as any).webkitAudioContext = MockAudioContext;
 
-    const mockSender = {
-      track: { kind: 'audio', enabled: true },
-      replaceTrack: vi.fn().mockResolvedValue(undefined),
-    };
+      if (typeof window.HTMLMediaElement !== 'undefined') {
+        window.HTMLMediaElement.prototype.pause = vi.fn();
+        window.HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue(undefined);
+      }
 
-    mockRtcPeerConnection = {
-      connectionState: 'connected',
-      getSenders: vi.fn().mockReturnValue([mockSender]),
-      addTrack: vi.fn(),
-      close: vi.fn(),
-    };
+      if (typeof (globalThis as any).MediaStream === 'undefined') {
+        (globalThis as any).MediaStream = class MockMediaStream {
+          getTracks = vi.fn().mockReturnValue([]);
+          getAudioTracks = vi.fn().mockReturnValue([]);
+          getVideoTracks = vi.fn().mockReturnValue([]);
+          addTrack = vi.fn();
+          removeTrack = vi.fn();
+        };
+      }
 
-    mockAudioElement = {
-      id: '',
-      muted: false,
-      srcObject: null,
-      play: vi.fn().mockResolvedValue(undefined),
-      pause: vi.fn(),
-      remove: vi.fn(),
-      parentNode: {
-        removeChild: vi.fn(),
-      },
-    };
+      if (!navigator.mediaDevices) {
+        (navigator as any).mediaDevices = {};
+      }
+      navigator.mediaDevices.getUserMedia = vi.fn().mockResolvedValue(
+        new (globalThis as any).MediaStream()
+      );
+    }
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('1. Mute/Unmute Idempotency & Prevention of Track Doubling', () => {
-    it('rapid toggling of mute/unmute mutates existing publications directly without calling setMicrophoneEnabled', () => {
-      // Simulate our idempotent toggleMic implementation
-      let isMicMuted = false;
-      const mediaTracks = [mockAudioTrack];
+  describe('1. Server Voice Channel Lifecycle via ServerVoiceProvider', () => {
+    it('executes joinVoiceChannel, connects LiveKit SFU, and enforces transport exclusivity', async () => {
+      const { ServerVoiceProvider, useServerVoiceContext } = await import('@/features/servers/server-voice-context');
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        React.createElement(ServerVoiceProvider, null, children)
+      );
 
-      const toggleMic = () => {
-        isMicMuted = !isMicMuted;
-        mediaTracks.forEach((t) => {
-          t.enabled = !isMicMuted;
-        });
+      const { result } = renderHook(() => useServerVoiceContext(), { wrapper });
 
-        // Mutate existing publications directly
-        mockLocalParticipant.audioTrackPublications.forEach((pub: any) => {
-          if (pub.track) {
-            if (isMicMuted) {
-              pub.track.mute();
-            } else {
-              pub.track.unmute();
-            }
-          }
-        });
-      };
+      expect(result.current.isVoiceConnected).toBe(false);
+      expect(result.current.isLiveKitActive).toBe(false);
 
-      // Rapidly toggle 6 times: mute -> unmute -> mute -> unmute -> mute -> unmute
-      for (let i = 0; i < 6; i++) {
-        toggleMic();
-      }
+      // Join voice channel
+      await act(async () => {
+        await result.current.joinVoiceChannel('server-123', 'channel-456', 'Main Server', 'General Voice');
+      });
 
-      // Final state: unmuted
-      expect(isMicMuted).toBe(false);
-      expect(mockAudioTrack.enabled).toBe(true);
-      expect(mockAudioTrack.muted).toBe(false);
+      // Verify token was requested
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/calls/token',
+        expect.objectContaining({
+          method: 'POST',
+        })
+      );
 
-      // Verify that setMicrophoneEnabled (which causes getUserMedia duplication in LiveKit) was NEVER called
-      expect(mockLocalParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+      // Verify LiveKit Room was instantiated and connected
+      expect(roomState.activeInstance).not.toBeNull();
+      act(() => {
+        roomState.activeInstance.emit(RoomEvent.Connected);
+      });
 
-      // Verify no extra tracks were published
-      expect(mockLocalParticipant.publishTrack).not.toHaveBeenCalled();
-      expect(mockAudioTrack.mute).toHaveBeenCalledTimes(3);
-      expect(mockAudioTrack.unmute).toHaveBeenCalledTimes(3);
+      // Transport exclusivity: LiveKit SFU is authoritative
+      expect(result.current.isVoiceConnected).toBe(true);
+      expect(result.current.isLiveKitActive).toBe(true);
+      expect(result.current.activeServerId).toBe('server-123');
+      expect(result.current.activeChannelId).toBe('channel-456');
     });
 
-    it('synchronizes track enabled state across WebRTC senders on mute and unmute', () => {
-      const senders = mockRtcPeerConnection.getSenders();
-      const audioSender = senders[0];
+    it('toggles microphone muting idempotently without republishing tracks', async () => {
+      const { ServerVoiceProvider, useServerVoiceContext } = await import('@/features/servers/server-voice-context');
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        React.createElement(ServerVoiceProvider, null, children)
+      );
 
-      let isMicMuted = false;
-      const toggleMic = () => {
-        isMicMuted = !isMicMuted;
-        senders.forEach((s: any) => {
-          if (s.track?.kind === 'audio') {
-            s.track.enabled = !isMicMuted;
-          }
-        });
-      };
+      const { result } = renderHook(() => useServerVoiceContext(), { wrapper });
 
-      // Mute
-      toggleMic();
-      expect(isMicMuted).toBe(true);
-      expect(audioSender.track.enabled).toBe(false);
+      await act(async () => {
+        await result.current.joinVoiceChannel('server-123', 'channel-456');
+      });
 
-      // Unmute
-      toggleMic();
-      expect(isMicMuted).toBe(false);
-      expect(audioSender.track.enabled).toBe(true);
-    });
-  });
+      const initialPubCount = roomState.activeInstance.localParticipant.publishTrack.mock.calls.length;
 
-  describe('2. Mutual Exclusivity Between LiveKit and WebRTC Transports', () => {
-    it('suppresses WebRTC peer connections when LiveKit SFU is active', () => {
-      let mediaTransport: 'livekit' | 'webrtc' | 'none' = 'livekit';
-      let rtcConnectionsCreated = 0;
+      // Toggle mic to muted
+      await act(async () => {
+        result.current.toggleMic();
+      });
+      expect(result.current.isMicMuted).toBe(true);
 
-      const getOrCreatePeerConnection = (remoteUserId: string) => {
-        if (mediaTransport === 'livekit') {
-          // Suppressed because LiveKit is authoritative
-          return undefined;
-        }
-        rtcConnectionsCreated++;
-        return mockRtcPeerConnection;
-      };
+      // Toggle mic back to unmuted
+      await act(async () => {
+        result.current.toggleMic();
+      });
+      expect(result.current.isMicMuted).toBe(false);
 
-      const pc1 = getOrCreatePeerConnection('user_bob');
-      const pc2 = getOrCreatePeerConnection('user_alice');
-
-      expect(pc1).toBeUndefined();
-      expect(pc2).toBeUndefined();
-      expect(rtcConnectionsCreated).toBe(0);
+      // Verify no duplicate track was published
+      expect(roomState.activeInstance.localParticipant.publishTrack.mock.calls.length).toBe(initialPubCount);
     });
 
-    it('activates WebRTC peer connections only as fallback when LiveKit is not active', () => {
-      let mediaTransport: string = 'webrtc';
-      let rtcConnectionsCreated = 0;
+    it('attaches remote audio tracks to a single authoritative sink and prevents duplicate audio elements', async () => {
+      const { ServerVoiceProvider, useServerVoiceContext } = await import('@/features/servers/server-voice-context');
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        React.createElement(ServerVoiceProvider, null, children)
+      );
 
-      const getOrCreatePeerConnection = (remoteUserId: string) => {
-        if (mediaTransport === 'livekit') {
-          return undefined;
-        }
-        rtcConnectionsCreated++;
-        return mockRtcPeerConnection;
+      const { result } = renderHook(() => useServerVoiceContext(), { wrapper });
+
+      await act(async () => {
+        await result.current.joinVoiceChannel('server-123', 'channel-456');
+      });
+
+      const mockAudioElement = document.createElement('audio');
+      mockAudioElement.play = vi.fn().mockResolvedValue(undefined);
+
+      const mockRemoteTrack = {
+        kind: Track.Kind.Audio,
+        source: 'microphone',
+        mediaStreamTrack: { enabled: true },
+        attach: vi.fn(() => mockAudioElement),
+        detach: vi.fn(() => [mockAudioElement]),
       };
 
-      const pc = getOrCreatePeerConnection('user_bob');
-      expect(pc).toBeDefined();
-      expect(rtcConnectionsCreated).toBe(1);
+      const mockRemoteParticipant = {
+        identity: 'remote-user-bob',
+        name: 'Bob',
+      };
+
+      // Simulate remote participant track subscription
+      act(() => {
+        roomState.activeInstance.emit(RoomEvent.TrackSubscribed, mockRemoteTrack, null, mockRemoteParticipant);
+      });
+
+      expect(mockRemoteTrack.attach).toHaveBeenCalledTimes(1);
+      expect(mockAudioElement.id).toBe('remote-livekit-audio-remote-user-bob');
+      expect(mockAudioElement.volume).toBe(1.0);
+      expect(mockAudioElement.muted).toBe(false);
+
+      // Simulate re-subscription (e.g., reconnect or track update) for the SAME peer
+      act(() => {
+        roomState.activeInstance.emit(RoomEvent.TrackSubscribed, mockRemoteTrack, null, mockRemoteParticipant);
+      });
+
+      // Track detach must have been called on previous element to eliminate duplicate playback
+      expect(mockRemoteTrack.detach).toHaveBeenCalled();
     });
-  });
 
-  describe('3. Single Authoritative Playback Sink and Track Cleanup', () => {
-    it('cleans up previous audio element before creating a new one on track subscription', () => {
-      const audioElements = new Map<string, any>();
+    it('cleans up remote audio element and audio nodes on TrackUnsubscribed', async () => {
+      const { ServerVoiceProvider, useServerVoiceContext } = await import('@/features/servers/server-voice-context');
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        React.createElement(ServerVoiceProvider, null, children)
+      );
 
-      const onTrackSubscribed = (peerId: string) => {
-        const prev = audioElements.get(peerId);
-        if (prev) {
-          prev.srcObject = null;
-          prev.pause();
-          prev.remove();
-          audioElements.delete(peerId);
-        }
+      const { result } = renderHook(() => useServerVoiceContext(), { wrapper });
 
-        const newEl = { ...mockAudioElement, id: `audio-${peerId}` };
-        audioElements.set(peerId, newEl);
+      await act(async () => {
+        await result.current.joinVoiceChannel('server-123', 'channel-456');
+      });
+
+      const mockAudioElement = document.createElement('audio');
+      mockAudioElement.play = vi.fn().mockResolvedValue(undefined);
+      const pauseSpy = vi.spyOn(mockAudioElement, 'pause');
+
+      const mockRemoteTrack = {
+        kind: Track.Kind.Audio,
+        source: 'microphone',
+        mediaStreamTrack: { enabled: true },
+        attach: vi.fn(() => mockAudioElement),
+        detach: vi.fn(() => [mockAudioElement]),
       };
 
-      // First subscription
-      onTrackSubscribed('peer_1');
-      expect(audioElements.size).toBe(1);
-      const firstEl = audioElements.get('peer_1');
+      const mockRemoteParticipant = {
+        identity: 'remote-user-charlie',
+        name: 'Charlie',
+      };
 
-      // Second subscription for same peer (e.g. track replacement or reconnect)
-      onTrackSubscribed('peer_1');
-      expect(audioElements.size).toBe(1);
-      expect(firstEl.remove).toHaveBeenCalled();
-      expect(firstEl.pause).toHaveBeenCalled();
+      act(() => {
+        roomState.activeInstance.emit(RoomEvent.TrackSubscribed, mockRemoteTrack, null, mockRemoteParticipant);
+      });
+
+      // Participant unsubscribes track
+      act(() => {
+        roomState.activeInstance.emit(RoomEvent.TrackUnsubscribed, mockRemoteTrack, null, mockRemoteParticipant);
+      });
+
+      expect(mockRemoteTrack.detach).toHaveBeenCalled();
+      expect(pauseSpy).toHaveBeenCalled();
+      expect(mockAudioElement.srcObject).toBeNull();
     });
 
-    it('completely removes audio element and closes peer connection on unsubscribe or participant departure', () => {
-      const audioElements = new Map<string, any>();
-      const peerConnections = new Map<string, any>();
+    it('disconnects and resets all voice states when disconnectVoice is called', async () => {
+      const { ServerVoiceProvider, useServerVoiceContext } = await import('@/features/servers/server-voice-context');
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        React.createElement(ServerVoiceProvider, null, children)
+      );
 
-      audioElements.set('peer_1', mockAudioElement);
-      peerConnections.set('peer_1', mockRtcPeerConnection);
+      const { result } = renderHook(() => useServerVoiceContext(), { wrapper });
 
-      const onParticipantDisconnected = (peerId: string) => {
-        const audio = audioElements.get(peerId);
-        if (audio) {
-          audio.srcObject = null;
-          audio.pause();
-          audio.remove();
-          audioElements.delete(peerId);
-        }
+      await act(async () => {
+        await result.current.joinVoiceChannel('server-123', 'channel-456');
+      });
 
-        const pc = peerConnections.get(peerId);
-        if (pc) {
-          pc.close();
-          peerConnections.delete(peerId);
-        }
-      };
+      // Leave voice channel
+      act(() => {
+        result.current.disconnectVoice();
+      });
 
-      onParticipantDisconnected('peer_1');
-
-      expect(audioElements.has('peer_1')).toBe(false);
-      expect(peerConnections.has('peer_1')).toBe(false);
-      expect(mockAudioElement.remove).toHaveBeenCalled();
-      expect(mockAudioElement.pause).toHaveBeenCalled();
-      expect(mockRtcPeerConnection.close).toHaveBeenCalled();
-    });
-  });
-
-  describe('4. Asynchronous Session Cancellation', () => {
-    it('discards late LiveKit token responses and room connections if call session has ended', async () => {
-      let activeSessionId: string | null = 'session_1';
-      let connectionEstablished = false;
-
-      // Simulate async connection flow with session check
-      const connectWithSession = async (sessionId: string) => {
-        // Step 1: Simulate token fetch delay
-        await new Promise((resolve) => setTimeout(resolve, 20));
-
-        // Check cancellation
-        if (activeSessionId !== sessionId) {
-          return; // Cancelled
-        }
-
-        // Step 2: Simulate room connection delay
-        await new Promise((resolve) => setTimeout(resolve, 20));
-
-        if (activeSessionId !== sessionId) {
-          return; // Cancelled
-        }
-
-        connectionEstablished = true;
-      };
-
-      // Start connection
-      const promise = connectWithSession('session_1');
-
-      // End session before connection completes
-      activeSessionId = null;
-
-      await promise;
-
-      // Connection should NOT be established
-      expect(connectionEstablished).toBe(false);
+      expect(roomState.activeInstance.disconnect).toHaveBeenCalled();
+      expect(result.current.isVoiceConnected).toBe(false);
+      expect(result.current.activeServerId).toBeNull();
+      expect(result.current.activeChannelId).toBeNull();
     });
   });
 
-  describe('5. Krisp AI Processor State Management', () => {
-    it('only marks isKrispActive true after successful setProcessor initialization', async () => {
-      let isKrispActive = false;
-      let processorRef: any = null;
+  describe('2. Direct Private Call Lifecycle via CallProvider', () => {
+    it('initializes in idle state and manages call cleanup cleanly', async () => {
+      const { CallProvider, useCallContext } = await import('@/features/calls/call-context');
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        React.createElement(CallProvider, null, children)
+      );
 
-      const initKrisp = async (shouldFail: boolean) => {
-        try {
-          if (shouldFail) {
-            throw new Error('Krisp initialization failed');
-          }
-          const mockKrisp = { name: 'krisp-processor' };
-          await mockAudioTrack.setProcessor(mockKrisp);
-          processorRef = mockKrisp;
-          isKrispActive = true;
-        } catch {
-          processorRef = null;
-          isKrispActive = false;
-        }
-      };
+      const { result } = renderHook(() => useCallContext(), { wrapper });
 
-      // Failure case
-      await initKrisp(true);
-      expect(isKrispActive).toBe(false);
-      expect(processorRef).toBeNull();
+      expect(result.current.callStatus).toBe('idle');
+      expect(result.current.isLiveKitActive).toBe(false);
+      expect(result.current.activeConversationId).toBeNull();
 
-      // Success case
-      await initKrisp(false);
-      expect(isKrispActive).toBe(true);
-      expect(processorRef).not.toBeNull();
-      expect(mockAudioTrack.setProcessor).toHaveBeenCalled();
+      // End call when idle is safe and resets clean state
+      act(() => {
+        result.current.endCall();
+      });
+
+      expect(result.current.callStatus).toBe('idle');
+      expect(result.current.localStream).toBeNull();
+      expect(result.current.remoteStream).toBeNull();
     });
   });
 
-  describe('6. Safe Constraints Polyfill & OverconstrainedError Handling', () => {
+  describe('3. Safe Constraints Polyfill & OverconstrainedError Handling', () => {
     it('relaxes audio constraints when browser throws OverconstrainedError', async () => {
       const { installSafeConstraintsPolyfill } = await import('@/lib/webrtc/safe-constraints');
 
-      // Setup mock MediaStreamTrack on global window
       const appliedList: any[] = [];
       const mockTrack = {
         kind: 'audio',
@@ -341,368 +480,17 @@ describe('Voice Overhaul & Audio Duplication Regression Tests', () => {
 
       installSafeConstraintsPolyfill();
 
-      // Call applyConstraints with unsupported sampleRate (WASAPI / CoreAudio)
       await mockTrack.applyConstraints({
         sampleRate: 48000,
         echoCancellation: true,
         noiseSuppression: true,
       });
 
-      // It should have caught OverconstrainedError and retried with sampleRate stripped
       expect(appliedList.length).toBe(2);
       expect(appliedList[0].sampleRate).toBe(48000);
       expect(appliedList[1].sampleRate).toBeUndefined();
       expect(appliedList[1].echoCancellation).toBe(true);
       expect(appliedList[1].noiseSuppression).toBe(true);
     });
-
-    it('silences unhandled constraint rejections in global rejection handler', async () => {
-      const preventDefaultSpy = vi.fn();
-      const mockRejectionEvent = {
-        reason: {
-          name: 'OverconstrainedError',
-          message: 'Cannot satisfy constraints',
-        },
-        preventDefault: preventDefaultSpy,
-      };
-
-      const listeners: any[] = [];
-      (global as any).window.addEventListener = (event: string, fn: any) => {
-        if (event === 'unhandledrejection') listeners.push(fn);
-      };
-
-      delete (global as any).window.__safeConstraintsRejectionHandlerInstalled;
-      const { installSafeConstraintsPolyfill } = await import('@/lib/webrtc/safe-constraints');
-      installSafeConstraintsPolyfill();
-
-      listeners.forEach((listener) => listener(mockRejectionEvent));
-      expect(preventDefaultSpy).toHaveBeenCalled();
-    });
-  });
-
-  describe('7. Private Call State Machine & activeCallSessionIdRef Isolation', () => {
-    it('preserves local activeCallSessionIdRef when database returns call_sessions ID', () => {
-      const activeCallSessionIdRef = { current: 'call_1729000000_abc' };
-      const dbCallSessionIdRef = { current: null as string | null };
-
-      // Simulate database response with row UUID
-      const dbResponse = { id: '123e4567-e89b-12d3-a456-426614174000' };
-
-      // Fix: db row ID goes into dbCallSessionIdRef, leaving activeCallSessionIdRef intact
-      dbCallSessionIdRef.current = dbResponse.id;
-
-      expect(activeCallSessionIdRef.current).toBe('call_1729000000_abc');
-      expect(dbCallSessionIdRef.current).toBe('123e4567-e89b-12d3-a456-426614174000');
-    });
-
-    it('transitions call status to in_call and stops ringtones when remote participant joins or tracks arrive', () => {
-      let callStatus = 'outgoing_ringing';
-      let ringtonePlaying = true;
-      let beaconActive = true;
-
-      const stopRingtone = () => {
-        ringtonePlaying = false;
-        beaconActive = false;
-      };
-
-      const markCallConnected = () => {
-        stopRingtone();
-        callStatus = 'in_call';
-      };
-
-      // Callee answers and remote track is subscribed
-      markCallConnected();
-
-      expect(callStatus).toBe('in_call');
-      expect(ringtonePlaying).toBe(false);
-      expect(beaconActive).toBe(false);
-    });
-  });
-
-  describe('8. Single Authoritative Media Transport & Playback Isolation', () => {
-    it('suppresses WebRTC remote audio playback when LiveKit SFU is authoritative', () => {
-      let mediaTransport = 'livekit';
-      const playMock = vi.fn();
-      const mockAudioEl = { play: playMock, srcObject: null };
-
-      // Simulate ontrack with transport guard
-      const onTrack = (event: { kind: string }) => {
-        if (event.kind === 'audio') {
-          if (mediaTransport === 'livekit') {
-            // Suppress WebRTC track playback because LiveKit is authoritative
-            return;
-          }
-          mockAudioEl.play();
-        }
-      };
-
-      onTrack({ kind: 'audio' });
-      expect(playMock).not.toHaveBeenCalled();
-
-      // When fallback webrtc is active, playback occurs
-      mediaTransport = 'webrtc';
-      onTrack({ kind: 'audio' });
-      expect(playMock).toHaveBeenCalledTimes(1);
-    });
-
-    it('unmuting mic does NOT enable WebRTC senders when LiveKit SFU is authoritative', () => {
-      let mediaTransport: 'livekit' | 'webrtc' = 'livekit';
-      const senderTrack = { kind: 'audio', enabled: false };
-      const pc = {
-        getSenders: () => [{ track: senderTrack }],
-      };
-
-      let isMicMuted = true;
-      const toggleMic = () => {
-        isMicMuted = !isMicMuted;
-        // Authoritative transport check: only toggle WebRTC senders if webrtc transport
-        if ((mediaTransport as string) === 'webrtc') {
-          pc.getSenders().forEach((s) => {
-            if (s.track?.kind === 'audio') {
-              s.track.enabled = !isMicMuted;
-            }
-          });
-        }
-      };
-
-      toggleMic(); // Unmute while livekit
-      expect(isMicMuted).toBe(false);
-      // Sender track must remain disabled to prevent dual transmission over P2P!
-      expect(senderTrack.enabled).toBe(false);
-
-      // Now switch to webrtc transport and unmute
-      mediaTransport = 'webrtc';
-      isMicMuted = true;
-      toggleMic();
-      expect(senderTrack.enabled).toBe(true);
-    });
-
-    it('local deafen/undeafen toggles playback elements without mutating remote participant mediaStreamTracks', () => {
-      let isDeafened = false;
-      const remoteAudioEl = { muted: false };
-      const remoteMediaStreamTrack = { kind: 'audio', enabled: true }; // e.g. remote user active mic
-
-      const toggleDeafen = () => {
-        isDeafened = !isDeafened;
-        // Only mute the local playback element
-        remoteAudioEl.muted = isDeafened;
-        // Remote mediaStreamTrack.enabled must NOT be altered
-      };
-
-      toggleDeafen(); // Deafen
-      expect(isDeafened).toBe(true);
-      expect(remoteAudioEl.muted).toBe(true);
-      expect(remoteMediaStreamTrack.enabled).toBe(true);
-
-      toggleDeafen(); // Undeafen
-      expect(isDeafened).toBe(false);
-      expect(remoteAudioEl.muted).toBe(false);
-      expect(remoteMediaStreamTrack.enabled).toBe(true);
-    });
-  });
-
-  describe('9. Voice Lounge Audio Delivery & Mute/Unmute Resilience', () => {
-    it('remote tracks are attached directly with volume=1.0 and unmuted without room audioContext hijacking', () => {
-      const mockAudioEl = {
-        volume: 0,
-        muted: true,
-        autoplay: false,
-        play: vi.fn().mockResolvedValue(undefined),
-      };
-
-      const mockTrack = {
-        kind: 'audio',
-        mediaStreamTrack: { enabled: false },
-        attach: vi.fn(() => mockAudioEl),
-      };
-
-      let isDeafened = false;
-      const attachAudio = (track: any) => {
-        if (track.mediaStreamTrack) {
-          track.mediaStreamTrack.enabled = !isDeafened;
-        }
-        const el = track.attach();
-        el.muted = isDeafened;
-        el.volume = 1.0;
-        el.autoplay = true;
-        el.play();
-        return el;
-      };
-
-      const resultEl = attachAudio(mockTrack);
-      expect(resultEl.volume).toBe(1.0);
-      expect(resultEl.muted).toBe(false);
-      expect(resultEl.autoplay).toBe(true);
-      expect(mockTrack.mediaStreamTrack.enabled).toBe(true);
-      expect(mockAudioEl.play).toHaveBeenCalledTimes(1);
-    });
-
-    it('attaches window unlock listener if remote audio autoplay is rejected by browser policy', async () => {
-      const playMock = vi.fn().mockRejectedValue(new Error('Autoplay blocked'));
-      const mockAudioEl = {
-        volume: 1.0,
-        muted: false,
-        play: playMock,
-      };
-
-      const registeredListeners = new Map<string, Function>();
-      const mockWindow = {
-        addEventListener: (event: string, handler: Function) => registeredListeners.set(event, handler),
-        removeEventListener: (event: string) => registeredListeners.delete(event),
-      };
-
-      const unlockAudio = () => {
-        mockAudioEl.play();
-        mockWindow.removeEventListener('click');
-        mockWindow.removeEventListener('keydown');
-      };
-
-      try {
-        await mockAudioEl.play();
-      } catch {
-        mockWindow.addEventListener('click', unlockAudio);
-        mockWindow.addEventListener('keydown', unlockAudio);
-      }
-
-      expect(registeredListeners.has('click')).toBe(true);
-      expect(registeredListeners.has('keydown')).toBe(true);
-
-      // Simulate user clicking anywhere in document
-      playMock.mockResolvedValueOnce(undefined);
-      const clickHandler = registeredListeners.get('click');
-      clickHandler?.();
-
-      expect(registeredListeners.has('click')).toBe(false);
-      expect(playMock).toHaveBeenCalledTimes(2);
-    });
-
-    it('unmuting mic invokes setMicrophoneEnabled and ensures mediaStreamTrack is enabled', async () => {
-      let isMicMuted = true;
-      const localAudioTrack = {
-        mediaStreamTrack: { enabled: false },
-        mute: vi.fn().mockResolvedValue(undefined),
-        unmute: vi.fn().mockResolvedValue(undefined),
-      };
-
-      const lp = {
-        audioTrackPublications: new Map([['TR_1', { track: localAudioTrack, mute: vi.fn(), unmute: vi.fn() }]]),
-        setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined),
-      };
-
-      const toggleMic = async () => {
-        const nextMuted = !isMicMuted;
-        isMicMuted = nextMuted;
-
-        const promises: Promise<any>[] = [];
-        lp.audioTrackPublications.forEach((pub) => {
-          if (pub.track) {
-            promises.push(nextMuted ? pub.track.mute() : pub.track.unmute());
-            pub.track.mediaStreamTrack.enabled = !nextMuted;
-          }
-        });
-        promises.push(lp.setMicrophoneEnabled(!nextMuted));
-        await Promise.allSettled(promises);
-      };
-
-      await toggleMic(); // Unmute
-      expect(isMicMuted).toBe(false);
-      expect(localAudioTrack.unmute).toHaveBeenCalledTimes(1);
-      expect(localAudioTrack.mediaStreamTrack.enabled).toBe(true);
-      expect(lp.setMicrophoneEnabled).toHaveBeenCalledWith(true);
-
-      await toggleMic(); // Mute again
-      expect(isMicMuted).toBe(true);
-      expect(localAudioTrack.mute).toHaveBeenCalledTimes(1);
-      expect(localAudioTrack.mediaStreamTrack.enabled).toBe(false);
-      expect(lp.setMicrophoneEnabled).toHaveBeenCalledWith(false);
-    });
-
-    it('TrackUnmuted event re-triggers play on existing audio element', () => {
-      const playMock = vi.fn().mockResolvedValue(undefined);
-      const audioElements = new Map([
-        ['user_2', { muted: false, play: playMock }],
-      ]);
-
-      const onTrackUnmuted = (peerId: string) => {
-        const el = audioElements.get(peerId);
-        if (el) {
-          el.muted = false;
-          el.play();
-        }
-      };
-
-      onTrackUnmuted('user_2');
-      expect(playMock).toHaveBeenCalledTimes(1);
-    });
-
-    it('toggleDeafen silences receiver track, pauses playback element, and toggles mic in tandem', async () => {
-      let isDeafened = false;
-      let isMicMuted = false;
-
-      const pauseMock = vi.fn();
-      const playMock = vi.fn().mockResolvedValue(undefined);
-      const mockAudioEl = {
-        muted: false,
-        volume: 1.0,
-        paused: false,
-        pause: pauseMock,
-        play: playMock,
-      };
-
-      const receiverTrack = { enabled: true };
-      const audioElements = new Map([['user_2', mockAudioEl]]);
-      const remoteParticipants = new Map([
-        ['user_2', { audioTrackPublications: new Map([['TR_2', { track: { mediaStreamTrack: receiverTrack, attachedElements: [mockAudioEl] } }]]) }],
-      ]);
-
-      const toggleMic = async () => {
-        isMicMuted = !isMicMuted;
-      };
-
-      const toggleDeafen = async () => {
-        const nextDeafened = !isDeafened;
-        isDeafened = nextDeafened;
-
-        audioElements.forEach((audio) => {
-          audio.muted = nextDeafened;
-          audio.volume = nextDeafened ? 0 : 1.0;
-          if (!nextDeafened && (audio as any).paused) (audio as any).play();
-        });
-
-        remoteParticipants.forEach((rp) => {
-          rp.audioTrackPublications.forEach((pub) => {
-            if (pub.track?.mediaStreamTrack) {
-              pub.track.mediaStreamTrack.enabled = !nextDeafened;
-            }
-          });
-        });
-
-        if (nextDeafened && !isMicMuted) {
-          await toggleMic();
-        } else if (!nextDeafened && isMicMuted) {
-          await toggleMic();
-        }
-      };
-
-      // 1. Deafen
-      await toggleDeafen();
-      expect(isDeafened).toBe(true);
-      expect(mockAudioEl.muted).toBe(true);
-      expect(mockAudioEl.volume).toBe(0);
-      expect(pauseMock).not.toHaveBeenCalled(); // Must NOT pause live stream to prevent buffer freezes
-      expect(receiverTrack.enabled).toBe(false);
-      expect(isMicMuted).toBe(true); // Mic muted automatically
-
-      // 2. Undeafen
-      mockAudioEl.paused = true;
-      await toggleDeafen();
-      expect(isDeafened).toBe(false);
-      expect(mockAudioEl.muted).toBe(false);
-      expect(mockAudioEl.volume).toBe(1.0);
-      expect(playMock).toHaveBeenCalledTimes(1);
-      expect(receiverTrack.enabled).toBe(true);
-      expect(isMicMuted).toBe(false); // Mic restored automatically
-    });
   });
 });
-

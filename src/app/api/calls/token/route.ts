@@ -12,15 +12,30 @@ const tokenRequestSchema = z.object({
   userName: z.string().optional().nullable(),
 });
 
-// Sliding-window in-memory rate limiter (30 token requests per 60 seconds per identity)
+// High-performance bounded in-memory sliding-window rate limiter
+// Zero repeating timers: uses lazy passive pruning on request arrival to support serverless runtimes
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS_PER_WINDOW = 30;
+const MAX_RATE_LIMIT_ENTRIES = 1000;
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function pruneStaleRateLimits(now: number) {
+  rateLimitMap.forEach((entry, key) => {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+      rateLimitMap.delete(key);
+    }
+  });
+}
 
 function checkRateLimit(key: string): boolean {
   const now = Date.now();
-  const entry = rateLimitMap.get(key);
 
+  // Lazy bounded pruning: prune if map exceeds threshold or randomly on 5% of requests
+  if (rateLimitMap.size > MAX_RATE_LIMIT_ENTRIES || Math.random() < 0.05) {
+    pruneStaleRateLimits(now);
+  }
+
+  const entry = rateLimitMap.get(key);
   if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
     rateLimitMap.set(key, { count: 1, windowStart: now });
     return true;
@@ -32,18 +47,6 @@ function checkRateLimit(key: string): boolean {
 
   entry.count += 1;
   return true;
-}
-
-// Periodic cleanup of stale rate limit entries
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const now = Date.now();
-    rateLimitMap.forEach((entry, key) => {
-      if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-        rateLimitMap.delete(key);
-      }
-    });
-  }, 5 * 60 * 1000);
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -110,6 +113,13 @@ export async function POST(request: Request) {
 
     if (conversationId) {
       // Direct / Group conversation call: Verify caller is a conversation member
+      if (!UUID_REGEX.test(conversationId)) {
+        return NextResponse.json(
+          { error: 'Invalid conversation format: Conversation ID must be a valid UUID' },
+          { status: 400 }
+        );
+      }
+
       const { data: mem, error: memErr } = await supabase
         .from('conversation_members')
         .select('id')
@@ -126,7 +136,14 @@ export async function POST(request: Request) {
 
       finalRoomName = `nexus-dm-${conversationId.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
     } else if (channelId) {
-      // Server Voice Channel: Verify channel exists and user is a member of the server
+      // Server Voice Channel: Verify channel exists, channel is a voice channel, and user is a member of the server
+      if (!UUID_REGEX.test(channelId)) {
+        return NextResponse.json(
+          { error: 'Invalid channel format: Channel ID must be a valid UUID' },
+          { status: 400 }
+        );
+      }
+
       const { data: channel, error: chanErr } = await supabase
         .from('channels')
         .select('id, server_id, type')
@@ -137,26 +154,53 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Channel not found' }, { status: 404 });
       }
 
-      const targetServerId = channel.server_id || serverId;
-      if (targetServerId) {
-        const { data: srvMem, error: srvErr } = await supabase
-          .from('server_members')
-          .select('id')
-          .eq('server_id', targetServerId)
-          .eq('user_id', targetUserId)
-          .maybeSingle();
+      // Verify channel type: Voice credentials must only be issued for voice channels
+      if (channel.type !== 'voice') {
+        return NextResponse.json(
+          { error: 'Invalid channel type: Voice credentials can only be issued for voice channels' },
+          { status: 400 }
+        );
+      }
 
-        if (srvErr || !srvMem) {
-          return NextResponse.json(
-            { error: 'Forbidden: You are not a member of this server' },
-            { status: 403 }
-          );
-        }
+      // Authoritative server ID derived from the validated channel record
+      const targetServerId = channel.server_id;
+      if (!targetServerId) {
+        return NextResponse.json({ error: 'Channel is not associated with a server' }, { status: 400 });
+      }
+
+      // Reject mismatched server ID and channel ID
+      if (serverId && serverId !== targetServerId) {
+        return NextResponse.json(
+          { error: 'Bad Request: Mismatched server ID and channel ID' },
+          { status: 400 }
+        );
+      }
+
+      // Require authenticated server membership
+      const { data: srvMem, error: srvErr } = await supabase
+        .from('server_members')
+        .select('id')
+        .eq('server_id', targetServerId)
+        .eq('user_id', targetUserId)
+        .maybeSingle();
+
+      if (srvErr || !srvMem) {
+        return NextResponse.json(
+          { error: 'Forbidden: You are not a member of this server' },
+          { status: 403 }
+        );
       }
 
       finalRoomName = `nexus-voice-${channelId.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
     } else if (serverId) {
       // Server-wide voice room: Verify server membership
+      if (!UUID_REGEX.test(serverId)) {
+        return NextResponse.json(
+          { error: 'Invalid server format: Server ID must be a valid UUID' },
+          { status: 400 }
+        );
+      }
+
       const { data: srvMem, error: srvErr } = await supabase
         .from('server_members')
         .select('id')
@@ -212,7 +256,7 @@ export async function POST(request: Request) {
 
         const { data: channel } = await supabase
           .from('channels')
-          .select('id, server_id')
+          .select('id, server_id, type')
           .eq('id', candidateChanId)
           .maybeSingle();
 
@@ -220,20 +264,37 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: 'Voice channel not found' }, { status: 404 });
         }
 
-        if (channel.server_id) {
-          const { data: srvMem } = await supabase
-            .from('server_members')
-            .select('id')
-            .eq('server_id', channel.server_id)
-            .eq('user_id', targetUserId)
-            .maybeSingle();
+        if (channel.type !== 'voice') {
+          return NextResponse.json(
+            { error: 'Invalid channel type: Voice credentials can only be issued for voice channels' },
+            { status: 400 }
+          );
+        }
 
-          if (!srvMem) {
-            return NextResponse.json(
-              { error: 'Forbidden: You are not a member of this voice channel server' },
-              { status: 403 }
-            );
-          }
+        const targetServerId = channel.server_id;
+        if (!targetServerId) {
+          return NextResponse.json({ error: 'Voice channel is not associated with a server' }, { status: 400 });
+        }
+
+        if (serverId && serverId !== targetServerId) {
+          return NextResponse.json(
+            { error: 'Bad Request: Mismatched server ID and voice channel' },
+            { status: 400 }
+          );
+        }
+
+        const { data: srvMem } = await supabase
+          .from('server_members')
+          .select('id')
+          .eq('server_id', targetServerId)
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
+        if (!srvMem) {
+          return NextResponse.json(
+            { error: 'Forbidden: You are not a member of this voice channel server' },
+            { status: 403 }
+          );
         }
 
         finalRoomName = roomName;

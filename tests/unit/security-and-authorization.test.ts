@@ -366,12 +366,12 @@ describe('Security & Authorization Audit Regression Tests', () => {
     it('adds UPDATE policy on server_members restricting role changes to owners/admins', () => {
       expect(migrationSql).toContain('CREATE POLICY "Owners and admins can update member roles"');
       expect(migrationSql).toContain('public.is_server_owner_or_admin(server_id, auth.uid())');
-      expect(migrationSql).toContain("role <> 'owner'");
+      expect(migrationSql).toContain("role IN ('member', 'moderator')");
     });
 
     it('protects server owners from being kicked by non-owners', () => {
       expect(migrationSql).toContain('DROP POLICY IF EXISTS "Members can leave or admins can kick" ON public.server_members');
-      expect(migrationSql).toContain('s.owner_id = server_members.user_id');
+      expect(migrationSql).toContain('NOT public.is_server_owner(server_id, server_members.user_id)');
     });
 
     it('enforces WITH CHECK clause on channel_messages UPDATE policy to prevent column hijacking', () => {

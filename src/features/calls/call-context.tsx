@@ -3283,15 +3283,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (livekitRoomRef.current?.localParticipant) {
       try {
         const lp = livekitRoomRef.current.localParticipant;
+        const promises: Promise<any>[] = [];
         lp.audioTrackPublications.forEach((pub: any) => {
           if (pub?.track) {
-            if (nextMuted) {
-              pub.track.mute();
-            } else {
-              pub.track.unmute();
+            promises.push(nextMuted ? pub.track.mute() : pub.track.unmute());
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !nextMuted;
             }
           }
+          if (nextMuted && typeof pub.mute === 'function') {
+            promises.push(pub.mute());
+          } else if (!nextMuted && typeof pub.unmute === 'function') {
+            promises.push(pub.unmute());
+          }
         });
+        promises.push(lp.setMicrophoneEnabled(!nextMuted));
+        Promise.allSettled(promises).catch(() => {});
       } catch (err) {
         console.warn('[CallContext] Error updating LiveKit audio publication mute state:', err);
       }

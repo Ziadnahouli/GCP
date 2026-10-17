@@ -275,8 +275,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     [getMyVoiceState]
   );
 
-  // Dual-Route LiveKit Audio Attacher: binds both DOM <audio> and running master Web Audio context
-  // This guarantees remote participants (e.g. user 3 joining later) are heard immediately without autoplay blocks
+  // LiveKit Authoritative Remote Audio Attacher
+  // Binds remote tracks to DOM <audio> elements with gesture unlock retry logic
   const attachLiveKitAudioTrack = React.useCallback((track: RemoteTrack, peerId: string) => {
     if (track.kind !== Track.Kind.Audio) return;
 
@@ -296,7 +296,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       audioElementsRef.current.delete(peerId);
     }
 
-    // 2. Attach track to a DOM audio element
+    // 2. Attach track to a dedicated DOM audio element
     const el = track.attach();
     el.id = `remote-livekit-audio-${peerId}`;
     el.muted = isDeafenedRef.current;
@@ -317,12 +317,32 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     }
     audioElementsRef.current.set(peerId, el);
 
-    el.play().catch((playErr) => {
-      console.warn('[LiveKit Voice] Remote audio autoplay deferred waiting for gesture:', playErr);
-      if (livekitRoomRef.current) {
-        livekitRoomRef.current.startAudio().catch(() => {});
-      }
-    });
+    const playPromise = el.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((playErr) => {
+        console.warn('[LiveKit Voice] Remote audio autoplay deferred waiting for gesture:', playErr);
+        if (livekitRoomRef.current) {
+          livekitRoomRef.current.startAudio().catch(() => {});
+        }
+        const unlock = () => {
+          if (livekitRoomRef.current) {
+            livekitRoomRef.current.startAudio().catch(() => {});
+          }
+          audioElementsRef.current.forEach((aEl) => {
+            aEl.muted = isDeafenedRef.current;
+            aEl.play().catch(() => {});
+          });
+          window.removeEventListener('click', unlock);
+          window.removeEventListener('keydown', unlock);
+          window.removeEventListener('touchstart', unlock);
+          window.removeEventListener('pointerdown', unlock);
+        };
+        window.addEventListener('click', unlock, { once: true, passive: true });
+        window.addEventListener('keydown', unlock, { once: true, passive: true });
+        window.addEventListener('touchstart', unlock, { once: true, passive: true });
+        window.addEventListener('pointerdown', unlock, { once: true, passive: true });
+      });
+    }
   }, []);
 
   // Clean up all WebRTC peer connections and DOM audio elements
@@ -947,6 +967,35 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               }
             });
 
+            lkRoom.on(RoomEvent.TrackUnmuted, (pub: any, participant: any) => {
+              const peerId = participant.identity;
+              console.log('[LiveKit Voice] Remote track unmuted:', peerId, pub?.kind);
+              if (pub?.kind === Track.Kind.Audio && pub?.track) {
+                const el = audioElementsRef.current.get(peerId);
+                if (el) {
+                  el.muted = isDeafenedRef.current;
+                  el.play().catch(() => {});
+                } else {
+                  attachLiveKitAudioTrack(pub.track as RemoteTrack, peerId);
+                }
+              }
+              const existing = peersMapRef.current.get(peerId);
+              if (existing && existing.is_muted) {
+                peersMapRef.current.set(peerId, { ...existing, is_muted: false });
+                setRemoteParticipants(Array.from(peersMapRef.current.values()));
+              }
+            });
+
+            lkRoom.on(RoomEvent.TrackMuted, (pub: any, participant: any) => {
+              const peerId = participant.identity;
+              console.log('[LiveKit Voice] Remote track muted:', peerId, pub?.kind);
+              const existing = peersMapRef.current.get(peerId);
+              if (existing && !existing.is_muted) {
+                peersMapRef.current.set(peerId, { ...existing, is_muted: true, is_speaking: false });
+                setRemoteParticipants(Array.from(peersMapRef.current.values()));
+              }
+            });
+
             lkRoom.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, pub, participant: RemoteParticipant) => {
               const peerId = participant.identity;
               if (track.kind === Track.Kind.Audio) {
@@ -1252,20 +1301,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               const existingAudioTrack = stream?.getAudioTracks()[0] || localStreamRef.current?.getAudioTracks()[0];
               const { LocalAudioTrack, createLocalAudioTrack } = await import('livekit-client');
 
-              // Obtain an active AudioContext for LocalAudioTrack processor support
+              // Obtain an active AudioContext strictly for LocalAudioTrack processor / Krisp support
+              // Note: Never assign audioContext to lkRoom, as that forces connectWebAudio on remote tracks which mutes them
               const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
               const audioCtx =
-                (lkRoom as any).audioContext ||
                 audioContextRef.current ||
                 (AudioCtx ? new AudioCtx({ latencyHint: 'interactive' }) : undefined);
               if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume().catch(() => {});
-              }
-              if (audioCtx && !(lkRoom as any).audioContext) {
-                try {
-                  (lkRoom as any).audioContext = audioCtx;
-                  (lkRoom as any).setAudioContext?.(audioCtx);
-                } catch {}
               }
 
               if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
@@ -1313,7 +1356,13 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 } catch (krispErr) {
                   console.warn('[LiveKit Voice] Krisp processor notice (using clean studio audio fallback):', krispErr);
                   try {
-                    await localAudioTrack.stopProcessor();
+                    if ((localAudioTrack as any).processor) {
+                      try { await (localAudioTrack as any).processor.destroy(); } catch {}
+                      (localAudioTrack as any).processor = undefined;
+                    }
+                    if ((localAudioTrack as any).sender) {
+                      await localAudioTrack.stopProcessor();
+                    }
                   } catch {}
                   krispProcessorRef.current = null;
                   setIsKrispActive(false);
@@ -1754,7 +1803,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   }, [stopAllMediaStreams, activeChannelId, activeServerId, cleanUpAllPeers]);
 
   // Toggle microphone
-  const toggleMic = React.useCallback(() => {
+  const toggleMic = React.useCallback(async () => {
     const nextMuted = !isMicMuted;
     setIsMicMuted(nextMuted);
     isMicMutedRef.current = nextMuted;
@@ -1768,16 +1817,22 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     if (livekitRoomRef.current?.localParticipant) {
       try {
         const lp = livekitRoomRef.current.localParticipant;
-        // Mutate publications directly to prevent LiveKit from spawning new tracks via setMicrophoneEnabled
+        const promises: Promise<any>[] = [];
         lp.audioTrackPublications.forEach((pub: any) => {
           if (pub.track) {
-            if (nextMuted) {
-              pub.track.mute();
-            } else {
-              pub.track.unmute();
+            promises.push(nextMuted ? pub.track.mute() : pub.track.unmute());
+            if (pub.track.mediaStreamTrack) {
+              pub.track.mediaStreamTrack.enabled = !nextMuted;
             }
           }
+          if (nextMuted && typeof pub.mute === 'function') {
+            promises.push(pub.mute());
+          } else if (!nextMuted && typeof pub.unmute === 'function') {
+            promises.push(pub.unmute());
+          }
         });
+        promises.push(lp.setMicrophoneEnabled(!nextMuted));
+        await Promise.allSettled(promises);
       } catch (lkErr) {
         console.warn('[LiveKit Voice] Error setting mic state:', lkErr);
       }
@@ -1804,6 +1859,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       isDeafenedRef.current = false;
       audioElementsRef.current.forEach((audio) => {
         audio.muted = false;
+        audio.play().catch(() => {});
       });
       if (livekitRoomRef.current?.remoteParticipants) {
         livekitRoomRef.current.remoteParticipants.forEach((rp: any) => {
@@ -1811,6 +1867,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             if (pub.track?.attachedElements) {
               pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
                 el.muted = false;
+                el.play().catch(() => {});
               });
             }
           });
@@ -1831,6 +1888,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     // Mute/unmute all remote audio elements & Web Audio mixer nodes
     audioElementsRef.current.forEach((audio) => {
       audio.muted = nextDeafened;
+      if (!nextDeafened) {
+        audio.play().catch(() => {});
+      }
     });
     remoteAudioNodesRef.current.forEach(({ gain }) => {
       gain.gain.value = nextDeafened ? 0 : 1;
@@ -1843,6 +1903,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           if (pub.track?.attachedElements) {
             pub.track.attachedElements.forEach((el: HTMLMediaElement) => {
               el.muted = nextDeafened;
+              if (!nextDeafened) {
+                el.play().catch(() => {});
+              }
             });
           }
         });

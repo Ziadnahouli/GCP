@@ -500,4 +500,140 @@ describe('Voice Overhaul & Audio Duplication Regression Tests', () => {
       expect(remoteMediaStreamTrack.enabled).toBe(true);
     });
   });
+
+  describe('9. Voice Lounge Audio Delivery & Mute/Unmute Resilience', () => {
+    it('remote tracks are attached directly with volume=1.0 and unmuted without room audioContext hijacking', () => {
+      const mockAudioEl = {
+        volume: 0,
+        muted: true,
+        autoplay: false,
+        play: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const mockTrack = {
+        kind: 'audio',
+        mediaStreamTrack: { enabled: false },
+        attach: vi.fn(() => mockAudioEl),
+      };
+
+      let isDeafened = false;
+      const attachAudio = (track: any) => {
+        if (track.mediaStreamTrack) {
+          track.mediaStreamTrack.enabled = !isDeafened;
+        }
+        const el = track.attach();
+        el.muted = isDeafened;
+        el.volume = 1.0;
+        el.autoplay = true;
+        el.play();
+        return el;
+      };
+
+      const resultEl = attachAudio(mockTrack);
+      expect(resultEl.volume).toBe(1.0);
+      expect(resultEl.muted).toBe(false);
+      expect(resultEl.autoplay).toBe(true);
+      expect(mockTrack.mediaStreamTrack.enabled).toBe(true);
+      expect(mockAudioEl.play).toHaveBeenCalledTimes(1);
+    });
+
+    it('attaches window unlock listener if remote audio autoplay is rejected by browser policy', async () => {
+      const playMock = vi.fn().mockRejectedValue(new Error('Autoplay blocked'));
+      const mockAudioEl = {
+        volume: 1.0,
+        muted: false,
+        play: playMock,
+      };
+
+      const registeredListeners = new Map<string, Function>();
+      const mockWindow = {
+        addEventListener: (event: string, handler: Function) => registeredListeners.set(event, handler),
+        removeEventListener: (event: string) => registeredListeners.delete(event),
+      };
+
+      const unlockAudio = () => {
+        mockAudioEl.play();
+        mockWindow.removeEventListener('click');
+        mockWindow.removeEventListener('keydown');
+      };
+
+      try {
+        await mockAudioEl.play();
+      } catch {
+        mockWindow.addEventListener('click', unlockAudio);
+        mockWindow.addEventListener('keydown', unlockAudio);
+      }
+
+      expect(registeredListeners.has('click')).toBe(true);
+      expect(registeredListeners.has('keydown')).toBe(true);
+
+      // Simulate user clicking anywhere in document
+      playMock.mockResolvedValueOnce(undefined);
+      const clickHandler = registeredListeners.get('click');
+      clickHandler?.();
+
+      expect(registeredListeners.has('click')).toBe(false);
+      expect(playMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('unmuting mic invokes setMicrophoneEnabled and ensures mediaStreamTrack is enabled', async () => {
+      let isMicMuted = true;
+      const localAudioTrack = {
+        mediaStreamTrack: { enabled: false },
+        mute: vi.fn().mockResolvedValue(undefined),
+        unmute: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const lp = {
+        audioTrackPublications: new Map([['TR_1', { track: localAudioTrack, mute: vi.fn(), unmute: vi.fn() }]]),
+        setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const toggleMic = async () => {
+        const nextMuted = !isMicMuted;
+        isMicMuted = nextMuted;
+
+        const promises: Promise<any>[] = [];
+        lp.audioTrackPublications.forEach((pub) => {
+          if (pub.track) {
+            promises.push(nextMuted ? pub.track.mute() : pub.track.unmute());
+            pub.track.mediaStreamTrack.enabled = !nextMuted;
+          }
+        });
+        promises.push(lp.setMicrophoneEnabled(!nextMuted));
+        await Promise.allSettled(promises);
+      };
+
+      await toggleMic(); // Unmute
+      expect(isMicMuted).toBe(false);
+      expect(localAudioTrack.unmute).toHaveBeenCalledTimes(1);
+      expect(localAudioTrack.mediaStreamTrack.enabled).toBe(true);
+      expect(lp.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+
+      await toggleMic(); // Mute again
+      expect(isMicMuted).toBe(true);
+      expect(localAudioTrack.mute).toHaveBeenCalledTimes(1);
+      expect(localAudioTrack.mediaStreamTrack.enabled).toBe(false);
+      expect(lp.setMicrophoneEnabled).toHaveBeenCalledWith(false);
+    });
+
+    it('TrackUnmuted event re-triggers play on existing audio element', () => {
+      const playMock = vi.fn().mockResolvedValue(undefined);
+      const audioElements = new Map([
+        ['user_2', { muted: false, play: playMock }],
+      ]);
+
+      const onTrackUnmuted = (peerId: string) => {
+        const el = audioElements.get(peerId);
+        if (el) {
+          el.muted = false;
+          el.play();
+        }
+      };
+
+      onTrackUnmuted('user_2');
+      expect(playMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });
+

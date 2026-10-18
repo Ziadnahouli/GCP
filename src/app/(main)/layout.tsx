@@ -454,9 +454,6 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
         isScreenSharing={call.isScreenSharing}
         isNoiseSuppressionEnabled={call.isNoiseSuppressionEnabled}
         isLiveKitActive={call.isLiveKitActive}
-        isKrispActive={call.isKrispActive}
-        voiceTransportPreference={call.voiceTransportPreference}
-        onSwitchTransport={call.switchVoiceTransport}
         participants={call.participants}
         stats={call.stats}
         localStream={call.localStream}

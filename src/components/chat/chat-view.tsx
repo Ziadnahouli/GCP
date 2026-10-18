@@ -60,7 +60,7 @@ const COMMON_EMOJIS = ['🔥', '🎯', '👍', '💀', '😂', '❤️', '🚀',
 
 export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const { user, profile } = useAuth();
-  const { conversations } = useConversations();
+  const { conversations, markConversationAsRead } = useConversations();
   const {
     messages,
     rawMessages,
@@ -80,6 +80,13 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     togglePinMessage,
   } = useMessages(conversationId);
 
+  // Automatically mark conversation as read when viewing
+  React.useEffect(() => {
+    if (conversationId && markConversationAsRead) {
+      markConversationAsRead(conversationId);
+    }
+  }, [conversationId, markConversationAsRead, messages.length]);
+
   const call = useCallContext();
   const { toast } = useToast();
   const { getUserStatus } = usePresence();
@@ -96,6 +103,18 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const [selectedMediaModal, setSelectedMediaModal] = React.useState<MessageAttachment | null>(null);
   const [showSearchInput, setShowSearchInput] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
+
+  // Mention autocomplete candidates state
+  const [mentionCandidates, setMentionCandidates] = React.useState<
+    Array<{
+      id: string;
+      username: string;
+      display_name: string;
+      avatar_url?: string | null;
+      isSpecial?: boolean;
+    }>
+  >([]);
+  const [mentionSelectedIndex, setMentionSelectedIndex] = React.useState(0);
 
   // Phase 4: Group settings, forward, report, draft, and jump-to-latest
   const [showGroupSettings, setShowGroupSettings] = React.useState(false);
@@ -473,8 +492,119 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     }
   };
 
+  const handleVoiceCallClick = async () => {
+    if (isGroup) {
+      if (activeCallSession) {
+        if (call.callStatus === 'incoming_ringing') {
+          call.acceptCall();
+        } else {
+          call.startCall(conversationId, conversationId, false);
+        }
+        return;
+      }
+
+      // Starting new group squad call: notify group and mention all other members
+      const otherMembers = (effectiveConversation?.members || []).filter((m: any) => m.user_id !== user?.id);
+      const mentions = otherMembers
+        .map((m: any) => (m.profile?.username ? `@${m.profile.username}` : ''))
+        .filter(Boolean)
+        .join(' ');
+
+      const announcement = `📞 Started a squad voice call. [join-squad-call:${conversationId}] ${mentions ? `Hey ${mentions}, click Join Voice to connect!` : 'Click Join Voice to connect!'}`;
+
+      sendMessage(announcement).catch(() => {});
+      call.startCall(conversationId, conversationId, false);
+    } else {
+      const peerId = targetUserId || conversationId;
+      call.startCall(peerId, conversationId, false);
+    }
+  };
+
+  // Mention autocomplete logic
+  const handleInputChange = (val: string) => {
+    setInputContent(val);
+    const cursor = inputRef.current?.selectionStart ?? val.length;
+    const textBeforeCursor = val.slice(0, cursor);
+    const match = textBeforeCursor.match(/(?:^|\s)@([a-zA-Z0-9_.-]*)$/);
+
+    if (match) {
+      const query = match[1].toLowerCase();
+      const membersList = (effectiveConversation?.members || []).map((m: any) => ({
+        id: m.user_id,
+        username: m.profile?.username || 'user',
+        display_name: m.profile?.display_name || 'Squadmate',
+        avatar_url: m.profile?.avatar_url || null,
+        isSpecial: false,
+      }));
+
+      const specials = isGroup
+        ? [
+            { id: 'everyone', username: 'everyone', display_name: 'Everyone in Squad', avatar_url: null, isSpecial: true },
+            { id: 'all', username: 'all', display_name: 'All Members', avatar_url: null, isSpecial: true },
+          ]
+        : [];
+
+      const allTargets = [...specials, ...membersList];
+      const filtered = allTargets.filter(
+        (t) =>
+          t.username.toLowerCase().includes(query) ||
+          t.display_name.toLowerCase().includes(query)
+      );
+
+      setMentionCandidates(filtered);
+      setMentionSelectedIndex(0);
+    } else {
+      setMentionCandidates([]);
+    }
+  };
+
+  const insertMention = (targetUsername: string) => {
+    const cursor = inputRef.current?.selectionStart ?? inputContent.length;
+    const textBeforeCursor = inputContent.slice(0, cursor);
+    const textAfterCursor = inputContent.slice(cursor);
+    const atIndex = textBeforeCursor.lastIndexOf('@');
+    if (atIndex !== -1) {
+      const newBefore = textBeforeCursor.slice(0, atIndex) + `@${targetUsername} `;
+      const newFull = newBefore + textAfterCursor;
+      setInputContent(newFull);
+      setMentionCandidates([]);
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.setSelectionRange(newBefore.length, newBefore.length);
+        }
+      }, 0);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     sendTyping();
+
+    if (mentionCandidates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionSelectedIndex((prev) => (prev + 1) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionSelectedIndex((prev) => (prev - 1 + mentionCandidates.length) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const selected = mentionCandidates[mentionSelectedIndex];
+        if (selected) {
+          insertMention(selected.username);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionCandidates([]);
+        return;
+      }
+    }
   };
 
   const handleStartEdit = (msg: Message) => {
@@ -650,10 +780,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           ) : (
             <>
               <button
-                onClick={() => {
-                  const peerId = targetUserId || conversationId;
-                  call.startCall(peerId, conversationId, false);
-                }}
+                onClick={handleVoiceCallClick}
                 className={cn(
                   'p-1.5 rounded-lg transition-colors',
                   isGroup && activeCallSession
@@ -896,21 +1023,32 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                     </button>
                   </div>
                 ) : (
-                  msg.content && (
-                    <div
-                      className={cn(
-                        'rounded-2xl px-3.5 py-2 text-xs sm:text-sm leading-relaxed break-words transition-all font-normal',
-                        isMe
-                          ? 'bg-primary text-primary-foreground rounded-tr-sm shadow-sm'
-                          : 'bg-surface-elevated/80 border border-subtle text-foreground rounded-tl-sm'
-                      )}
-                    >
-                      <MessageContent content={msg.content} isMe={isMe} />
-                      {msg.is_edited && (
-                        <span className="text-[10px] opacity-60 ml-1.5 italic">(edited)</span>
-                      )}
-                    </div>
-                  )
+                  msg.content && (() => {
+                    const myUsername = (profile?.username || (user as any)?.username || '').toLowerCase();
+                    const isMentioned = !isMe && Boolean(
+                      (myUsername && msg.content?.toLowerCase().includes(`@${myUsername}`)) ||
+                      msg.content?.toLowerCase().includes('@everyone') ||
+                      msg.content?.toLowerCase().includes('@all')
+                    );
+
+                    return (
+                      <div
+                        className={cn(
+                          'rounded-2xl px-3.5 py-2 text-xs sm:text-sm leading-relaxed break-words transition-all font-normal',
+                          isMe
+                            ? 'bg-primary text-primary-foreground rounded-tr-sm shadow-sm'
+                            : isMentioned
+                            ? 'bg-amber-500/15 border border-amber-500/40 text-foreground rounded-tl-sm ring-1 ring-amber-500/30 shadow-sm'
+                            : 'bg-surface-elevated/80 border border-subtle text-foreground rounded-tl-sm'
+                        )}
+                      >
+                        <MessageContent content={msg.content} isMe={isMe} />
+                        {msg.is_edited && (
+                          <span className="text-[10px] opacity-60 ml-1.5 italic">(edited)</span>
+                        )}
+                      </div>
+                    );
+                  })()
                 )}
 
                 {/* Attachments Section */}
@@ -1214,6 +1352,52 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
           {/* Text Input */}
           <div className="relative flex-1">
+            {/* Mention Autocomplete Floating Dropdown */}
+            {mentionCandidates.length > 0 && (
+              <div className="absolute bottom-full left-0 mb-2 w-72 max-h-52 overflow-y-auto rounded-xl bg-[#0c0d14]/95 border border-white/[0.12] shadow-2xl backdrop-blur-md p-1.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 flex items-center justify-between border-b border-white/[0.06] mb-1">
+                  <span>Mention Squad Members</span>
+                  <span className="font-mono text-[9px] opacity-70">↑↓ navigate • ↵ select</span>
+                </div>
+                <div className="space-y-0.5">
+                  {mentionCandidates.map((m, idx) => (
+                    <div
+                      key={m.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        insertMention(m.username);
+                      }}
+                      onMouseEnter={() => setMentionSelectedIndex(idx)}
+                      className={cn(
+                        "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors",
+                        idx === mentionSelectedIndex
+                          ? "bg-primary/20 text-white font-medium"
+                          : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                      )}
+                    >
+                      {m.isSpecial ? (
+                        <div className="w-6 h-6 rounded-md bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-300 font-bold text-xs shrink-0">
+                          @
+                        </div>
+                      ) : (
+                        <Avatar src={m.avatar_url} name={m.display_name} size="sm" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-foreground text-xs truncate">
+                            {m.display_name}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground/60 font-mono truncate">
+                            @{m.username}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <input
               ref={inputRef}
               type="text"
@@ -1225,7 +1409,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                   : `Message @${targetMember?.username || 'squad'}...`
               }
               value={inputContent}
-              onChange={(e) => setInputContent(e.target.value)}
+              onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
               className="w-full h-10 pl-3.5 pr-10 rounded-xl bg-surface-default/80 border border-white/[0.08] hover:border-white/[0.14] text-xs sm:text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50 transition-colors font-normal disabled:opacity-50 disabled:cursor-not-allowed"
             />

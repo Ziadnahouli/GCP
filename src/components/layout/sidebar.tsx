@@ -172,6 +172,8 @@ export function Sidebar({
                 const isSelected = selectedConversationId === conv.id;
                 const title = isGroup ? (conv.name || 'Squad Group') : (otherMember?.display_name || 'Chat');
 
+                const hasUnread = Boolean(conv.unread_count && conv.unread_count > 0);
+
                 return (
                   <div
                     key={conv.id}
@@ -180,50 +182,72 @@ export function Sidebar({
                       'flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors group relative',
                       isSelected
                         ? 'bg-white/[0.06] text-foreground font-semibold'
+                        : hasUnread
+                        ? 'bg-primary/[0.07] text-foreground font-semibold'
                         : 'hover:bg-white/[0.03] text-muted-foreground hover:text-foreground',
                       collapsed ? 'justify-center' : ''
                     )}
-                    title={title}
+                    title={hasUnread ? `${title} (${conv.unread_count} new messages)` : title}
                   >
-                    {isGroup ? (
-                      <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center text-primary shrink-0">
-                        <Users className="w-3.5 h-3.5" />
-                      </div>
-                    ) : (
-                      <Avatar
-                        src={otherMember?.avatar_url}
-                        name={title}
-                        status={getUserStatus(otherMemberId)}
-                        showStatus
-                        size="sm"
-                      />
-                    )}
+                    <div className="relative shrink-0">
+                      {isGroup ? (
+                        <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center text-primary shrink-0">
+                          <Users className="w-3.5 h-3.5" />
+                        </div>
+                      ) : (
+                        <Avatar
+                          src={otherMember?.avatar_url}
+                          name={title}
+                          status={getUserStatus(otherMemberId)}
+                          showStatus
+                          size="sm"
+                        />
+                      )}
+                      {collapsed && hasUnread && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center shadow-md shadow-primary/40 animate-pulse">
+                          {conv.unread_count && conv.unread_count > 99 ? '99+' : conv.unread_count}
+                        </span>
+                      )}
+                    </div>
 
                     {!collapsed && (
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="truncate text-foreground group-hover:text-primary transition-colors text-xs font-medium">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span
+                            className={cn(
+                              'truncate transition-colors text-xs',
+                              hasUnread
+                                ? 'text-white font-bold tracking-tight'
+                                : 'text-foreground group-hover:text-primary font-medium'
+                            )}
+                          >
                             {title}
                           </span>
-                          {isGroup && (
-                            <span className="text-[9px] text-muted-foreground/60 shrink-0 font-normal">
-                              {conv.members.length}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isGroup && (
+                              <span className="text-[9px] text-muted-foreground/60 font-normal">
+                                {conv.members.length}
+                              </span>
+                            )}
+                            {hasUnread && (
+                              <span className="min-w-[18px] h-4.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary text-primary-foreground flex items-center justify-center shadow-sm shadow-primary/40 animate-pulse">
+                                {conv.unread_count && conv.unread_count > 99 ? '99+' : conv.unread_count}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         {conv.last_message && (
-                          <div className="text-[10px] text-muted-foreground/60 truncate leading-tight mt-0.5">
+                          <div
+                            className={cn(
+                              'text-[10px] truncate leading-tight mt-0.5',
+                              hasUnread ? 'text-foreground/90 font-medium' : 'text-muted-foreground/60'
+                            )}
+                          >
                             {conv.last_message.content}
                           </div>
                         )}
                       </div>
                     )}
-
-                    {conv.unread_count && conv.unread_count > 0 ? (
-                      <Badge variant="default" className="h-4 px-1 text-[9px] shrink-0">
-                        {conv.unread_count}
-                      </Badge>
-                    ) : null}
 
                     {isSelected && (
                       <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-primary rounded-r" />

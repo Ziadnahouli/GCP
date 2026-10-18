@@ -53,9 +53,16 @@ export function ResetPasswordForm() {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       if (code) {
-        supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        supabase.auth.exchangeCodeForSession(code).then(async ({ error }) => {
           if (!mounted) return;
           if (error) {
+            // Check if callback already exchanged the code and set session
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+              setSessionReady(true);
+              setGeneralError(null);
+              return;
+            }
             console.error('[ResetPassword] Code exchange error:', error);
             setGeneralError('Invalid or expired password reset link. Please request a new one.');
             setSessionReady(false);

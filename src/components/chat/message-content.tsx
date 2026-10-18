@@ -2,8 +2,9 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { ExternalLink, Check, Users, Shield, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { ExternalLink, Check, Users, Shield, ArrowRight, Loader2, Sparkles, Phone, Radio, Volume2 } from 'lucide-react';
 import { useServers } from '@/hooks/use-servers';
+import { useCallContext } from '@/features/calls/call-context';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { getBrowserClient } from '@/lib/supabase/client';
@@ -17,15 +18,25 @@ interface MessageContentProps {
 
 // UUID regex for matching server invites
 const SERVER_INVITE_REGEX = /(?:https?:\/\/[^\s]+[?&]join=|\/?\?join=|\/join\/|\/invite\/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+const SQUAD_CALL_REGEX = /\[(?:join-squad-call|join-call):([0-9a-f-]{36})\]/i;
 const GENERAL_URL_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+const MENTION_TOKEN_REGEX = /(@[a-zA-Z0-9_.-]+)/g;
 
 export function MessageContent({ content, isMe = false }: MessageContentProps) {
   const router = useRouter();
   const { servers, joinServer } = useServers();
+  const call = useCallContext();
   const { toast } = useToast();
 
   const [isJoining, setIsJoining] = React.useState(false);
   const [serverMeta, setServerMeta] = React.useState<{ name?: string; icon_url?: string | null; memberCount?: number } | null>(null);
+
+  // Check if content contains a squad voice call beacon
+  const squadCallMatch = React.useMemo(() => {
+    return content.match(SQUAD_CALL_REGEX);
+  }, [content]);
+
+  const squadCallConvId = squadCallMatch ? squadCallMatch[1] : null;
 
   // Check if content contains a server invite
   const inviteMatch = React.useMemo(() => {
@@ -36,13 +47,13 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
 
   // Check if content contains a general web URL for safe preview (excluding server invites)
   const previewUrl = React.useMemo(() => {
-    if (inviteMatch) return null;
+    if (inviteMatch || squadCallMatch) return null;
     const match = content.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/i);
     if (!match) return null;
     let urlStr = match[0];
     if (urlStr.startsWith('www.')) urlStr = `https://${urlStr}`;
     return urlStr;
-  }, [content, inviteMatch]);
+  }, [content, inviteMatch, squadCallMatch]);
 
   // Check if user is already a member
   const existingServer = React.useMemo(() => {
@@ -131,12 +142,14 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
     }
   };
 
-  // Render text with clickable links
+  // Render text with clickable links and @mentions
   const renderTextWithLinks = (text: string) => {
-    // If there's an invite link, hide the raw invite link URL from the text so the embed card replaces it
     let cleanText = text;
     if (inviteMatch && inviteMatch[0]) {
       cleanText = cleanText.replace(inviteMatch[0], '').trim();
+    }
+    if (squadCallMatch && squadCallMatch[0]) {
+      cleanText = cleanText.replace(squadCallMatch[0], '').trim();
     }
 
     if (!cleanText) return null;
@@ -175,7 +188,33 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
               );
             }
           }
-          return <span key={index}>{part}</span>;
+
+          // Parse @mentions within non-URL text
+          const subParts = part.split(MENTION_TOKEN_REGEX);
+          return (
+            <React.Fragment key={index}>
+              {subParts.map((sub, subIdx) => {
+                if (sub.match(/^@[a-zA-Z0-9_.-]+$/)) {
+                  const tagLower = sub.toLowerCase();
+                  const isSpecial = tagLower === '@everyone' || tagLower === '@all' || tagLower === '@here';
+                  return (
+                    <span
+                      key={subIdx}
+                      className={cn(
+                        'inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-semibold mx-0.5 select-none transition-colors',
+                        isSpecial
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold hover:bg-amber-500/30'
+                          : 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 cursor-pointer'
+                      )}
+                    >
+                      {sub}
+                    </span>
+                  );
+                }
+                return <span key={subIdx}>{sub}</span>;
+              })}
+            </React.Fragment>
+          );
         })}
       </span>
     );
@@ -183,8 +222,55 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
 
   return (
     <div className="space-y-2">
-      {/* Text message content with link detection */}
+      {/* Text message content with link and mention detection */}
       <div>{renderTextWithLinks(content)}</div>
+
+      {/* Interactive Squad Voice Call Announcement Card with Join Voice button */}
+      {squadCallConvId && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="mt-2.5 w-full max-w-sm rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-[#0d1411]/90 to-[#0e1713]/95 backdrop-blur-md p-3.5 shadow-xl select-none text-left flex items-center justify-between gap-3 animate-in fade-in"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 shadow-inner">
+              <Phone className="w-5 h-5 animate-pulse" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-xs font-bold text-white tracking-tight">Squad Voice Call</span>
+              </div>
+              <p className="text-[10px] text-emerald-300/80 truncate mt-0.5">
+                Squad call is live. Tap to join!
+              </p>
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            {call.activeConversationId === squadCallConvId && call.callStatus === 'in_call' ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>Connected</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (call.callStatus === 'incoming_ringing') {
+                    call.acceptCall();
+                  } else {
+                    call.startCall(squadCallConvId, squadCallConvId, false);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-900/40 transition-all hover:scale-[1.02]"
+              >
+                <Phone className="w-3.5 h-3.5" />
+                <span>Join Voice</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Interactive App-Style Server Invite Card */}
       {inviteServerId && (

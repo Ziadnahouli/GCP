@@ -135,6 +135,19 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   const [reportingMessage, setReportingMessage] = React.useState<any | null>(null);
   const [isScrolledUp, setIsScrolledUp] = React.useState(false);
 
+  // Mention autocomplete state
+  const [mentionCandidates, setMentionCandidates] = React.useState<
+    Array<{
+      id: string;
+      username: string;
+      display_name: string;
+      avatar_url?: string | null;
+      isSpecial?: boolean;
+    }>
+  >([]);
+  const [mentionSelectedIndex, setMentionSelectedIndex] = React.useState(0);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
   // Restore draft for this channel
   React.useEffect(() => {
     if (typeof window !== 'undefined' && channel?.id) {
@@ -273,12 +286,47 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
       } else {
         setInputText('');
         setReplyingTo(null);
+        setMentionCandidates([]);
         if (typeof window !== 'undefined') {
           localStorage.removeItem(`nexus_draft_chan_${channel.id}`);
         }
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         setIsScrolledUp(false);
         isNearBottomRef.current = true;
+
+        // Dispatch mention notifications to mentioned users in this server
+        try {
+          const mentionMatches = content.match(/@([a-zA-Z0-9_.-]+)/g);
+          if (mentionMatches && mentionMatches.length > 0) {
+            const mentionedLower = mentionMatches.map((m) => m.slice(1).toLowerCase());
+            const hasEveryone = mentionedLower.includes('everyone') || mentionedLower.includes('all') || mentionedLower.includes('here');
+
+            const targetUsers = squadList.filter((m) => {
+              if (m.id === user?.id) return false;
+              if (hasEveryone) return true;
+              return m.username && mentionedLower.includes(m.username.toLowerCase());
+            });
+
+            if (targetUsers.length > 0) {
+              const notifInserts = targetUsers.map((tu) => ({
+                user_id: tu.id,
+                actor_id: user?.id,
+                type: 'mention',
+                title: `${profile?.display_name || (user as any)?.display_name || 'Someone'} mentioned you in #${channel.name}`,
+                body: content.slice(0, 140),
+                data: {
+                  server_id: server.id,
+                  channel_id: channel.id,
+                },
+              }));
+
+              const supabase = getBrowserClient();
+              supabase.from('notifications').insert(notifInserts).then(() => {}, () => {});
+            }
+          }
+        } catch (mentionErr) {
+          console.warn('Channel mention dispatch error:', mentionErr);
+        }
       }
     } catch (err: unknown) {
       toast({
@@ -295,12 +343,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+
 
   const filteredMessages = searchQuery.trim()
     ? messages.filter((m) =>
@@ -357,6 +400,95 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
     return list;
   }, [server.members, server.owner_id, user, profile]);
+
+  // Mention autocomplete logic for channel chat
+  const handleInputChange = (val: string) => {
+    setInputText(val);
+    const cursor = textareaRef.current?.selectionStart ?? val.length;
+    const textBeforeCursor = val.slice(0, cursor);
+    const match = textBeforeCursor.match(/(?:^|\s)@([a-zA-Z0-9_.-]*)$/);
+
+    if (match) {
+      const query = match[1].toLowerCase();
+      const members = squadList.map((m) => ({
+        id: m.id,
+        username: m.username || 'member',
+        display_name: m.display_name || 'Member',
+        avatar_url: m.avatar_url,
+        isSpecial: false,
+      }));
+
+      const specials = [
+        { id: 'everyone', username: 'everyone', display_name: 'Everyone in Channel', avatar_url: null, isSpecial: true },
+        { id: 'here', username: 'here', display_name: 'Online Members', avatar_url: null, isSpecial: true },
+        { id: 'all', username: 'all', display_name: 'All Members', avatar_url: null, isSpecial: true },
+      ];
+
+      const allTargets = [...specials, ...members];
+      const filtered = allTargets.filter(
+        (t) =>
+          t.username.toLowerCase().includes(query) ||
+          t.display_name.toLowerCase().includes(query)
+      );
+
+      setMentionCandidates(filtered);
+      setMentionSelectedIndex(0);
+    } else {
+      setMentionCandidates([]);
+    }
+  };
+
+  const insertMention = (targetUsername: string) => {
+    const cursor = textareaRef.current?.selectionStart ?? inputText.length;
+    const textBeforeCursor = inputText.slice(0, cursor);
+    const textAfterCursor = inputText.slice(cursor);
+    const atIndex = textBeforeCursor.lastIndexOf('@');
+    if (atIndex !== -1) {
+      const newBefore = textBeforeCursor.slice(0, atIndex) + `@${targetUsername} `;
+      const newFull = newBefore + textAfterCursor;
+      setInputText(newFull);
+      setMentionCandidates([]);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newBefore.length, newBefore.length);
+        }
+      }, 0);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionCandidates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionSelectedIndex((prev) => (prev + 1) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionSelectedIndex((prev) => (prev - 1 + mentionCandidates.length) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const selected = mentionCandidates[mentionSelectedIndex];
+        if (selected) {
+          insertMention(selected.username);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionCandidates([]);
+        return;
+      }
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
   const isVoiceChannel = channel.type === 'voice';
 
@@ -1431,38 +1563,86 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   </span>
                 </div>
               )}
-              <form
-                onSubmit={handleSend}
-                className="flex items-center gap-2 bg-white/[0.02] border border-white/[0.06] rounded-lg p-1.5 px-3 focus-within:border-white/[0.12] focus-within:bg-white/[0.03] transition-all"
-              >
-                {canUseSoundboard && (
-                  <button
-                    type="button"
-                    onClick={() => setShowSoundboard(true)}
-                    aria-label="Trigger Soundboard Meme"
-                    className="text-muted-foreground hover:text-amber-400 p-1.5 rounded-md transition-colors shrink-0"
-                    title="Trigger Soundboard Meme"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                  </button>
+              <div className="relative">
+                {/* Channel Mention Autocomplete Dropdown */}
+                {mentionCandidates.length > 0 && (
+                  <div className="absolute bottom-full left-0 mb-2 w-72 max-h-52 overflow-y-auto rounded-xl bg-[#0c0d14]/95 border border-white/[0.12] shadow-2xl backdrop-blur-md p-1.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                    <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 flex items-center justify-between border-b border-white/[0.06] mb-1">
+                      <span>Mention Server Members</span>
+                      <span className="font-mono text-[9px] opacity-70">↑↓ navigate • ↵ select</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {mentionCandidates.map((m, idx) => (
+                        <div
+                          key={m.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            insertMention(m.username);
+                          }}
+                          onMouseEnter={() => setMentionSelectedIndex(idx)}
+                          className={cn(
+                            "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors",
+                            idx === mentionSelectedIndex
+                              ? "bg-primary/20 text-white font-medium"
+                              : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                          )}
+                        >
+                          {m.isSpecial ? (
+                            <div className="w-6 h-6 rounded-md bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-300 font-bold text-xs shrink-0">
+                              @
+                            </div>
+                          ) : (
+                            <Avatar src={m.avatar_url} name={m.display_name} size="sm" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-foreground text-xs truncate">
+                                {m.display_name}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground/60 font-mono truncate">
+                                @{m.username}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
-                <textarea
-                  rows={1}
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={!canSendMessages}
-                  aria-label={`Message #${channel.name}`}
-                  placeholder={
-                    isTimedOut
-                      ? 'You are currently timed out in this server'
-                      : canSendMessages
-                      ? `Message #${channel.name}...`
-                      : "You don't have permission to post messages here"
-                  }
-                  className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-28 py-1 font-normal disabled:opacity-50"
-                />
+                <form
+                  onSubmit={handleSend}
+                  className="flex items-center gap-2 bg-white/[0.02] border border-white/[0.06] rounded-lg p-1.5 px-3 focus-within:border-white/[0.12] focus-within:bg-white/[0.03] transition-all"
+                >
+                  {canUseSoundboard && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSoundboard(true)}
+                      aria-label="Trigger Soundboard Meme"
+                      className="text-muted-foreground hover:text-amber-400 p-1.5 rounded-md transition-colors shrink-0"
+                      title="Trigger Soundboard Meme"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
+                    value={inputText}
+                    onChange={(e) => handleInputChange(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={!canSendMessages}
+                    aria-label={`Message #${channel.name}`}
+                    placeholder={
+                      isTimedOut
+                        ? 'You are currently timed out in this server'
+                        : canSendMessages
+                        ? `Message #${channel.name}...`
+                        : "You don't have permission to post messages here"
+                    }
+                    className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-28 py-1 font-normal disabled:opacity-50"
+                  />
 
                 <Button
                   type="submit"
@@ -1479,6 +1659,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 </Button>
               </form>
             </div>
+          </div>
           </>
         )}
       </div>

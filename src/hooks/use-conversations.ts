@@ -103,11 +103,21 @@ export function useConversationsInternal() {
 
         const lastMsg = (lastMsgs || []).find((m) => m && m.conversation_id === conv.id) || null;
 
+        // Calculate actual unread count:
+        const myMembership = (allMembers || []).find(
+          (m) => m && m.conversation_id === conv.id && m.user_id === user.id
+        );
+        const myLastRead = myMembership?.last_read_at ? new Date(myMembership.last_read_at).getTime() : 0;
+        const convMsgs = (lastMsgs || []).filter((m) => m && m.conversation_id === conv.id);
+        const unreadCount = convMsgs.filter(
+          (m) => m.sender_id !== user.id && new Date(m.created_at).getTime() > myLastRead
+        ).length;
+
         return {
           ...conv,
           members,
           last_message: lastMsg,
-          unread_count: 0,
+          unread_count: unreadCount,
         };
       });
 
@@ -371,6 +381,29 @@ export function useConversationsInternal() {
     }
   };
 
+  const markConversationAsRead = React.useCallback(
+    async (convId: string) => {
+      if (!user?.id || !convId) return;
+
+      // Optimistically clear unread count in local state immediately
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, unread_count: 0 } : c))
+      );
+
+      try {
+        const now = new Date().toISOString();
+        await supabase
+          .from('conversation_members')
+          .update({ last_read_at: now })
+          .eq('conversation_id', convId)
+          .eq('user_id', user.id);
+      } catch (err) {
+        console.error('Failed to update last_read_at:', err);
+      }
+    },
+    [user, supabase]
+  );
+
   return {
     conversations,
     isLoading,
@@ -380,6 +413,7 @@ export function useConversationsInternal() {
     removeGroupMember,
     leaveGroup,
     updateGroupMetadata,
+    markConversationAsRead,
     refetch: fetchConversations,
   };
 }

@@ -956,6 +956,51 @@ export function useMessages(conversationId: string | null) {
         .eq('id', conversationId)
         .then(() => {}, () => {});
 
+      // Dispatch mention notifications to mentioned users
+      try {
+        const mentionMatches = trimmed.match(/@([a-zA-Z0-9_.-]+)/g);
+        if (mentionMatches && mentionMatches.length > 0) {
+          supabase
+            .from('conversation_members')
+            .select(`
+              user_id,
+              profile:user_id (id, username, display_name)
+            `)
+            .eq('conversation_id', conversationId)
+            .then(({ data: convMembers }) => {
+              if (convMembers && convMembers.length > 0) {
+                const mentionedLower = mentionMatches.map((m) => m.slice(1).toLowerCase());
+                const hasEveryone = mentionedLower.includes('everyone') || mentionedLower.includes('all');
+
+                const targetUsers = convMembers.filter((m: any) => {
+                  if (m.user_id === user.id) return false;
+                  if (hasEveryone) return true;
+                  const uName = (m.profile as any)?.username?.toLowerCase();
+                  return uName && mentionedLower.includes(uName);
+                });
+
+                if (targetUsers.length > 0) {
+                  const notifInserts = targetUsers.map((tu: any) => ({
+                    user_id: tu.user_id,
+                    actor_id: user.id,
+                    type: 'mention',
+                    title: `${profile?.display_name || 'Someone'} mentioned you`,
+                    body: trimmed.slice(0, 140),
+                    data: {
+                      conversation_id: conversationId,
+                      message_id: confirmedId,
+                    },
+                  }));
+
+                  supabase.from('notifications').insert(notifInserts).then(() => {}, () => {});
+                }
+              }
+            }, () => {});
+        }
+      } catch (mentionErr) {
+        console.warn('Mention dispatch error:', mentionErr);
+      }
+
       // Fast authoritative follow-up reconciliations to guarantee server consistency
       setTimeout(() => {
         if (activeConversationIdRef.current === conversationId) {

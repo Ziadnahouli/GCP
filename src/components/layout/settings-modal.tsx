@@ -121,6 +121,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [allowDms, setAllowDms] = React.useState<'everyone' | 'friends' | 'none'>('everyone');
   const [allowFriendReqs, setAllowFriendReqs] = React.useState<'everyone' | 'friends_of_friends' | 'none'>('everyone');
   const [isResettingPassword, setIsResettingPassword] = React.useState(false);
+  const [directNewPassword, setDirectNewPassword] = React.useState('');
+  const [directConfirmPassword, setDirectConfirmPassword] = React.useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = React.useState(false);
+  const [showDirectPasswordChange, setShowDirectPasswordChange] = React.useState(false);
   const [isSigningOutOthers, setIsSigningOutOthers] = React.useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [deleteInputText, setDeleteInputText] = React.useState('');
@@ -588,13 +592,58 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         type: 'success',
       });
     } catch (err: any) {
+      const isRateLimited = err?.message?.toLowerCase().includes('rate limit');
       toast({
-        title: 'Reset Request Failed',
-        description: err?.message || 'Could not send reset email.',
+        title: isRateLimited ? 'Email Rate Limit Reached' : 'Reset Request Failed',
+        description: isRateLimited
+          ? 'Supabase free mailer limits reset emails to 3 per hour. Use "Change Password Directly" below to update your password immediately without an email link!'
+          : (err?.message || 'Could not send reset email.'),
         type: 'error',
       });
     } finally {
       setIsResettingPassword(false);
+    }
+  };
+
+  const handleDirectPasswordUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directNewPassword || directNewPassword.length < 6) {
+      toast({
+        title: 'Invalid Password',
+        description: 'New password must be at least 6 characters long.',
+        type: 'error',
+      });
+      return;
+    }
+    if (directNewPassword !== directConfirmPassword) {
+      toast({
+        title: 'Passwords Mismatch',
+        description: 'The new passwords do not match.',
+        type: 'error',
+      });
+      return;
+    }
+    setIsUpdatingPassword(true);
+    try {
+      const supabase = getBrowserClient();
+      const { error } = await supabase.auth.updateUser({ password: directNewPassword });
+      if (error) throw error;
+      toast({
+        title: 'Password Updated',
+        description: 'Your account password has been changed successfully.',
+        type: 'success',
+      });
+      setDirectNewPassword('');
+      setDirectConfirmPassword('');
+      setShowDirectPasswordChange(false);
+    } catch (err: any) {
+      toast({
+        title: 'Password Change Failed',
+        description: err?.message || 'Failed to update account password.',
+        type: 'error',
+      });
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
 
@@ -1803,21 +1852,95 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-2 border-t border-white/[0.04]">
-                    <div>
-                      <div className="text-xs font-bold text-foreground">Password Management</div>
-                      <div className="text-[11px] text-muted-foreground">Receive a secure reset token link in your email</div>
+                  <div className="pt-2 border-t border-white/[0.04] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-bold text-foreground">Password Management</div>
+                        <div className="text-[11px] text-muted-foreground">Change your password directly or send a recovery email</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant={showDirectPasswordChange ? 'secondary' : 'default'}
+                          onClick={() => setShowDirectPasswordChange((prev) => !prev)}
+                          className="text-xs h-8"
+                        >
+                          <Lock className="w-3.5 h-3.5 mr-1.5" />
+                          {showDirectPasswordChange ? 'Close Form' : 'Change Password'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleSendPasswordReset}
+                          disabled={isResettingPassword}
+                          className="border-white/10 hover:bg-white/10 text-xs h-8"
+                          title="Sends password reset link to your email"
+                        >
+                          {isResettingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <KeyRound className="w-3.5 h-3.5 mr-1.5" />}
+                          Email Link
+                        </Button>
+                      </div>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleSendPasswordReset}
-                      disabled={isResettingPassword}
-                      className="border-white/10 hover:bg-white/10 text-xs"
-                    >
-                      {isResettingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <KeyRound className="w-3.5 h-3.5 mr-1.5" />}
-                      Reset Password
-                    </Button>
+
+                    {showDirectPasswordChange && (
+                      <form onSubmit={handleDirectPasswordUpdate} className="p-3.5 rounded-xl bg-black/40 border border-white/[0.08] space-y-3 animate-in fade-in duration-150">
+                        <div className="text-[11px] font-semibold text-primary">
+                          Update Password Directly (No Email Needed)
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-1">
+                              New Password
+                            </label>
+                            <Input
+                              type="password"
+                              placeholder="Minimum 6 characters"
+                              value={directNewPassword}
+                              onChange={(e) => setDirectNewPassword(e.target.value)}
+                              className="h-8 text-xs bg-white/[0.03] border-white/10"
+                              disabled={isUpdatingPassword}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-1">
+                              Confirm Password
+                            </label>
+                            <Input
+                              type="password"
+                              placeholder="Re-enter password"
+                              value={directConfirmPassword}
+                              onChange={(e) => setDirectConfirmPassword(e.target.value)}
+                              className="h-8 text-xs bg-white/[0.03] border-white/10"
+                              disabled={isUpdatingPassword}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setShowDirectPasswordChange(false);
+                              setDirectNewPassword('');
+                              setDirectConfirmPassword('');
+                            }}
+                            className="text-xs h-7 text-muted-foreground"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="submit"
+                            size="sm"
+                            disabled={isUpdatingPassword || !directNewPassword || !directConfirmPassword}
+                            className="text-xs h-7 font-semibold"
+                          >
+                            {isUpdatingPassword ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                            Update Password
+                          </Button>
+                        </div>
+                      </form>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-white/[0.04]">

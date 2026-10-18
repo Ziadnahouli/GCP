@@ -50,7 +50,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
     unblockUser,
   } = useSocial();
 
-  const { getOrCreateDirectConversation } = useConversations();
+  const { conversations, getOrCreateDirectConversation } = useConversations();
   const { toast } = useToast();
   const { getUserStatus, isUserOnline } = usePresence();
 
@@ -470,29 +470,57 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                   const isMenuOpen = activeMenuId === item.id;
                   const liveStatus = getUserStatus(item.friend.id);
 
+                  // Check if there is an unread conversation with this friend
+                  const friendConv = conversations.find(
+                    (c) =>
+                      c.type === 'direct' &&
+                      c.members.some((m) => m.user_id === item.friend.id)
+                  );
+                  const unreadCount = friendConv?.unread_count || 0;
+
                   return (
                     <div
                       key={item.id}
-                      className="group flex items-center justify-between p-2 rounded-xl border border-white/[0.05] bg-surface-default/50 hover:bg-surface-hover/70 hover:border-white/[0.10] transition-colors cursor-pointer relative"
+                      className={cn(
+                        "group flex items-center justify-between p-2 rounded-xl border transition-colors cursor-pointer relative",
+                        unreadCount > 0
+                          ? "bg-primary/[0.08] border-primary/30 hover:bg-primary/[0.12] hover:border-primary/50"
+                          : "border-white/[0.05] bg-surface-default/50 hover:bg-surface-hover/70 hover:border-white/[0.10]"
+                      )}
                       onClick={() => handleStartChat(item.friend.id)}
                     >
                       {/* Left: Avatar & Info */}
                       <div className="flex items-center gap-3 min-w-0">
-                        <Avatar
-                          src={item.friend.avatar_url}
-                          name={item.friend.display_name}
-                          status={liveStatus}
-                          showStatus
-                          size="md"
-                        />
+                        <div className="relative shrink-0">
+                          <Avatar
+                            src={item.friend.avatar_url}
+                            name={item.friend.display_name}
+                            status={liveStatus}
+                            showStatus
+                            size="md"
+                          />
+                          {unreadCount > 0 && (
+                            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center shadow-md animate-pulse">
+                              {unreadCount > 99 ? '99+' : unreadCount}
+                            </span>
+                          )}
+                        </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+                            <span className={cn(
+                              "text-xs truncate transition-colors",
+                              unreadCount > 0 ? "text-white font-bold tracking-tight" : "font-semibold text-foreground group-hover:text-primary"
+                            )}>
                               {item.friend.display_name}
                             </span>
                             <span className="text-[11px] text-muted-foreground/60 font-mono truncate">
                               @{item.friend.username}
                             </span>
+                            {unreadCount > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-primary text-primary-foreground shadow-sm animate-pulse">
+                                {unreadCount} new
+                              </span>
+                            )}
                           </div>
 
                           <div className="text-[11px] text-muted-foreground/60 truncate flex items-center gap-1.5 mt-0.5 font-normal">
@@ -517,7 +545,12 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         {/* Direct Message button */}
                         <button
                           onClick={() => handleStartChat(item.friend.id)}
-                          className="w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] hover:text-foreground text-muted-foreground flex items-center justify-center transition-colors"
+                          className={cn(
+                            "w-7 h-7 rounded-lg flex items-center justify-center transition-colors relative",
+                            unreadCount > 0
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "bg-white/[0.03] hover:bg-white/[0.08] hover:text-foreground text-muted-foreground"
+                          )}
                           title="Direct Message"
                           aria-label="Direct Message"
                         >

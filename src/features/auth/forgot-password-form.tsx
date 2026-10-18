@@ -50,10 +50,14 @@ export function ForgotPasswordForm() {
       });
 
       if (resetErr) {
-        setError(resetErr.message);
+        let msg = resetErr.message;
+        if (msg.toLowerCase().includes('rate limit')) {
+          msg = 'Email rate limit exceeded (Supabase limits free mailer to 3 emails/hour). If you recently requested a reset link, please check your inbox (including spam) or wait a short while.';
+        }
+        setError(msg);
         toast({
-          title: 'Recovery Failed',
-          description: resetErr.message,
+          title: 'Recovery Notice',
+          description: msg,
           type: 'error',
         });
       } else {

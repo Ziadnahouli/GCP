@@ -324,4 +324,43 @@ describe('Squad Group Call Decline Flow & Active Persistence Verification', () =
     expect(result.current.isSquadCallActive('conv-group-squad-444')).toBe(false);
     expect(result.current.activeSquadCalls.has('conv-group-squad-444')).toBe(false);
   });
+
+  it('keeps squad call active when a user disconnects while other squadmates remain inside', async () => {
+    const { CallProvider, useCallContext } = await import('@/features/calls/call-context');
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      React.createElement(CallProvider, null, children)
+    );
+
+    const { result } = renderHook(() => useCallContext(), { wrapper });
+
+    // Seed an active squad call with 2 participants (User 1 and Callee)
+    act(() => {
+      result.current.registerSquadCallActive?.('conv-group-squad-444', {
+        id: 'call-sess-squad-888',
+        conversation_id: 'conv-group-squad-444',
+        status: 'active',
+        participants: [
+          { id: 'user-caller-111', name: 'User One' },
+          { id: mockUser.id, name: 'Callee User' },
+        ],
+      });
+    });
+
+    expect(result.current.isSquadCallActive('conv-group-squad-444')).toBe(true);
+
+    // Callee disconnects from call
+    act(() => {
+      result.current.endCall();
+    });
+
+    // Callee is now idle locally
+    expect(result.current.callStatus).toBe('idle');
+
+    // CRITICAL: Squad call is STILL ACTIVE on callee side because User One is still inside!
+    expect(result.current.isSquadCallActive('conv-group-squad-444')).toBe(true);
+    expect(result.current.activeSquadCalls.has('conv-group-squad-444')).toBe(true);
+
+    // Database call_sessions was NOT updated with 'ended'
+    expect(mockDbUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'ended' }));
+  });
 });

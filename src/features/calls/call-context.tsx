@@ -3974,10 +3974,64 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const isGroup = isGroupCallRef.current || isGroupCall;
     const target = peerUserIdRef.current || peerUserId || incomingCallRef.current?.callerId;
     const convId = activeConversationIdRef.current || activeConversationId;
+    const lkRoom = livekitRoomRef.current;
 
     if (squadHeartbeatRef.current) {
       clearInterval(squadHeartbeatRef.current);
       squadHeartbeatRef.current = null;
+    }
+
+    // Check if other squadmates are still in this call:
+    const lkRemoteCount = lkRoom?.remoteParticipants?.size ?? 0;
+    const callParticipantsRemaining = participants.filter((p) => p.id !== user?.id);
+    const squadParticipantsRemaining = convId
+      ? (getSquadCallParticipants(convId) || []).filter((p: any) => p.id !== user?.id)
+      : [];
+    const activeSquadData = convId ? activeSquadCalls.get(convId) : null;
+    const activeSquadRemaining = activeSquadData?.participants?.filter((p: any) => p.id !== user?.id) || [];
+
+    const hasRemainingSquadmates = Boolean(
+      isGroup &&
+        (lkRemoteCount > 0 ||
+          callParticipantsRemaining.length > 0 ||
+          squadParticipantsRemaining.length > 0 ||
+          activeSquadRemaining.length > 0)
+    );
+
+    if (hasRemainingSquadmates && convId) {
+      console.log('[CallContext] User left squad call; other squadmates remain inside. Retaining active squad call state.');
+
+      // Update local activeSquadCalls so convId remains active and ready to rejoin immediately
+      setActiveSquadCalls((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(convId) || {};
+        const remaining = (existing.participants || squadParticipantsRemaining || callParticipantsRemaining).filter(
+          (p: any) => p.id !== user?.id
+        );
+        next.set(convId, {
+          ...existing,
+          id: existing.id || `call_${Date.now()}`,
+          conversation_id: convId,
+          status: 'active',
+          started_at: existing.started_at || new Date().toISOString(),
+          participants: remaining.length > 0 ? remaining : [{ id: 'peer', name: 'Squadmate' }],
+        });
+        return next;
+      });
+
+      // Broadcast participant_left to room so remaining participants know this user left
+      sendDirectSignal(`call-room-${convId}`, 'participant_left', {
+        conversationId: convId,
+        userId: user?.id,
+      });
+      sendSignalToRoom('participant_left', {
+        conversationId: convId,
+        userId: user?.id,
+      });
+
+      stopMediaTracks();
+      toast({ title: 'Disconnected', description: 'Left voice room. Squad call remains active.', type: 'info' });
+      return;
     }
 
     if (convId && isGroup) {

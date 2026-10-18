@@ -343,7 +343,8 @@ export function generateSanitizedReport(stats: DiagnosticsStats, extra?: { platf
     `- Echo Cancellation: ${stats.audioDevice?.echoCancellation ? 'Enabled' : 'Disabled'}`,
     `- Auto Gain Control: ${stats.audioDevice?.autoGainControl ? 'Enabled' : 'Disabled'}`,
     `- Hardware Noise Suppression: ${stats.audioDevice?.noiseSuppression ? 'Enabled' : 'Disabled'}`,
-    `- Studio-Grade DSP Filter Chain: ${stats.isNoiseSuppressionEnabled ? 'Active (Highpass, Notch, Gate, Comp)' : 'Bypassed'}`,
+    `- GCP Studio AudioWorklet Engine: ${stats.isNoiseSuppressionEnabled ? 'Active (Real-time AudioWorklet, 80Hz Cut, 2.8kHz Boost, 7.5kHz Tamer, Dynamics Comp)' : 'Bypassed'}`,
+    `- Voice Processing Mode: ${stats.isNoiseSuppressionEnabled ? 'GCP Studio Noise Cancellation (0ms Server Latency)' : 'Raw Pass-Through'}`,
     `- Krisp AI Noise Filtering: ${stats.isKrispActive ? 'Active' : 'Inactive'}`,
     `- Microphone Input Level: ${stats.isMicMuted ? 'Muted (0%)' : `${stats.micLevel ?? 0}%`}`,
     '',
@@ -884,9 +885,9 @@ export function NetworkDiagnostics({
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
-                <span className="text-muted-foreground">DSP Noise Gate</span>
+                <span className="text-muted-foreground">GCP Noise Filter</span>
                 <Badge variant={currentStats.isNoiseSuppressionEnabled ? 'success' : 'outline'} className="text-[9px] px-1.5 py-0">
-                  {currentStats.isNoiseSuppressionEnabled ? 'Active' : 'Off'}
+                  {currentStats.isNoiseSuppressionEnabled ? 'Studio Grade' : 'Off'}
                 </Badge>
               </div>
               <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
@@ -902,9 +903,9 @@ export function NetworkDiagnostics({
                 </Badge>
               </div>
               <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
-                <span className="text-muted-foreground">Krisp AI Model</span>
-                <Badge variant={currentStats.isKrispActive ? 'success' : 'outline'} className="text-[9px] px-1.5 py-0">
-                  {currentStats.isKrispActive ? 'Ready' : 'Off'}
+                <span className="text-muted-foreground">AudioWorklet VAD</span>
+                <Badge variant={currentStats.isNoiseSuppressionEnabled ? 'success' : 'outline'} className="text-[9px] px-1.5 py-0">
+                  {currentStats.isNoiseSuppressionEnabled ? 'Real-Time (0ms)' : 'Off'}
                 </Badge>
               </div>
             </div>

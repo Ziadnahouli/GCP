@@ -801,14 +801,18 @@ export function CallModal({
               : 'Voice Call'}
           </span>
           {isLiveKitActive ? (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono ml-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-              • LiveKit SFU • Krisp AI
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-cyan-400 font-mono ml-1 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">
+              • Squad LiveKit SFU
             </span>
           ) : isNoiseSuppressionEnabled ? (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400/80 font-mono ml-1">
-              • AI Noise Filter
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono ml-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+              • Direct P2P • GCP Studio Filter
             </span>
-          ) : null}
+          ) : (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-zinc-400 font-mono ml-1">
+              • Direct P2P
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -1172,15 +1176,11 @@ export function CallModal({
                   : 'bg-white/[0.05] text-muted-foreground hover:bg-white/[0.08]'
               )}
               title={
-                isLiveKitActive
-                  ? isNoiseSuppressionEnabled
-                    ? 'Krisp AI Noise Filter ON'
-                    : 'Krisp AI Noise Filter OFF'
-                  : isNoiseSuppressionEnabled
-                  ? 'Noise Filter ON'
-                  : 'Noise Filter OFF'
+                isNoiseSuppressionEnabled
+                  ? 'GCP Studio Noise Cancellation ON (AudioWorklet)'
+                  : 'GCP Studio Noise Cancellation OFF'
               }
-              aria-label={isNoiseSuppressionEnabled ? 'Disable noise filter' : 'Enable noise filter'}
+              aria-label={isNoiseSuppressionEnabled ? 'Disable GCP noise filter' : 'Enable GCP noise filter'}
             >
               <ShieldCheck className="w-4 h-4" />
             </button>

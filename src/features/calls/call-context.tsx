@@ -8,6 +8,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
 import { soundboardEngine, SoundboardClip } from '@/lib/soundboard/audio-engine';
+import { createGcpNoisePipeline, GcpNoisePipeline } from '@/lib/webrtc/gcp-noise-cancellation';
 import {
   DEFAULT_RTC_CONFIG,
   cleanIceCandidate,
@@ -350,6 +351,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Web Audio Studio-Grade DSP Noise Suppression references
   const rawMicStreamRef = React.useRef<MediaStream | null>(null);
   const dspAudioCtxRef = React.useRef<AudioContext | null>(null);
+  const gcpNoisePipelineRef = React.useRef<GcpNoisePipeline | null>(null);
   const dspFilterNodesRef = React.useRef<{
     source: MediaStreamAudioSourceNode;
     highpass: BiquadFilterNode;
@@ -578,17 +580,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('nexus_noise_suppression', String(nextState));
     } catch {}
 
-    // 1. Update live DSP audio graph nodes immediately
-    if (dspFilterNodesRef.current && dspAudioCtxRef.current) {
-      const ctx = dspAudioCtxRef.current;
-      const { notch, highshelf, gateGain } = dspFilterNodesRef.current;
+    // 1. Update GCP Studio AudioWorklet Noise Pipeline immediately
+    if (gcpNoisePipelineRef.current) {
       try {
-        notch.gain.setValueAtTime(nextState ? 2.5 : 0, ctx.currentTime);
-        highshelf.gain.setValueAtTime(nextState ? -4.5 : 0, ctx.currentTime);
-        if (!nextState) {
-          gateGain.gain.cancelScheduledValues(ctx.currentTime);
-          gateGain.gain.setValueAtTime(1.0, ctx.currentTime);
-        }
+        gcpNoisePipelineRef.current.setNoiseSuppression(nextState);
       } catch {}
     }
 
@@ -608,7 +603,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // 3. Toggle Krisp AI neural noise filter if active
+    // 3. Toggle Krisp AI neural noise filter if active (for LiveKit multi-party rooms)
     if (krispProcessorRef.current) {
       try {
         krispProcessorRef.current.setEnabled(nextState);
@@ -618,15 +613,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     toast({
-      title: nextState
-        ? isLiveKitActive
-          ? 'Krisp AI Noise Filter Active'
-          : 'Studio Noise Cancellation Active'
-        : 'Noise Suppression Off',
+      title: nextState ? 'GCP Studio Noise Cancellation Active' : 'Noise Suppression Off',
       description: nextState
-        ? isLiveKitActive
-          ? 'LiveKit Cloud neural acoustic isolation: keyboard clicks, background noise removed.'
-          : 'Acoustic DSP active: room rumble, keyboard clicks, and fan hiss removed.'
+        ? 'Real-time AudioWorklet noise gate active: keyboard clicks, fan hum, and breathing eliminated.'
         : 'Raw microphone pass-through active.',
       type: nextState ? 'success' : 'info',
       duration: 2500,
@@ -775,7 +764,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setIsKrispActive(false);
     mediaTransportRef.current = 'none';
 
-    // Clean up DSP noise cancellation pipeline
+    // Clean up GCP Studio DSP noise cancellation pipeline
+    if (gcpNoisePipelineRef.current) {
+      try {
+        gcpNoisePipelineRef.current.cleanup();
+      } catch {}
+      gcpNoisePipelineRef.current = null;
+    }
     if (dspFilterNodesRef.current?.animFrame) {
       cancelAnimationFrame(dspFilterNodesRef.current.animFrame);
     }
@@ -823,21 +818,27 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       pcRef.current = null;
     }
 
-    if (supabase) {
-      outboundChannelsRef.current.forEach((ch) => {
-        try {
-          supabase.removeChannel(ch);
-        } catch {}
-      });
-    }
+    const channelsToClean = Array.from(outboundChannelsRef.current.values());
     outboundChannelsRef.current.clear();
+    if (supabase && channelsToClean.length > 0) {
+      setTimeout(() => {
+        channelsToClean.forEach((ch) => {
+          try {
+            supabase.removeChannel(ch);
+          } catch {}
+        });
+      }, 600);
+    }
 
     if (roomChannelRef.current && supabase) {
-      try {
-        roomChannelRef.current.unsubscribe();
-        supabase.removeChannel(roomChannelRef.current);
-      } catch {}
+      const rCh = roomChannelRef.current;
       roomChannelRef.current = null;
+      setTimeout(() => {
+        try {
+          rCh.unsubscribe();
+          supabase.removeChannel(rCh);
+        } catch {}
+      }, 600);
     }
 
     if (sessionStatusChannelRef.current && supabase) {
@@ -1456,134 +1457,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         rawStream.getAudioTracks().forEach((t) => { t.enabled = false; });
       }
 
-      // Construct multi-stage studio voice DSP pipeline
+      // Initialize GCP Studio AudioWorklet Noise Cancellation Pipeline
       let finalAudioTrack = rawStream.getAudioTracks()[0];
       try {
-        const AudioCtx =
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        if (AudioCtx && finalAudioTrack) {
-          const ctx = new AudioCtx({ latencyHint: 'interactive' });
-          dspAudioCtxRef.current = ctx;
-          if (ctx.state === 'suspended') {
-            ctx.resume().catch(() => {});
+        if (finalAudioTrack) {
+          if (gcpNoisePipelineRef.current) {
+            try { gcpNoisePipelineRef.current.cleanup(); } catch {}
+            gcpNoisePipelineRef.current = null;
           }
-
-          const source = ctx.createMediaStreamSource(new MediaStream([finalAudioTrack]));
-
-          // 1. High-Pass Filter (85 Hz) - removes desk thumps, AC hum, sub-bass rumble
-          const highpass = ctx.createBiquadFilter();
-          highpass.type = 'highpass';
-          highpass.frequency.setValueAtTime(85, ctx.currentTime);
-          highpass.Q.setValueAtTime(0.707, ctx.currentTime);
-
-          // 2. Vocal Formant Peaking Filter (2.8 kHz, +2.5 dB) - sharpens voice clarity
-          const notch = ctx.createBiquadFilter();
-          notch.type = 'peaking';
-          notch.frequency.setValueAtTime(2800, ctx.currentTime);
-          notch.gain.setValueAtTime(isNoiseSuppressionEnabled ? 2.5 : 0, ctx.currentTime);
-          notch.Q.setValueAtTime(1.1, ctx.currentTime);
-
-          // 3. High-Shelf Filter (7.5 kHz, -4.5 dB) - tames mic preamp hiss, fan whine
-          const highshelf = ctx.createBiquadFilter();
-          highshelf.type = 'highshelf';
-          highshelf.frequency.setValueAtTime(7500, ctx.currentTime);
-          highshelf.gain.setValueAtTime(isNoiseSuppressionEnabled ? -4.5 : 0, ctx.currentTime);
-
-          // 4. Downward Expander / Noise Gate Gain Node
-          const gateGain = ctx.createGain();
-          gateGain.gain.setValueAtTime(1.0, ctx.currentTime);
-
-          // 5. Studio Vocal Dynamics Compressor
-          const compressor = ctx.createDynamicsCompressor();
-          compressor.threshold.setValueAtTime(-24, ctx.currentTime);
-          compressor.knee.setValueAtTime(10, ctx.currentTime);
-          compressor.ratio.setValueAtTime(4, ctx.currentTime);
-          compressor.attack.setValueAtTime(0.003, ctx.currentTime);
-          compressor.release.setValueAtTime(0.12, ctx.currentTime);
-
-          // 6. Analyser Node for voice activity level measurement
-          const analyser = ctx.createAnalyser();
-          analyser.fftSize = 512;
-          analyser.smoothingTimeConstant = 0.2;
-
-          // 7. Destination
-          const destination = ctx.createMediaStreamDestination();
-
-          source.connect(highpass);
-          highpass.connect(notch);
-          notch.connect(highshelf);
-          highshelf.connect(gateGain);
-          gateGain.connect(compressor);
-          compressor.connect(destination);
-          highshelf.connect(analyser);
-
-          // Adaptive Voice Activity Noise Gate with soft downward expansion (prevents quiet voice cut-off)
-          const pcmBuffer = new Float32Array(analyser.fftSize);
-          let isGateOpen = false;
-          let lastSpeechTime = performance.now();
-          const GATE_THRESHOLD = 0.003; // Calibrated for quiet mics and soft voices
-          const GATE_HOLD_MS = 300; // Extra speech tail hold time to prevent clipping word endings
-
-          const updateGate = () => {
-            if (ctx.state === 'closed') return;
-            if (ctx.state === 'suspended') {
-              ctx.resume().catch(() => {});
+          const pipeline = await createGcpNoisePipeline(rawStream, isNoiseSuppressionEnabled);
+          if (pipeline) {
+            gcpNoisePipelineRef.current = pipeline;
+            const procTrack = pipeline.outputStream.getAudioTracks()[0];
+            if (procTrack) {
+              finalAudioTrack = procTrack;
             }
-            analyser.getFloatTimeDomainData(pcmBuffer);
-            let sumSq = 0;
-            for (let i = 0; i < pcmBuffer.length; i++) {
-              sumSq += pcmBuffer[i] * pcmBuffer[i];
-            }
-            const rms = Math.sqrt(sumSq / pcmBuffer.length);
-            const now = performance.now();
-
-            if (isNoiseSuppressionEnabled) {
-              if (rms > GATE_THRESHOLD) {
-                lastSpeechTime = now;
-                if (!isGateOpen) {
-                  isGateOpen = true;
-                  gateGain.gain.cancelScheduledValues(ctx.currentTime);
-                  gateGain.gain.linearRampToValueAtTime(1.0, ctx.currentTime + 0.008);
-                }
-              } else {
-                if (isGateOpen && now - lastSpeechTime > GATE_HOLD_MS) {
-                  isGateOpen = false;
-                  gateGain.gain.cancelScheduledValues(ctx.currentTime);
-                  // Full acoustic downward expansion (-54 dB floor) so fans, hum, and keyboards are silenced when silent
-                  gateGain.gain.linearRampToValueAtTime(0.002, ctx.currentTime + 0.04);
-                }
-              }
-            } else {
-              gateGain.gain.cancelScheduledValues(ctx.currentTime);
-              gateGain.gain.setValueAtTime(1.0, ctx.currentTime);
-            }
-
-            if (dspFilterNodesRef.current) {
-              dspFilterNodesRef.current.animFrame = requestAnimationFrame(updateGate);
-            }
-          };
-
-          const animFrame = requestAnimationFrame(updateGate);
-          dspFilterNodesRef.current = {
-            source,
-            highpass,
-            notch,
-            highshelf,
-            gateGain,
-            compressor,
-            destination,
-            analyser,
-            animFrame,
-          };
-
-          const dspTrack = destination.stream.getAudioTracks()[0];
-          if (dspTrack) {
-            finalAudioTrack = dspTrack;
           }
         }
       } catch (dspErr) {
-        console.warn('[CallAudio] Web Audio DSP initialization fallback:', dspErr);
+        console.warn('[CallAudio] GCP Noise Pipeline initialization fallback:', dspErr);
       }
 
       // Assemble final stream
@@ -3049,12 +2941,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    // Connect LiveKit Cloud SFU with Krisp AI Filter
-    const livekitOk = await connectLiveKitCall(conversationId, stream, callSessionId);
-    if (activeCallSessionIdRef.current !== callSessionId) return;
+    // In 1-on-1 calls, route directly via Direct WebRTC P2P for ultra-low latency (10-30ms) & local GCP noise processing.
+    // For group squad calls (3+ participants), connect to LiveKit Cloud SFU.
+    let livekitOk = false;
+    if (isGroup) {
+      livekitOk = await connectLiveKitCall(conversationId, stream, callSessionId);
+      if (activeCallSessionIdRef.current !== callSessionId) return;
 
-    if (pttActive && livekitRoomRef.current?.localParticipant) {
-      livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+      if (pttActive && livekitRoomRef.current?.localParticipant) {
+        livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+      }
     }
 
     // Setup WebRTC Peer Connection with TURN relay support and candidate pre-fetching
@@ -3066,10 +2962,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     if (livekitOk) {
       mediaTransportRef.current = 'livekit';
-      console.log('[CallContext] LiveKit SFU media active. Suppressing duplicate native WebRTC audio transmission.');
+      console.log('[CallContext] Squad Call: LiveKit SFU media active.');
     } else {
       mediaTransportRef.current = 'webrtc';
-      console.log('[CallContext] LiveKit unavailable. Activating native WebRTC P2P fallback audio transport.');
+      console.log('[CallContext] 1-on-1 Direct P2P active (10-30ms ping target) with GCP Studio Noise Filter.');
       if (stream) {
         stream.getTracks().forEach((track) => {
           track.enabled = true;
@@ -3525,12 +3421,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    // Connect LiveKit Cloud SFU with Krisp AI Filter
-    const livekitOk = await connectLiveKitCall(conversationId, stream, callSessionId);
-    if (activeCallSessionIdRef.current !== callSessionId) return;
+    // In 1-on-1 calls, route directly via Direct WebRTC P2P for ultra-low latency (10-30ms) & local GCP noise processing.
+    // For group squad calls (3+ participants), connect to LiveKit Cloud SFU.
+    let livekitOk = false;
+    if (incomingCall.isGroup) {
+      livekitOk = await connectLiveKitCall(conversationId, stream, callSessionId);
+      if (activeCallSessionIdRef.current !== callSessionId) return;
 
-    if (pttActive && livekitRoomRef.current?.localParticipant) {
-      livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+      if (pttActive && livekitRoomRef.current?.localParticipant) {
+        livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+      }
     }
 
     // Setup WebRTC Peer Connection with TURN relay and candidate pre-fetching
@@ -3542,16 +3442,52 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     if (livekitOk) {
       mediaTransportRef.current = 'livekit';
-      console.log('[CallContext] Callee LiveKit SFU media active. Suppressing duplicate native WebRTC audio transmission.');
+      console.log('[CallContext] Callee Squad Call: LiveKit SFU media active.');
     } else {
       mediaTransportRef.current = 'webrtc';
-      console.log('[CallContext] Callee LiveKit unavailable. Activating native WebRTC P2P fallback audio transport.');
+      console.log('[CallContext] Callee 1-on-1 Direct P2P active (10-30ms ping target) with GCP Studio Noise Filter.');
       if (stream) {
         stream.getTracks().forEach((track) => {
           track.enabled = true;
           pc.addTrack(track, stream);
         });
       }
+    }
+
+    // Realtime postgres_changes listener on call_sessions for this conversation (ensures callee exits immediately if caller ends)
+    if (conversationId && supabase) {
+      if (sessionStatusChannelRef.current) {
+        try {
+          supabase.removeChannel(sessionStatusChannelRef.current);
+        } catch {}
+      }
+      const sessionChan = supabase
+        .channel(`call-status-sync-${conversationId}-${Date.now()}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'call_sessions',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload: any) => {
+            const newStatus = payload?.new?.status;
+            if (newStatus === 'rejected') {
+              if (isGroupCallRef.current) return;
+              console.log('[CallSignaling] Instant call_rejected from Postgres call_sessions update on callee');
+              toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
+              stopMediaTracks();
+            } else if (newStatus === 'ended') {
+              if (isGroupCallRef.current) return;
+              console.log('[CallSignaling] Instant call_ended from Postgres call_sessions update on callee');
+              toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
+              stopMediaTracks();
+            }
+          }
+        );
+      sessionChan.subscribe();
+      sessionStatusChannelRef.current = sessionChan;
     }
 
     pc.ontrack = (event) => {

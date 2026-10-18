@@ -236,7 +236,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           .from('call_sessions')
           .select('id, caller_id, status, started_at')
           .eq('conversation_id', conversationId)
-          .in('status', ['active', 'ringing', 'in_call'])
+          .in('status', ['active', 'ringing'])
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();

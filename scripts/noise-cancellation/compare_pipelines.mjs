@@ -260,106 +260,49 @@ function runNewPipeline(input) {
     const bpRms = Math.sqrt(sumBpSq / FRAME);
     const voicedBandRatio = frameRms > 1e-5 ? bpRms / frameRms : 0.0;
 
-    // Dual-Pass RNNoise (Agreement via Math.min)
+    // Dual-Pass RNNoise (Weighted agreement: pass 1 primary, pass 2 secondary)
     const vad1 = mod._rnnoise_process_frame(state1, midPtr, inPtr);
     const vad2 = mod._rnnoise_process_frame(state2, outPtr, midPtr);
-    const combinedVad = Math.min(vad1, vad2);
+    const combinedVad = vad1 * 0.70 + vad2 * 0.30;
     vadSmooth = vadSmooth * 0.70 + combinedVad * 0.30;
 
-    // Relative Proximity Threshold (-22dB)
-    if (combinedVad > 0.85 && speechConfirmCount >= 2) {
+    // Relative Proximity Threshold
+    if (combinedVad > 0.75 && speechConfirmCount >= 1) {
       if (frameRms > speechPeakRms) speechPeakRms = frameRms;
     }
     speechPeakRms *= 0.99995;
-    const minSpeechRms = Math.max(0.003, speechPeakRms * 0.08);
+    const minSpeechRms = Math.max(0.001, speechPeakRms * 0.04);
 
     const isFrameSpeech =
-      (combinedVad >= 0.68) &&
-      (zcr < 0.24) &&
+      (combinedVad >= 0.50) &&
+      (zcr < 0.35) &&
       (frameRms > minSpeechRms) &&
-      (voicedBandRatio > 0.55) &&
-      (crestFactor < 5.5);
+      (voicedBandRatio > 0.25) &&
+      (crestFactor < 8.0);
 
     if (isFrameSpeech) {
-      speechConfirmCount++;
+      speechConfirmCount = Math.min(5, speechConfirmCount + 1);
     } else {
-      speechConfirmCount = 0;
+      speechConfirmCount = Math.max(0, speechConfirmCount - 1);
     }
-    const isSpeechConfirmed = speechConfirmCount >= 2;
+    const isSpeechConfirmed = isFrameSpeech || (speechConfirmCount >= 1);
 
-    // Sub-Band Noise Tracking
-    let lowBandSq = 0, highBandSq = 0;
-    for (let i = 0; i < FRAME; i++) {
-      const s = mod.HEAPF32[outOffset + i] / 32767.0;
-      const lp = lp180_b0 * s + lp180_d1;
-      lp180_d1 = lp180_b1 * s - lp180_a1 * lp + lp180_d2;
-      lp180_d2 = lp180_b2 * s - lp180_a2 * lp;
-      lowBandSq += lp * lp;
-
-      const hp = hp3200_b0 * s + hp3200_d1;
-      hp3200_d1 = hp3200_b1 * s - hp3200_a1 * hp + hp3200_d2;
-      hp3200_d2 = hp3200_b2 * s - hp3200_a2 * hp;
-      highBandSq += hp * hp;
-    }
-    const lowRms = Math.sqrt(lowBandSq / FRAME);
-    const highRms = Math.sqrt(highBandSq / FRAME);
-
-    if (!isSpeechConfirmed) {
-      noiseFloorLow = noiseFloorLow * 0.95 + lowRms * 0.05;
-      noiseFloorHigh = noiseFloorHigh * 0.95 + highRms * 0.05;
-    }
-
-    let targetLowGain = 1.0;
-    let targetHighGain = 1.0;
     if (isSpeechConfirmed) {
-      if (lowRms < noiseFloorLow * 2.0) targetLowGain = Math.max(0.08, (lowRms - noiseFloorLow) / (noiseFloorLow + 1e-6));
-      if (highRms < noiseFloorHigh * 2.0) targetHighGain = Math.max(0.08, (highRms - noiseFloorHigh) / (noiseFloorHigh + 1e-6));
-    } else {
-      targetLowGain = 0.0001;
-      targetHighGain = 0.0001;
+      hangover = Math.floor(sampleRate * 0.220);
     }
 
-    if (!hasLookahead) {
-      for (let i = 0; i < FRAME; i++) {
-        lookaheadBuffer[i] = mod.HEAPF32[outOffset + i] / 32767.0;
-      }
-      hasLookahead = true;
-    } else {
-      const outOff = (f - 1) * FRAME;
-      for (let i = 0; i < FRAME; i++) {
-        const rawNeural = lookaheadBuffer[i];
-        currentLowGain += (targetLowGain - currentLowGain) * 0.005;
-        currentHighGain += (targetHighGain - currentHighGain) * 0.005;
-
-        const sLp = lp180_b0 * rawNeural + lp180_d1;
-        const sHp = hp3200_b0 * rawNeural + hp3200_d1;
-        const sMid = rawNeural - sLp - sHp;
-        const stage3 = sMid + sLp * currentLowGain + sHp * currentHighGain;
-
-        if (isSpeechConfirmed) {
-          hangover = Math.floor(sampleRate * 0.180);
-        }
-        if (isSpeechConfirmed || hangover > 0) {
-          if (!isSpeechConfirmed) hangover--;
-          gateGain += (1.0 - gateGain) * 0.010;
-        } else {
-          gateGain += (0.0005 - gateGain) * 0.0002;
-        }
-
-        out[outOff + i] = stage3 * gateGain;
-      }
-
-      for (let i = 0; i < FRAME; i++) {
-        lookaheadBuffer[i] = mod.HEAPF32[outOffset + i] / 32767.0;
-      }
-    }
-  }
-
-  // Flush remaining lookahead frame
-  if (hasLookahead) {
-    const outOff = (numFrames - 1) * FRAME;
+    const outOff = f * FRAME;
     for (let i = 0; i < FRAME; i++) {
-      out[outOff + i] = lookaheadBuffer[i] * gateGain;
+      const rawNeural = mod.HEAPF32[outOffset + i] / 32767.0;
+
+      if (isSpeechConfirmed || hangover > 0) {
+        if (!isSpeechConfirmed) hangover--;
+        gateGain += (1.0 - gateGain) * 0.010;
+      } else {
+        gateGain += (0.0005 - gateGain) * 0.0002;
+      }
+
+      out[outOff + i] = rawNeural * gateGain;
     }
   }
 
@@ -383,9 +326,9 @@ for (let i = 2000; i < 14400; i++) {
 quietRmsOld = Math.sqrt(quietRmsOld / 12400);
 quietRmsNew = Math.sqrt(quietRmsNew / 12400);
 
-// Measure background noise leakage DURING active speech (around click at 1.0s, sample 48000 + 1000 + 480 delay)
+// Measure background noise leakage DURING active speech (around click at 1.0s, sample 48000 + 1000)
 const clickSampleIn = 48000 + 1000;
-const clickSampleOut = clickSampleIn + 480;
+const clickSampleOut = clickSampleIn;
 
 let clickResidualOld = 0, clickResidualNew = 0;
 for (let i = 0; i < 240; i++) {

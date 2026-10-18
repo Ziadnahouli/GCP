@@ -39,8 +39,6 @@ class GcpKrispNoiseProcessor extends AudioWorkletProcessor {
 
     // Scratch frame buffers for zero-allocation processing
     this.frameBuffer = new Float32Array(this.FRAME_SIZE);
-    this.lookaheadBuffer = new Float32Array(this.FRAME_SIZE);
-    this.hasLookahead = false;
 
     // State flags
     this.isReady = false;
@@ -101,42 +99,7 @@ class GcpKrispNoiseProcessor extends AudioWorkletProcessor {
     this.bp_d1 = 0.0;
     this.bp_d2 = 0.0;
 
-    // Sub-Band Filters for In-Speech Noise Floor Tracking:
-    // Low Rumble Band (<180Hz Lowpass Biquad)
-    const omegaLp180 = (2 * Math.PI * 180.0) / this.sampleRate;
-    const cosLp180 = Math.cos(omegaLp180);
-    const sinLp180 = Math.sin(omegaLp180);
-    const alphaLp180 = sinLp180 / (2 * 0.7071067811865476);
-    const a0Lp180 = 1.0 + alphaLp180;
-    this.lp180_b0 = ((1 - cosLp180) / 2) / a0Lp180;
-    this.lp180_b1 = (1 - cosLp180) / a0Lp180;
-    this.lp180_b2 = ((1 - cosLp180) / 2) / a0Lp180;
-    this.lp180_a1 = (-2 * cosLp180) / a0Lp180;
-    this.lp180_a2 = (1 - alphaLp180) / a0Lp180;
-    this.lp180_d1 = 0.0;
-    this.lp180_d2 = 0.0;
-
-    // High Sibilance / Hiss Band (>3200Hz Highpass Biquad)
-    const omegaHp3200 = (2 * Math.PI * 3200.0) / this.sampleRate;
-    const cosHp3200 = Math.cos(omegaHp3200);
-    const sinHp3200 = Math.sin(omegaHp3200);
-    const alphaHp3200 = sinHp3200 / (2 * 0.7071067811865476);
-    const a0Hp3200 = 1.0 + alphaHp3200;
-    this.hp3200_b0 = ((1 + cosHp3200) / 2) / a0Hp3200;
-    this.hp3200_b1 = (-(1 + cosHp3200)) / a0Hp3200;
-    this.hp3200_b2 = ((1 + cosHp3200) / 2) / a0Hp3200;
-    this.hp3200_a1 = (-2 * cosHp3200) / a0Hp3200;
-    this.hp3200_a2 = (1 - alphaHp3200) / a0Hp3200;
-    this.hp3200_d1 = 0.0;
-    this.hp3200_d2 = 0.0;
-
-    // Tracked Sub-Band Noise Floors & Gains
-    this.noiseFloorLow = 0.0005;
-    this.noiseFloorHigh = 0.0005;
-    this.currentLowGain = 1.0;
-    this.currentHighGain = 1.0;
-
-    // Speaker Proximity Tracker (Peak Speech RMS, -22dB gate window)
+    // Speaker Proximity Tracker (Peak Speech RMS, relative gate window)
     this.speechPeakRms = 0.035;
 
     // VAD & Voice Discriminator
@@ -148,7 +111,7 @@ class GcpKrispNoiseProcessor extends AudioWorkletProcessor {
     // Stage 4: Hysteresis Voice Activity Gate (-80 dB / -66 dB Deep Silence Floor)
     this.gateAttackAlpha = 1.0 - Math.exp(-1.0 / (this.sampleRate * 0.002));  // 2ms
     this.gateReleaseAlpha = 1.0 - Math.exp(-1.0 / (this.sampleRate * 0.250)); // 250ms
-    this.hangoverMaxSamples = Math.floor(this.sampleRate * 0.180);           // 180ms
+    this.hangoverMaxSamples = Math.floor(this.sampleRate * 0.220);           // 220ms
     this.hangoverRemaining = 0;
     this.gateFloorGain = 0.0005; // -66 dB balanced default
     this.currentGateGain = 1.0;
@@ -215,16 +178,16 @@ class GcpKrispNoiseProcessor extends AudioWorkletProcessor {
 
     if (mode === 'krisp-max' || mode === 'strong') {
       this.transientThreshold = 3.162; // 10 dB crest threshold
-      this.hangoverMaxSamples = Math.floor(this.sampleRate * 0.160);
+      this.hangoverMaxSamples = Math.floor(this.sampleRate * 0.200);
       this.gateFloorGain = 0.0001; // -80 dB deep silence floor
     } else if (mode === 'light') {
       this.transientThreshold = 5.011; // 14 dB crest threshold
-      this.hangoverMaxSamples = Math.floor(this.sampleRate * 0.220);
+      this.hangoverMaxSamples = Math.floor(this.sampleRate * 0.250);
       this.gateFloorGain = 0.005; // -46 dB floor
     } else {
       // balanced & rnnoise-hybrid
       this.transientThreshold = 3.981; // 12 dB
-      this.hangoverMaxSamples = Math.floor(this.sampleRate * 0.180);
+      this.hangoverMaxSamples = Math.floor(this.sampleRate * 0.220);
       this.gateFloorGain = 0.0005; // -66 dB floor
     }
   }
@@ -284,7 +247,6 @@ class GcpKrispNoiseProcessor extends AudioWorkletProcessor {
     }
     this.inCount = 0;
     this.outCount = 0;
-    this.hasLookahead = false;
   }
 
   process(inputs, outputs) {
@@ -312,7 +274,6 @@ class GcpKrispNoiseProcessor extends AudioWorkletProcessor {
       this.outWrite = 0;
       this.outRead = 0;
       this.outCount = 0;
-      this.hasLookahead = false;
       return true;
     }
 
@@ -440,8 +401,8 @@ class GcpKrispNoiseProcessor extends AudioWorkletProcessor {
       if (this.mode === 'balanced' || this.mode === 'strong' || this.mode === 'krisp-max' || this.mode === 'rnnoise-hybrid') {
         // Pass 2: Denoise Pass 1 output through denoiseState2 -> output in outPtr
         const vadProb2 = this.rnnModule._rnnoise_process_frame(this.denoiseState2, this.outPtr, this.midPtr);
-        // Both passes must agree that the frame is human speech!
-        combinedVad = Math.min(vadProb1, vadProb2);
+        // Weighted combination: pass 1 detects voice on raw speech, pass 2 provides secondary confirmation
+        combinedVad = vadProb1 * 0.70 + vadProb2 * 0.30;
       } else {
         // Light mode: single pass copy
         for (let i = 0; i < this.FRAME_SIZE; i++) {
@@ -452,150 +413,85 @@ class GcpKrispNoiseProcessor extends AudioWorkletProcessor {
       this.vadProb = combinedVad;
       this.vadSmooth = this.vadSmooth * 0.70 + combinedVad * 0.30;
 
-      // Upgrade 3: Track speaker's peak speech volume with slow decay
-      if (combinedVad > 0.85 && this.isSpeechConfirmed) {
+      // Track speaker's peak speech volume with slow decay
+      if (combinedVad > 0.75 && this.isSpeechConfirmed) {
         if (frameRms > this.speechPeakRms) {
           this.speechPeakRms = frameRms;
         }
       }
       this.speechPeakRms *= 0.99995;
 
-      // Relative Proximity Threshold: must be within -22dB (8%) of normal voice volume
-      const minSpeechRms = Math.max(0.003, this.speechPeakRms * 0.08);
-      const vadThreshold = (this.mode === 'krisp-max' || this.mode === 'strong') ? 0.76 : 0.68;
+      // Relative Proximity Threshold: relaxed to preserve full human speech (sibilants, plosives, whispers)
+      const minSpeechRms = Math.max(0.001, this.speechPeakRms * 0.04);
+      const vadThreshold = (this.mode === 'krisp-max' || this.mode === 'strong') ? 0.65 : 0.50;
 
       const isFrameSpeech =
         (combinedVad >= vadThreshold) &&
-        (zcr < 0.24) &&
+        (zcr < 0.35) &&
         (frameRms > minSpeechRms) &&
-        (voicedBandRatio > 0.55) &&
-        (crestFactor < 5.5);
+        (voicedBandRatio > 0.25) &&
+        (crestFactor < 8.0);
 
       if (isFrameSpeech) {
-        this.speechConfirmCount++;
+        this.speechConfirmCount = Math.min(5, this.speechConfirmCount + 1);
       } else {
-        this.speechConfirmCount = 0;
+        this.speechConfirmCount = Math.max(0, this.speechConfirmCount - 1);
       }
-      const isSpeechConfirmed = this.speechConfirmCount >= 2;
+      const isSpeechConfirmed = isFrameSpeech || (this.speechConfirmCount >= 1);
       this.isSpeechConfirmed = isSpeechConfirmed;
 
-      // Upgrade 2: Sub-Band Noise Floor Tracking & Wiener Attenuation
-      // Measure RMS in Low (<180Hz) and High (>3200Hz) bands
-      let lowBandSq = 0.0;
-      let highBandSq = 0.0;
-      for (let i = 0; i < this.FRAME_SIZE; i++) {
-        const s = heap[outOff + i] / 32767.0;
-        // Lowpass at 180Hz
-        const lp = this.lp180_b0 * s + this.lp180_d1;
-        this.lp180_d1 = this.lp180_b1 * s - this.lp180_a1 * lp + this.lp180_d2;
-        this.lp180_d2 = this.lp180_b2 * s - this.lp180_a2 * lp;
-        lowBandSq += lp * lp;
-
-        // Highpass at 3200Hz
-        const hp = this.hp3200_b0 * s + this.hp3200_d1;
-        this.hp3200_d1 = this.hp3200_b1 * s - this.hp3200_a1 * hp + this.hp3200_d2;
-        this.hp3200_d2 = this.hp3200_b2 * s - this.hp3200_a2 * hp;
-        highBandSq += hp * hp;
-      }
-      const lowRms = Math.sqrt(lowBandSq / this.FRAME_SIZE);
-      const highRms = Math.sqrt(highBandSq / this.FRAME_SIZE);
-
-      if (!isSpeechConfirmed) {
-        // Track stationary noise floor during non-speech
-        this.noiseFloorLow = this.noiseFloorLow * 0.95 + lowRms * 0.05;
-        this.noiseFloorHigh = this.noiseFloorHigh * 0.95 + highRms * 0.05;
-      }
-
-      // Compute in-speech sub-band suppression gains (+6dB SNR requirement above floor)
-      let targetLowGain = 1.0;
-      let targetHighGain = 1.0;
-
       if (isSpeechConfirmed) {
-        if (lowRms < this.noiseFloorLow * 2.0) {
-          targetLowGain = Math.max(0.08, (lowRms - this.noiseFloorLow) / (this.noiseFloorLow + 1e-6));
-        }
-        if (highRms < this.noiseFloorHigh * 2.0) {
-          targetHighGain = Math.max(0.08, (highRms - this.noiseFloorHigh) / (this.noiseFloorHigh + 1e-6));
-        }
-      } else {
-        targetLowGain = 0.0001;
-        targetHighGain = 0.0001;
+        this.hangoverRemaining = this.hangoverMaxSamples;
       }
 
-      // Lookahead Delay Buffer processing
-      if (!this.hasLookahead) {
-        for (let i = 0; i < this.FRAME_SIZE; i++) {
-          this.lookaheadBuffer[i] = heap[outOff + i] / 32767.0;
+      // Process 480 samples directly into outRing (zero startup latency & zero frame loss)
+      for (let i = 0; i < this.FRAME_SIZE; i++) {
+        const rawNeural = heap[outOff + i] / 32767.0;
+
+        // Stage 4: Hysteresis Voice Activity Gate
+        if (isSpeechConfirmed || this.hangoverRemaining > 0) {
+          if (!isSpeechConfirmed) this.hangoverRemaining--;
+          this.currentGateGain += this.gateAttackAlpha * (1.0 - this.currentGateGain);
+        } else {
+          this.currentGateGain += this.gateReleaseAlpha * (this.gateFloorGain - this.currentGateGain);
         }
-        this.hasLookahead = true;
-      } else {
-        // Process lookahead frame (frame N-1) with confirmed gate decision
-        for (let i = 0; i < this.FRAME_SIZE; i++) {
-          const rawNeural = this.lookaheadBuffer[i];
+        const stage4 = rawNeural * this.currentGateGain;
 
-          // Dynamic sub-band filtering (Wiener attenuation during speech)
-          this.currentLowGain += (targetLowGain - this.currentLowGain) * 0.005;
-          this.currentHighGain += (targetHighGain - this.currentHighGain) * 0.005;
+        // STAGE 5: Vocal Presence Restorer (4.2 kHz High-Shelf Exciter)
+        const shelfOut = this.shelf_b0 * stage4 + this.shelf_d1;
+        this.shelf_d1 = this.shelf_b1 * stage4 - this.shelf_a1 * shelfOut + this.shelf_d2;
+        this.shelf_d2 = this.shelf_b2 * stage4 - this.shelf_a2 * shelfOut;
 
-          const sLp = this.lp180_b0 * rawNeural + this.lp180_d1;
-          const sHp = this.hp3200_b0 * rawNeural + this.hp3200_d1;
-          const sMid = rawNeural - sLp - sHp;
-          const stage3 = sMid + sLp * this.currentLowGain + sHp * this.currentHighGain;
-
-          // Stage 4: Deep Silence Gate
-          if (isSpeechConfirmed) {
-            this.hangoverRemaining = this.hangoverMaxSamples;
-          }
-
-          if (isSpeechConfirmed || this.hangoverRemaining > 0) {
-            if (!isSpeechConfirmed) this.hangoverRemaining--;
-            this.currentGateGain += this.gateAttackAlpha * (1.0 - this.currentGateGain);
-          } else {
-            this.currentGateGain += this.gateReleaseAlpha * (this.gateFloorGain - this.currentGateGain);
-          }
-          const stage4 = stage3 * this.currentGateGain;
-
-          // STAGE 5: Vocal Presence Restorer (4.2 kHz High-Shelf Exciter)
-          const shelfOut = this.shelf_b0 * stage4 + this.shelf_d1;
-          this.shelf_d1 = this.shelf_b1 * stage4 - this.shelf_a1 * shelfOut + this.shelf_d2;
-          this.shelf_d2 = this.shelf_b2 * stage4 - this.shelf_a2 * shelfOut;
-
-          let stage5 = stage4;
-          if (this.vadSmooth > 0.75 && (isSpeechConfirmed || this.hangoverRemaining > 0)) {
-            const presenceBlend = Math.min(1.0, (this.vadSmooth - 0.75) / 0.25);
-            stage5 = stage4 * (1.0 - presenceBlend) + shelfOut * presenceBlend;
-          }
-
-          // Stage 6: Safe Speech-Gated AGC & Limiter
-          if ((isSpeechConfirmed || this.hangoverRemaining > 0) && combinedVad > 0.80) {
-            this.rmsEnergy = this.rmsEnergy * 0.999 + (stage5 * stage5) * 0.001;
-            const currentRms = Math.sqrt(Math.max(this.rmsEnergy, 0.0001));
-            const targetAgc = Math.min(1.35, Math.max(0.7, 0.1259 / currentRms));
-            this.currentAgcGain += (targetAgc - this.currentAgcGain) * 0.0005;
-          } else {
-            if (this.currentAgcGain > 1.0) {
-              this.currentAgcGain += (1.0 - this.currentAgcGain) * 0.001;
-            }
-          }
-
-          const leveled = stage5 * this.currentAgcGain;
-          const absVal = Math.abs(leveled);
-          let finalSample = leveled;
-          if (absVal > this.limiterThreshold) {
-            const excess = absVal - this.limiterThreshold;
-            finalSample = Math.sign(leveled) * (this.limiterThreshold + this.limiterHeadroom * Math.tanh(excess / this.limiterHeadroom));
-          }
-
-          this.outRing[this.outWrite] = finalSample;
-          this.outWrite = (this.outWrite + 1) % this.MAX_RING;
+        let stage5 = stage4;
+        if (this.vadSmooth > 0.70 && (isSpeechConfirmed || this.hangoverRemaining > 0)) {
+          const presenceBlend = Math.min(1.0, (this.vadSmooth - 0.70) / 0.30);
+          stage5 = stage4 * (1.0 - presenceBlend) + shelfOut * presenceBlend;
         }
 
-        // Store frame N into lookaheadBuffer
-        for (let i = 0; i < this.FRAME_SIZE; i++) {
-          this.lookaheadBuffer[i] = heap[outOff + i] / 32767.0;
+        // Stage 6: Safe Speech-Gated AGC & Limiter
+        if ((isSpeechConfirmed || this.hangoverRemaining > 0) && combinedVad > 0.70) {
+          this.rmsEnergy = this.rmsEnergy * 0.999 + (stage5 * stage5) * 0.001;
+          const currentRms = Math.sqrt(Math.max(this.rmsEnergy, 0.0001));
+          const targetAgc = Math.min(1.35, Math.max(0.7, 0.1259 / currentRms));
+          this.currentAgcGain += (targetAgc - this.currentAgcGain) * 0.0005;
+        } else {
+          if (this.currentAgcGain > 1.0) {
+            this.currentAgcGain += (1.0 - this.currentAgcGain) * 0.001;
+          }
         }
-        this.outCount += this.FRAME_SIZE;
+
+        const leveled = stage5 * this.currentAgcGain;
+        const absVal = Math.abs(leveled);
+        let finalSample = leveled;
+        if (absVal > this.limiterThreshold) {
+          const excess = absVal - this.limiterThreshold;
+          finalSample = Math.sign(leveled) * (this.limiterThreshold + this.limiterHeadroom * Math.tanh(excess / this.limiterHeadroom));
+        }
+
+        this.outRing[this.outWrite] = finalSample;
+        this.outWrite = (this.outWrite + 1) % this.MAX_RING;
       }
+      this.outCount += this.FRAME_SIZE;
 
       this.inCount -= this.FRAME_SIZE;
     }

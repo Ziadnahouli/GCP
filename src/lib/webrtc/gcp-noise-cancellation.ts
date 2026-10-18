@@ -94,7 +94,6 @@ export async function createGcpNoisePipeline(
   let ctx: AudioContext | null = null;
   let workletNode: AudioWorkletNode | null = null;
   let highpass: BiquadFilterNode | null = null;
-  let lowpass: BiquadFilterNode | null = null;
   let compressor: DynamicsCompressorNode | null = null;
   let fallbackGain: GainNode | null = null;
   let blobUrl: string | null = null;
@@ -114,12 +113,6 @@ export async function createGcpNoisePipeline(
     highpass.type = 'highpass';
     highpass.frequency.setValueAtTime(85, ctx.currentTime);
     highpass.Q.setValueAtTime(0.707, ctx.currentTime);
-
-    // 1b. Butterworth Low-Pass Pre-Filter (7800 Hz, Q = 0.707) - strips ultrasonic coil whine, mouse click air-snaps, and >8kHz hiss
-    lowpass = ctx.createBiquadFilter();
-    lowpass.type = 'lowpass';
-    lowpass.frequency.setValueAtTime(7800, ctx.currentTime);
-    lowpass.Q.setValueAtTime(0.707, ctx.currentTime);
 
     // 2. Load AudioWorklet module
     let workletLoaded = false;
@@ -220,17 +213,16 @@ export async function createGcpNoisePipeline(
     // 6. Destination Node
     const destination = ctx.createMediaStreamDestination();
 
-    // Connect audio signal chain: source -> highpass (85Hz) -> lowpass (7800Hz) -> worklet/gain -> compressor -> destination
+    // Connect audio signal chain: source -> highpass (85Hz) -> worklet/gain -> compressor -> destination
     source.connect(highpass);
-    highpass.connect(lowpass);
     if (workletNode) {
-      lowpass.connect(workletNode);
+      highpass.connect(workletNode);
       workletNode.connect(compressor);
     } else if (fallbackGain) {
-      lowpass.connect(fallbackGain);
+      highpass.connect(fallbackGain);
       fallbackGain.connect(compressor);
     } else {
-      lowpass.connect(compressor);
+      highpass.connect(compressor);
     }
     compressor.connect(destination);
 
@@ -259,7 +251,6 @@ export async function createGcpNoisePipeline(
       try {
         source.disconnect();
         highpass?.disconnect();
-        lowpass?.disconnect();
         workletNode?.disconnect();
         fallbackGain?.disconnect();
         compressor?.disconnect();

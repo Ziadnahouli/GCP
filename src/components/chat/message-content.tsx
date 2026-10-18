@@ -88,7 +88,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
 
   const isLive = isCallActive !== undefined
     ? isCallActive
-    : (sessionActive || (call.activeConversationId === squadCallConvId && (call.callStatus === 'in_call' || call.callStatus === 'incoming_ringing')));
+    : (sessionActive || (squadCallConvId && (call.activeSquadCalls?.get(squadCallConvId) || call.isSquadCallActive?.(squadCallConvId))) || (call.activeConversationId === squadCallConvId && (call.callStatus === 'in_call' || call.callStatus === 'incoming_ringing')));
 
   // Check if content contains a server invite
   const inviteMatch = React.useMemo(() => {

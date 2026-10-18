@@ -30,6 +30,7 @@ export interface CallParticipant {
 }
 
 export interface IncomingCallData {
+  id?: string;
   callerId: string;
   callerName: string;
   callerAvatar: string | null;
@@ -78,6 +79,8 @@ interface CallContextType {
   setMicMutedExplicit: (muted: boolean) => Promise<void>;
   setDeafenedExplicit: (deafened: boolean) => Promise<void>;
   forceMute: () => void;
+  activeSquadCalls: Map<string, any>;
+  isSquadCallActive: (conversationId?: string | null) => boolean;
 }
 
 export const CallContext = React.createContext<CallContextType | null>(null);
@@ -204,6 +207,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [isGroupCall, setIsGroupCall] = React.useState(false);
   const isGroupCallRef = React.useRef(false);
   isGroupCallRef.current = isGroupCall;
+
+  // Active squad calls tracker across groups
+  const [activeSquadCalls, setActiveSquadCalls] = React.useState<Map<string, any>>(new Map());
+  const squadHeartbeatRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const isSquadCallActive = React.useCallback(
+    (convId?: string | null) => {
+      if (!convId) return false;
+      if (activeSquadCalls.has(convId)) return true;
+      if (isGroupCallRef.current && activeConversationIdRef.current === convId && callStatusRef.current === 'in_call') return true;
+      if (incomingCallRef.current?.isGroup && incomingCallRef.current?.conversationId === convId) return true;
+      return false;
+    },
+    [activeSquadCalls]
+  );
 
   // Incoming call state
   const [incomingCall, setIncomingCall] = React.useState<IncomingCallData | null>(null);
@@ -2201,6 +2219,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         peerUserIdRef.current = payload.callerId;
         incomingCallRef.current = payload as IncomingCallData;
 
+        if (payload.isGroup && payload.conversationId) {
+          setActiveSquadCalls((prev) => {
+            const next = new Map(prev);
+            next.set(payload.conversationId, {
+              id: payload.id || `call_${Date.now()}`,
+              conversation_id: payload.conversationId,
+              caller_id: payload.callerId,
+              caller_name: payload.callerName,
+              status: 'active',
+              started_at: new Date().toISOString(),
+            });
+            return next;
+          });
+        }
+
         if (payload.callerZeroTierIp) {
           peerZeroTierIpRef.current = payload.callerZeroTierIp;
           setPeerZeroTierIpState(payload.callerZeroTierIp);
@@ -2280,6 +2313,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
         stopMediaTracksRef.current();
         setCallStatus('idle');
+      })
+      .on('broadcast', { event: 'squad_call_active' }, ({ payload }) => {
+        if (!payload?.conversation_id) return;
+        setActiveSquadCalls((prev) => {
+          const next = new Map(prev);
+          next.set(payload.conversation_id, payload);
+          return next;
+        });
+      })
+      .on('broadcast', { event: 'squad_call_ended' }, ({ payload }) => {
+        if (!payload?.conversation_id) return;
+        setActiveSquadCalls((prev) => {
+          const next = new Map(prev);
+          next.delete(payload.conversation_id);
+          return next;
+        });
       })
       .on('broadcast', { event: 'ice_restart_offer' }, async ({ payload }) => {
         if (!payload?.sdp || payload.senderId === user.id) return;
@@ -2420,22 +2469,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     isStartingCallRef.current = true;
 
     // Check if this conversation is a group
-    let isGroup = false;
+    let isGroup = Boolean(targetUserId && conversationId && targetUserId === conversationId);
     let groupName = 'Squad';
     try {
       const { data: convData } = await supabase
         .from('conversations')
-        .select('type, name')
+        .select('type, name, is_group')
         .eq('id', conversationId)
         .maybeSingle();
-      if (convData?.type === 'group') {
+      if (convData?.type === 'group' || (convData as any)?.is_group) {
         isGroup = true;
-        groupName = convData.name || 'Squad Group';
+      }
+      if (convData?.name) {
+        groupName = convData.name;
       }
     } catch {}
-
-    setIsGroupCall(isGroup);
-    isGroupCallRef.current = isGroup;
 
     // Fetch all other conversation members
     const { data: members } = await supabase
@@ -2443,6 +2491,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .select('user_id')
       .eq('conversation_id', conversationId)
       .neq('user_id', user.id);
+
+    if (members && members.length > 1) {
+      isGroup = true;
+    }
+
+    setIsGroupCall(isGroup);
+    isGroupCallRef.current = isGroup;
 
     let recipientId = targetUserId;
     if (!recipientId || recipientId === conversationId) {
@@ -2486,6 +2541,49 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       // IN GROUP CALL: Caller immediately enters the voice room
       setCallStatus('in_call');
       callStatusRef.current = 'in_call';
+
+      // Register squad call in active state
+      setActiveSquadCalls((prev) => {
+        const next = new Map(prev);
+        next.set(conversationId, {
+          id: callSessionId,
+          conversation_id: conversationId,
+          caller_id: user.id,
+          caller_name: profile?.display_name || user.email?.split('@')[0],
+          status: 'active',
+          started_at: new Date().toISOString(),
+        });
+        return next;
+      });
+
+      // Start periodic squad call heartbeat so squadmates always see active status
+      if (squadHeartbeatRef.current) clearInterval(squadHeartbeatRef.current);
+      squadHeartbeatRef.current = setInterval(() => {
+        if (callStatusRef.current === 'in_call' && isGroupCallRef.current) {
+          try {
+            const room = roomChannelRef.current;
+            if (room && room.state === 'joined') {
+              room.send({
+                type: 'broadcast',
+                event: 'squad_call_active',
+                payload: {
+                  id: callSessionId,
+                  conversation_id: conversationId,
+                  caller_id: user.id,
+                  caller_name: profile?.display_name || user.email?.split('@')[0],
+                  status: 'active',
+                  started_at: new Date().toISOString(),
+                },
+              }).catch(() => {});
+            }
+          } catch {}
+        } else {
+          if (squadHeartbeatRef.current) {
+            clearInterval(squadHeartbeatRef.current);
+            squadHeartbeatRef.current = null;
+          }
+        }
+      }, 3000);
 
       // Ring all squad members
       if (members && members.length > 0) {
@@ -3029,6 +3127,27 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         callStatusRef.current = 'in_call';
         setCallStatus('in_call');
       })
+      .on('broadcast', { event: 'query_squad_call' }, () => {
+        if (callStatusRef.current === 'in_call' && isGroupCallRef.current) {
+          try {
+            const room = roomChannelRef.current;
+            if (room && room.state === 'joined') {
+              room.send({
+                type: 'broadcast',
+                event: 'squad_call_active',
+                payload: {
+                  id: activeCallSessionIdRef.current || `call_${Date.now()}`,
+                  conversation_id: activeConversationIdRef.current || conversationId,
+                  caller_id: user.id,
+                  caller_name: profile?.display_name || user.email?.split('@')[0],
+                  status: 'active',
+                  started_at: new Date().toISOString(),
+                },
+              }).catch(() => {});
+            }
+          } catch {}
+        }
+      })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           flushRoomQueue();
@@ -3492,9 +3611,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // 4. REJECT INCOMING CALL
   const rejectCall = () => {
-    const isGroup = incomingCallRef.current?.isGroup || incomingCall?.isGroup;
-    const callerId = incomingCallRef.current?.callerId || incomingCall?.callerId;
-    const convId = incomingCallRef.current?.conversationId || incomingCall?.conversationId;
+    const inc = incomingCallRef.current || incomingCall;
+    const isGroup = Boolean(
+      inc?.isGroup ||
+      isGroupCallRef.current ||
+      isGroupCall ||
+      (inc?.conversationId && activeSquadCalls.has(inc.conversationId))
+    );
+    const callerId = inc?.callerId;
+    const convId = inc?.conversationId;
 
     if (!isGroup) {
       if (callerId) {
@@ -3534,6 +3659,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             .then(() => {}, () => {});
         } catch {}
       }
+    } else {
+      console.log('[CallSignaling] Callee dismissed squad call invitation; squad call stays active in background');
+      if (convId) {
+        setActiveSquadCalls((prev) => {
+          const next = new Map(prev);
+          next.set(convId, {
+            id: inc?.id || `call_${Date.now()}`,
+            conversation_id: convId,
+            caller_id: callerId || '',
+            caller_name: inc?.callerName || 'Squadmate',
+            status: 'active',
+            started_at: new Date().toISOString(),
+          });
+          return next;
+        });
+      }
     }
 
     // Stop ringtone and clean up incoming ringing state immediately
@@ -3552,9 +3693,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // 5. END ACTIVE CALL
   const endCall = () => {
-    const isGroup = isGroupCallRef.current;
+    const isGroup = isGroupCallRef.current || isGroupCall;
     const target = peerUserIdRef.current || peerUserId || incomingCallRef.current?.callerId;
     const convId = activeConversationIdRef.current || activeConversationId;
+
+    if (squadHeartbeatRef.current) {
+      clearInterval(squadHeartbeatRef.current);
+      squadHeartbeatRef.current = null;
+    }
+
+    if (convId && isGroup) {
+      setActiveSquadCalls((prev) => {
+        const next = new Map(prev);
+        next.delete(convId);
+        return next;
+      });
+    }
 
     if (!isGroup && target) {
       sendDirectSignal(`user-signals-${target}`, 'call_ended', {
@@ -4240,6 +4394,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       setMicMutedExplicit,
       setDeafenedExplicit,
       forceMute,
+      activeSquadCalls,
+      isSquadCallActive,
     }),
     [
       callStatus,
@@ -4277,6 +4433,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       setMicMutedExplicit,
       setDeafenedExplicit,
       forceMute,
+      activeSquadCalls,
+      isSquadCallActive,
     ]
   );
 

@@ -220,6 +220,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     (effectiveConversation?.members || []).length > 2;
 
   const [activeCallSession, setActiveCallSession] = React.useState<any>(null);
+  const callIsSquadCallActiveRef = React.useRef(call.isSquadCallActive);
+  callIsSquadCallActiveRef.current = call.isSquadCallActive;
 
   React.useEffect(() => {
     if (!conversationId || !supabase) {
@@ -237,7 +239,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();
-        setActiveCallSession(data);
+        if (data) {
+          setActiveCallSession(data);
+        } else if (!callIsSquadCallActiveRef.current?.(conversationId)) {
+          setActiveCallSession(null);
+        }
       } catch {}
     };
 
@@ -269,7 +275,15 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       .on('broadcast', { event: 'squad_call_ended' }, () => {
         setActiveCallSession(null);
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          roomChannel.send({
+            type: 'broadcast',
+            event: 'query_squad_call',
+            payload: { conversation_id: conversationId },
+          }).catch(() => {});
+        }
+      });
 
     // Periodic poll for active squad call sessions every 4s
     const pollTimer = setInterval(() => {
@@ -286,6 +300,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
   const isSquadCallActive = Boolean(
     activeCallSession ||
+    (conversationId && (call.activeSquadCalls?.get(conversationId) || call.isSquadCallActive?.(conversationId))) ||
     (call.incomingCall?.isGroup && call.incomingCall?.conversationId === conversationId) ||
     (call.callStatus === 'incoming_ringing' && call.activeConversationId === conversationId && isGroup) ||
     (call.callStatus === 'in_call' && call.activeConversationId === conversationId && isGroup)
@@ -522,7 +537,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
   const handleVoiceCallClick = async () => {
     if (isGroup) {
-      if (activeCallSession) {
+      if (activeCallSession || call.isSquadCallActive?.(conversationId)) {
         if (call.callStatus === 'incoming_ringing') {
           call.acceptCall();
         } else {

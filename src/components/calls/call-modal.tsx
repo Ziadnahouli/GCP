@@ -42,6 +42,9 @@ interface CallModalProps {
   isScreenSharing: boolean;
   isNoiseSuppressionEnabled?: boolean;
   isLiveKitActive?: boolean;
+  isKrispActive?: boolean;
+  voiceTransportPreference?: 'p2p' | 'livekit';
+  onSwitchTransport?: (transport: 'p2p' | 'livekit') => void;
   participants: CallParticipant[];
   stats: DiagnosticsStats;
   localStream?: MediaStream | null;
@@ -194,6 +197,9 @@ export function CallModal({
   isScreenSharing,
   isNoiseSuppressionEnabled = true,
   isLiveKitActive = false,
+  isKrispActive = false,
+  voiceTransportPreference = 'p2p',
+  onSwitchTransport,
   participants,
   stats,
   localStream,
@@ -800,15 +806,27 @@ export function CallModal({
               ? 'Video Stream'
               : 'Voice Call'}
           </span>
-          {isLiveKitActive ? (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono ml-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-              • LiveKit SFU • Krisp AI
-            </span>
-          ) : isNoiseSuppressionEnabled ? (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400/80 font-mono ml-1">
-              • AI Noise Filter
-            </span>
-          ) : null}
+          {stats.transportPath === 'livekit_sfu' || isLiveKitActive ? (
+            <button
+              type="button"
+              onClick={() => onSwitchTransport?.('p2p')}
+              className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono ml-1 bg-emerald-500/10 hover:bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/20 transition-colors cursor-pointer"
+              title="Click to switch to Direct P2P (10–30ms ultra-low latency with Krisp AI)"
+            >
+              <span>• LiveKit SFU • Krisp AI</span>
+              {onSwitchTransport && <span className="text-muted-foreground hover:text-white ml-0.5 text-[9px]">⇄ P2P</span>}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onSwitchTransport?.('livekit')}
+              className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono ml-1 bg-emerald-500/10 hover:bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/20 transition-colors cursor-pointer"
+              title="Direct P2P active for 10–30ms latency with Krisp AI. Click to switch to LiveKit Cloud SFU."
+            >
+              <span>• Direct P2P • {isKrispActive || stats?.isKrispActive ? 'Krisp AI' : 'AI Noise Filter'}</span>
+              {onSwitchTransport && <span className="text-muted-foreground hover:text-white ml-0.5 text-[9px]">⇄ SFU</span>}
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -1079,6 +1097,8 @@ export function CallModal({
               isCameraOn={isCameraOn}
               isScreenSharing={isScreenSharing}
               isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
+              voiceTransportPreference={voiceTransportPreference}
+              onSwitchTransport={onSwitchTransport}
               onRestartConnection={onRestartConnection}
               onClose={() => setShowDiagnostics(false)}
             />

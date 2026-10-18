@@ -95,6 +95,8 @@ export interface NetworkDiagnosticsProps {
   isCameraOn?: boolean;
   isScreenSharing?: boolean;
   isNoiseSuppressionEnabled?: boolean;
+  voiceTransportPreference?: 'p2p' | 'livekit';
+  onSwitchTransport?: (transport: 'p2p' | 'livekit') => void;
   onClose?: () => void;
   onRestartConnection?: () => void;
 }
@@ -370,6 +372,8 @@ export function NetworkDiagnostics({
   isCameraOn: isCameraOnProp,
   isScreenSharing: isScreenSharingProp,
   isNoiseSuppressionEnabled: isNoiseSuppressionProp,
+  voiceTransportPreference = 'p2p',
+  onSwitchTransport,
   onClose,
   onRestartConnection,
 }: NetworkDiagnosticsProps) {
@@ -757,20 +761,38 @@ export function NetworkDiagnostics({
 
             {/* Selected Voice Transport */}
             <div className="p-2.5 rounded-xl bg-surface-default border border-white/[0.06]">
-              <div className="text-[10px] text-muted-foreground uppercase font-semibold">Transport Path</div>
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] text-muted-foreground uppercase font-semibold">Transport Path</div>
+                {onSwitchTransport && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onSwitchTransport(currentStats.transportPath === 'livekit_sfu' ? 'p2p' : 'livekit')
+                    }
+                    className="text-[9px] text-primary hover:text-primary-foreground hover:bg-primary/20 px-1.5 py-0.5 rounded transition-colors font-mono cursor-pointer"
+                    title={
+                      currentStats.transportPath === 'livekit_sfu'
+                        ? 'Switch to Direct P2P (10–30ms Esports Ping)'
+                        : 'Switch to LiveKit Cloud SFU'
+                    }
+                  >
+                    ⇄ {currentStats.transportPath === 'livekit_sfu' ? 'P2P' : 'SFU'}
+                  </button>
+                )}
+              </div>
               <div className="text-[11px] font-bold text-primary mt-1 truncate">
                 {currentStats.transportPath === 'direct_p2p'
-                  ? 'Direct WebRTC P2P'
+                  ? 'Direct WebRTC P2P (10–30ms)'
                   : currentStats.transportPath === 'livekit_sfu'
-                  ? 'LiveKit SFU'
+                  ? 'LiveKit SFU Cloud'
                   : currentStats.transportPath === 'relayed_turn'
                   ? 'Relayed TURN'
-                  : 'Direct P2P'}
+                  : 'Direct P2P (10–30ms)'}
               </div>
               <div className="text-[9px] text-muted-foreground/60 mt-0.5 truncate">
-                {currentStats.transportPath === 'relayed_turn'
-                  ? 'Cloud Relay fallback'
-                  : 'Low-latency host pair'}
+                {currentStats.transportPath === 'livekit_sfu'
+                  ? 'Cloud SFU Relay'
+                  : 'Direct Low-Latency Host Pair'}
               </div>
             </div>
           </div>

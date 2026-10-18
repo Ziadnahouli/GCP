@@ -89,6 +89,8 @@ interface CallContextType {
     isSpeaking?: boolean;
     isMuted?: boolean;
   }>;
+  registerSquadCallActive?: (conversationId: string, payload: any) => void;
+  unregisterSquadCall?: (conversationId: string) => void;
 }
 
 export const CallContext = React.createContext<CallContextType | null>(null);
@@ -230,6 +232,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     },
     [activeSquadCalls]
   );
+
+  const registerSquadCallActive = React.useCallback((convId: string, payload: any) => {
+    if (!convId) return;
+    setActiveSquadCalls((prev) => {
+      const next = new Map(prev);
+      next.set(convId, payload);
+      return next;
+    });
+  }, []);
+
+  const unregisterSquadCall = React.useCallback((convId: string) => {
+    if (!convId) return;
+    setActiveSquadCalls((prev) => {
+      if (!prev.has(convId)) return prev;
+      const next = new Map(prev);
+      next.delete(convId);
+      return next;
+    });
+  }, []);
 
   // Incoming call state
   const [incomingCall, setIncomingCall] = React.useState<IncomingCallData | null>(null);
@@ -1171,16 +1192,45 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     const interval = setInterval(async () => {
       const pc = pcRef.current;
-      if (!pc) return;
+      const lkRoom = livekitRoomRef.current;
+      const isLkConnected = lkRoom?.state === 'connected' || isLiveKitActive;
+
+      if (!pc && !isLkConnected) return;
 
       try {
-        const statsReport = await pc.getStats();
+        const statsReports: RTCStatsReport[] = [];
+        if (pc) {
+          try {
+            const pcStats = await pc.getStats();
+            if (pcStats) statsReports.push(pcStats);
+          } catch {}
+        }
+        if (isLkConnected && lkRoom?.engine) {
+          const engine = lkRoom.engine;
+          const pubTransport = engine.pcManager?.publisher || engine.publisher;
+          const subTransport = engine.pcManager?.subscriber || engine.subscriber;
+          if (pubTransport?.getStats) {
+            try {
+              const pubStats = await pubTransport.getStats();
+              if (pubStats) statsReports.push(pubStats);
+            } catch {}
+          }
+          if (subTransport?.getStats) {
+            try {
+              const subStats = await subTransport.getStats();
+              if (subStats) statsReports.push(subStats);
+            } catch {}
+          }
+        }
+
         let rtt: number | null = null;
         let jitter: number | null = null;
         let packetLoss: number | null = null;
         let inBitrate: number | null = null;
         let outBitrate: number | null = null;
-        let transportPath: 'direct_p2p' | 'relayed_turn' | 'livekit_sfu' | 'unknown' = 'direct_p2p';
+        let transportPath: 'direct_p2p' | 'relayed_turn' | 'livekit_sfu' | 'unknown' = isLkConnected
+          ? 'livekit_sfu'
+          : 'direct_p2p';
 
         let currentBytesReceived = 0;
         let currentBytesSent = 0;
@@ -1188,50 +1238,65 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         let packetsReceived = 0;
         let packetsSent = 0;
 
-        statsReport.forEach((report) => {
-          if (
-            report.type === 'candidate-pair' &&
-            (report.state === 'succeeded' || report.nominated)
-          ) {
-            if (typeof report.currentRoundTripTime === 'number') {
-              rtt = Math.round(report.currentRoundTripTime * 1000);
-            } else if (typeof report.roundTripTime === 'number') {
-              rtt = Math.round(report.roundTripTime * 1000);
+        for (const statsReport of statsReports) {
+          statsReport.forEach((report) => {
+            if (
+              report.type === 'candidate-pair' &&
+              (report.state === 'succeeded' || report.nominated)
+            ) {
+              if (typeof report.currentRoundTripTime === 'number' && report.currentRoundTripTime > 0) {
+                rtt = Math.round(report.currentRoundTripTime * 1000);
+              } else if (typeof report.roundTripTime === 'number' && report.roundTripTime > 0) {
+                rtt = Math.round(report.roundTripTime * 1000);
+              }
+
+              if (!isLkConnected) {
+                const localCand = statsReport.get(report.localCandidateId);
+                const remoteCand = statsReport.get(report.remoteCandidateId);
+                if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
+                  transportPath = 'relayed_turn';
+                } else {
+                  transportPath = 'direct_p2p';
+                }
+              }
             }
 
-            const localCand = statsReport.get(report.localCandidateId);
-            const remoteCand = statsReport.get(report.remoteCandidateId);
-            if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
-              transportPath = 'relayed_turn';
-            } else {
-              transportPath = 'direct_p2p';
+            if (report.type === 'inbound-rtp' && (report.kind === 'audio' || report.kind === 'video')) {
+              if (typeof report.jitter === 'number') {
+                jitter = Math.round(report.jitter * 1000 * 10) / 10;
+              }
+              if (typeof report.bytesReceived === 'number') {
+                currentBytesReceived += report.bytesReceived;
+              }
+              if (typeof report.packetsLost === 'number') {
+                packetsLost += report.packetsLost;
+              }
+              if (typeof report.packetsReceived === 'number') {
+                packetsReceived += report.packetsReceived;
+              }
             }
-          }
 
-          if (report.type === 'inbound-rtp' && (report.kind === 'audio' || report.kind === 'video')) {
-            if (typeof report.jitter === 'number') {
-              jitter = Math.round(report.jitter * 1000 * 10) / 10;
+            if (report.type === 'outbound-rtp' && (report.kind === 'audio' || report.kind === 'video')) {
+              if (typeof report.bytesSent === 'number') {
+                currentBytesSent += report.bytesSent;
+              }
+              if (typeof report.packetsSent === 'number') {
+                packetsSent += report.packetsSent;
+              }
             }
-            if (typeof report.bytesReceived === 'number') {
-              currentBytesReceived += report.bytesReceived;
-            }
-            if (typeof report.packetsLost === 'number') {
-              packetsLost += report.packetsLost;
-            }
-            if (typeof report.packetsReceived === 'number') {
-              packetsReceived += report.packetsReceived;
-            }
-          }
+          });
+        }
 
-          if (report.type === 'outbound-rtp' && (report.kind === 'audio' || report.kind === 'video')) {
-            if (typeof report.bytesSent === 'number') {
-              currentBytesSent += report.bytesSent;
-            }
-            if (typeof report.packetsSent === 'number') {
-              packetsSent += report.packetsSent;
-            }
+        // LiveKit SFU Fallback: if candidate-pair RTT was not measured, query LiveKit SignalClient RTT
+        if (rtt === null && isLkConnected) {
+          const lkRtt = lkRoom?.engine?.client?.rtt;
+          if (typeof lkRtt === 'number' && lkRtt > 0) {
+            rtt = Math.round(lkRtt);
+          } else {
+            // Trigger a background ping for subsequent polling cycles
+            lkRoom?.engine?.client?.sendPing?.().catch?.(() => {});
           }
-        });
+        }
 
         const totalPackets = packetsReceived + packetsLost;
         if (totalPackets > 0) {
@@ -1260,24 +1325,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           ('__TAURI_IPC__' in window || '__TAURI__' in window);
 
         const isConnected =
-          pc.connectionState === 'connected' ||
-          pc.iceConnectionState === 'connected' ||
-          pc.iceConnectionState === 'completed';
+          Boolean(pc && (
+            pc.connectionState === 'connected' ||
+            pc.iceConnectionState === 'connected' ||
+            pc.iceConnectionState === 'completed'
+          ));
 
         const isFailed =
-          pc.connectionState === 'failed' || pc.iceConnectionState === 'failed';
+          Boolean(pc && (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed'));
 
-        const isLkConnected = livekitRoomRef.current?.state === 'connected' || isLiveKitActive;
-        if (isLkConnected) {
-          transportPath = 'livekit_sfu';
-        }
+        const isLkReconnecting = isLkConnected && lkRoom?.state === 'reconnecting';
 
         const currentConnectionState: 'connected' | 'connecting' | 'reconnecting' | 'disconnected' =
           isLkConnected || isConnected
-            ? 'connected'
+            ? isLkReconnecting
+              ? 'reconnecting'
+              : 'connected'
             : isFailed
             ? 'reconnecting'
-            : pc.connectionState === 'closed'
+            : pc?.connectionState === 'closed' || lkRoom?.state === 'disconnected'
             ? 'disconnected'
             : 'connecting';
 
@@ -2744,6 +2810,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             callerZeroTierIp: getLocalZeroTierIp(),
           };
           sendSignalToUser(m.user_id, 'incoming_call', groupPayload);
+          sendSignalToUser(m.user_id, 'squad_call_active', {
+            id: callSessionId,
+            conversation_id: conversationId,
+            caller_id: user.id,
+            caller_name: profile?.display_name || profile?.username || user.email?.split('@')[0],
+            caller_avatar: profile?.avatar_url || null,
+            status: 'active',
+            started_at: new Date().toISOString(),
+            participants: [
+              {
+                id: user.id,
+                name: profile?.display_name || profile?.username || user.email?.split('@')[0] || 'Squadmate',
+                avatar_url: profile?.avatar_url || null,
+                isSpeaking: false,
+                isMuted: isMicMuted,
+              },
+            ],
+          });
         });
       }
 
@@ -4621,6 +4705,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       activeSquadCalls,
       isSquadCallActive,
       getSquadCallParticipants,
+      registerSquadCallActive,
+      unregisterSquadCall,
     }),
     [
       callStatus,
@@ -4661,6 +4747,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       activeSquadCalls,
       isSquadCallActive,
       getSquadCallParticipants,
+      registerSquadCallActive,
+      unregisterSquadCall,
     ]
   );
 

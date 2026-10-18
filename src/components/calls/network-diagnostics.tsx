@@ -716,7 +716,11 @@ export function NetworkDiagnostics({
                 {currentStats.rttMs !== null ? `${currentStats.rttMs} ms` : '—'}
               </div>
               <div className="text-[9px] text-muted-foreground/60 mt-0.5">
-                {currentStats.rttMs !== null ? 'WebRTC candidate-pair' : 'Measuring connection'}
+                {currentStats.rttMs !== null
+                  ? currentStats.transportPath === 'livekit_sfu'
+                    ? 'LiveKit SFU ping'
+                    : 'WebRTC candidate-pair'
+                  : 'Measuring connection'}
               </div>
             </div>
 

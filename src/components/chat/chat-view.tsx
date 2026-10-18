@@ -220,6 +220,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     (effectiveConversation?.members || []).length > 2;
 
   const [activeCallSession, setActiveCallSession] = React.useState<any>(null);
+  const lastHeartbeatTimeRef = React.useRef<number>(0);
   const callIsSquadCallActiveRef = React.useRef(call.isSquadCallActive);
   callIsSquadCallActiveRef.current = call.isSquadCallActive;
 
@@ -239,10 +240,15 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();
+
         if (data) {
           setActiveCallSession(data);
-        } else if (!callIsSquadCallActiveRef.current?.(conversationId)) {
-          setActiveCallSession(null);
+        } else {
+          // If we received a real-time squad heartbeat within the last 10 seconds, the call is definitely still active!
+          const hasRecentHeartbeat = Date.now() - lastHeartbeatTimeRef.current < 10000;
+          if (!hasRecentHeartbeat && !callIsSquadCallActiveRef.current?.(conversationId)) {
+            setActiveCallSession(null);
+          }
         }
       } catch {}
     };
@@ -270,10 +276,19 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     const roomChannel = supabase
       .channel(`call-room-${conversationId}`)
       .on('broadcast', { event: 'squad_call_active' }, (payload: any) => {
-        setActiveCallSession(payload.payload || { status: 'active', started_at: new Date().toISOString() });
+        lastHeartbeatTimeRef.current = Date.now();
+        const sessData = payload.payload || { status: 'active', started_at: new Date().toISOString() };
+        setActiveCallSession(sessData);
+        if (call.registerSquadCallActive) {
+          call.registerSquadCallActive(conversationId, sessData);
+        }
       })
       .on('broadcast', { event: 'squad_call_ended' }, () => {
+        lastHeartbeatTimeRef.current = 0;
         setActiveCallSession(null);
+        if (call.unregisterSquadCall) {
+          call.unregisterSquadCall(conversationId);
+        }
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -292,11 +307,12 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     }, 4000);
 
     return () => {
+      lastHeartbeatTimeRef.current = 0;
       clearInterval(pollTimer);
       supabase.removeChannel(dbChannel);
       supabase.removeChannel(roomChannel);
     };
-  }, [conversationId, supabase]);
+  }, [conversationId, supabase, call.registerSquadCallActive, call.unregisterSquadCall]);
 
   const isSquadCallActive = Boolean(
     activeCallSession ||

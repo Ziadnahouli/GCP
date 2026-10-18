@@ -46,6 +46,8 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
     Array<{ id: string; name: string; avatar_url?: string | null; isSpeaking?: boolean; isMuted?: boolean }>
   >([]);
 
+  const lastHeartbeatRef = React.useRef<number>(0);
+
   React.useEffect(() => {
     if (!squadCallConvId || isCallActive !== undefined) return;
 
@@ -61,7 +63,11 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
           .maybeSingle();
 
         if (mounted) {
-          setSessionActive(Boolean(data));
+          if (data) {
+            setSessionActive(true);
+          } else if (Date.now() - lastHeartbeatRef.current > 10000) {
+            setSessionActive(false);
+          }
         }
       } catch {}
     };
@@ -69,7 +75,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
     checkSession();
 
     const ch = supabase
-      .channel(`msg_call_session_${squadCallConvId}`)
+      .channel(`call-room-${squadCallConvId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'call_sessions', filter: `conversation_id=eq.${squadCallConvId}` },
@@ -77,6 +83,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
       )
       .on('broadcast', { event: 'squad_call_active' }, ({ payload }: any) => {
         if (mounted) {
+          lastHeartbeatRef.current = Date.now();
           setSessionActive(true);
           if (payload?.participants && Array.isArray(payload.participants)) {
             setBroadcastParticipants(payload.participants);
@@ -85,6 +92,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
       })
       .on('broadcast', { event: 'squad_call_ended' }, () => {
         if (mounted) {
+          lastHeartbeatRef.current = 0;
           setSessionActive(false);
           setBroadcastParticipants([]);
         }
@@ -93,6 +101,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
 
     return () => {
       mounted = false;
+      lastHeartbeatRef.current = 0;
       supabase.removeChannel(ch);
     };
   }, [squadCallConvId, isCallActive, supabase]);

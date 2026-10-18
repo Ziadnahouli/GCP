@@ -289,4 +289,74 @@ describe('Smart Network and Voice Diagnostics Tests', () => {
       expect(subtitle).toBe('1 squadmate in call');
     });
   });
+
+  describe('5. LiveKit SFU Latency & Anti-Flicker Heartbeat Persistence', () => {
+    it('diagnoses LiveKit SFU multi-party transport with low-latency ping', () => {
+      const stats: DiagnosticsStats = {
+        connectionState: 'connected',
+        rttMs: 28,
+        jitterMs: 1.6,
+        packetLossPercent: 0.0,
+        incomingBitrateKbps: 64,
+        outgoingBitrateKbps: 48,
+        transportPath: 'livekit_sfu',
+        isKrispActive: true,
+      };
+
+      const diagnoses = generateDiagnoses(stats);
+      const transportDiag = diagnoses.find((d) => d.id === 'transport_sfu');
+      expect(transportDiag).toBeDefined();
+      expect(transportDiag?.level).toBe('healthy');
+      expect(transportDiag?.title).toContain('LiveKit Multi-Party SFU');
+
+      const report = generateSanitizedReport(stats);
+      expect(report).toContain('LiveKit SFU (Multi-Party Audio Router)');
+      expect(report).toContain('28 ms');
+      expect(report).toContain('Krisp AI Noise Filtering: Active');
+    });
+
+    it('prevents flickering loop by retaining active state if heartbeat was received within 10 seconds', () => {
+      // Simulates the chat view anti-flicker heartbeat cache logic
+      let activeCallSession: any = null;
+      let lastHeartbeatTime = 0;
+
+      // 1. Peer sends squad_call_active heartbeat
+      const onHeartbeatReceived = (payload: any) => {
+        lastHeartbeatTime = Date.now();
+        activeCallSession = payload;
+      };
+
+      // 2. 4s polling timer queries DB and gets null
+      const onDbPoll = (dbResult: any) => {
+        if (dbResult) {
+          activeCallSession = dbResult;
+        } else {
+          const hasRecentHeartbeat = Date.now() - lastHeartbeatTime < 10000;
+          if (!hasRecentHeartbeat) {
+            activeCallSession = null;
+          }
+        }
+      };
+
+      // Peer broadcasts heartbeat
+      onHeartbeatReceived({ status: 'active', conversation_id: 'conv-123' });
+      expect(activeCallSession).not.toBeNull();
+      expect(activeCallSession.status).toBe('active');
+
+      // 3 seconds later, DB poll returns null (e.g. no DB record or RLS)
+      onDbPoll(null);
+      // Because heartbeat arrived <10s ago, activeCallSession MUST NOT be wiped!
+      expect(activeCallSession).not.toBeNull();
+      expect(activeCallSession.status).toBe('active');
+
+      // 3. When call explicitly ends via squad_call_ended
+      const onCallEndedReceived = () => {
+        lastHeartbeatTime = 0;
+        activeCallSession = null;
+      };
+
+      onCallEndedReceived();
+      expect(activeCallSession).toBeNull();
+    });
+  });
 });

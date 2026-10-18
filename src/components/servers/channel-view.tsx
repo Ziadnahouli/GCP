@@ -524,34 +524,28 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 variant="outline"
                 className={cn(
                   "hidden sm:inline-flex items-center gap-1.5 text-[10px] px-2.5 py-0.5 border font-mono transition-all",
-                  voice.isLiveKitActive && voice.isVoiceConnected
+                  voice.isVoiceConnected
                     ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/15 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
                     : voice.isConnecting
                     ? "border-amber-500/40 text-amber-300 bg-amber-500/15"
-                    : voice.isVoiceConnected
-                    ? "border-emerald-500/30 text-emerald-300/80 bg-emerald-500/10"
                     : "border-white/[0.1] text-muted-foreground bg-white/[0.04]"
                 )}
-                title="LiveKit Cloud SFU + Krisp AI Noise Cancellation Active"
+                title="GCP Studio AudioWorklet Noise Cancellation Active"
               >
                 <span className={cn(
                   "w-1.5 h-1.5 rounded-full",
-                  voice.isLiveKitActive && voice.isVoiceConnected
+                  voice.isVoiceConnected
                     ? "bg-emerald-400 animate-pulse"
                     : voice.isConnecting
                     ? "bg-amber-400 animate-ping"
-                    : voice.isVoiceConnected
-                    ? "bg-emerald-400/80"
                     : "bg-muted-foreground/50"
                 )} />
                 <span>
-                  {voice.isLiveKitActive && voice.isVoiceConnected
-                    ? 'Connected • LiveKit Cloud SFU • Krisp AI'
+                  {voice.isVoiceConnected
+                    ? 'Connected • GCP Studio Filter'
                     : voice.isConnecting
-                    ? 'Connecting to LiveKit SFU...'
-                    : voice.isVoiceConnected
-                    ? 'Connected (Mesh Voice)'
-                    : 'LiveKit Cloud SFU • Krisp AI'}
+                    ? 'Connecting to Voice...'
+                    : 'GCP Studio Audio'}
                 </span>
               </Badge>
             ) : (
@@ -1133,7 +1127,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         }
                         try {
                           await voice.connectVoice();
-                          toast({ title: 'Connected to Voice Lounge', description: `${channel.name} • LiveKit Cloud SFU`, type: 'success' });
+                          toast({ title: 'Connected to Voice Lounge', description: `${channel.name} • GCP Studio Audio`, type: 'success' });
                         } catch (err: any) {
                           toast({ title: 'Connection Notice', description: err?.message || 'Connecting to lounge...', type: 'info' });
                         }
@@ -1260,13 +1254,11 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                       voice.toggleNoiseSuppression();
                       toast({
                         title: voice.isNoiseSuppressionEnabled
-                          ? 'Noise Filter Disabled'
-                          : voice.isLiveKitActive
-                          ? 'Krisp AI Noise Filter Enabled'
-                          : 'Studio Noise Filter Enabled',
-                        description: voice.isLiveKitActive
-                          ? 'Discord-grade neural network acoustic isolation'
-                          : 'Multi-stage DSP & Adaptive Voice Gate',
+                          ? 'GCP Noise Filter Disabled'
+                          : 'GCP Studio Noise Filter Enabled',
+                        description: voice.isNoiseSuppressionEnabled
+                          ? 'Raw microphone audio'
+                          : '5-Stage Acoustic DSP & AudioWorklet Voice Gate',
                         type: 'info',
                       });
                     }}
@@ -1276,11 +1268,11 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         ? 'bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30'
                         : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
                     )}
-                    title={voice.isNoiseSuppressionEnabled ? "Krisp AI Noise Filter Active (LiveKit Cloud)" : "Krisp AI Filter Disabled"}
+                    title={voice.isNoiseSuppressionEnabled ? "GCP Studio Noise Filter Active" : "GCP Noise Filter Disabled"}
                   >
                     <Sparkles className="w-5 h-5" />
                     <span className="text-xs font-semibold hidden sm:inline">
-                      {voice.isNoiseSuppressionEnabled ? 'Krisp AI Active' : 'Krisp AI Off'}
+                      {voice.isNoiseSuppressionEnabled ? 'GCP Studio Filter' : 'Filter Off'}
                     </span>
                   </button>
 

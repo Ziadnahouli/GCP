@@ -159,11 +159,9 @@ export function VoiceLoungePopup() {
                 <span className="text-xs font-semibold text-white truncate">
                   {serverVoice.activeChannelName ? `#${serverVoice.activeChannelName}` : 'Voice Lounge'}
                 </span>
-                {serverVoice.isLiveKitActive && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
-                    LiveKit SFU
-                  </span>
-                )}
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                  GCP Studio Audio
+                </span>
               </div>
 
               <button
@@ -414,12 +412,10 @@ export function VoiceLoungePopup() {
             </div>
           </div>
 
-          {serverVoice.isLiveKitActive && (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono border border-emerald-500/20 shrink-0">
-              LiveKit SFU
+              GCP Studio Audio
             </span>
-          )}
-        </div>
+          </div>
       )}
 
       {/* Pop-Up Control Bar: The 5 Essential Controls */}

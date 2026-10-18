@@ -317,7 +317,7 @@ export function generateSanitizedReport(stats: DiagnosticsStats, extra?: { platf
         ? 'LiveKit SFU (Multi-Party Audio Router)'
         : stats.transportPath === 'relayed_turn'
         ? 'Relayed TURN Server (NAT Traversal Fallback)'
-        : 'Unknown / Initializing'
+        : 'Direct WebRTC P2P (Host UDP Candidate)'
     }`,
     `- Measured WebRTC RTT Latency: ${stats.rttMs !== null ? `${stats.rttMs} ms` : 'Waiting for candidate-pair'}`,
     `- Jitter: ${stats.jitterMs !== null ? `${stats.jitterMs.toFixed(1)} ms` : 'N/A'}`,
@@ -718,9 +718,9 @@ export function NetworkDiagnostics({
               </div>
               <div className="text-[9px] text-muted-foreground/60 mt-0.5">
                 {currentStats.rttMs !== null
-                  ? currentStats.transportPath === 'livekit_sfu'
-                    ? 'LiveKit SFU ping'
-                    : 'WebRTC candidate-pair'
+                  ? currentStats.transportPath === 'relayed_turn'
+                    ? 'TURN relay ping'
+                    : 'WebRTC P2P ping'
                   : 'Measuring connection'}
               </div>
             </div>
@@ -760,13 +760,9 @@ export function NetworkDiagnostics({
             <div className="p-2.5 rounded-xl bg-surface-default border border-white/[0.06]">
               <div className="text-[10px] text-muted-foreground uppercase font-semibold">Transport Path</div>
               <div className="text-[11px] font-bold text-primary mt-1 truncate">
-                {currentStats.transportPath === 'direct_p2p'
-                  ? 'Direct WebRTC P2P'
-                  : currentStats.transportPath === 'livekit_sfu'
-                  ? 'LiveKit SFU'
-                  : currentStats.transportPath === 'relayed_turn'
+                {currentStats.transportPath === 'relayed_turn'
                   ? 'Relayed TURN'
-                  : 'Direct P2P'}
+                  : 'Direct WebRTC P2P'}
               </div>
               <div className="text-[9px] text-muted-foreground/60 mt-0.5 truncate">
                 {currentStats.transportPath === 'relayed_turn'

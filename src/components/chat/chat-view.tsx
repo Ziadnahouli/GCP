@@ -574,7 +574,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       sendMessage(announcement).catch(() => {});
       call.startCall(conversationId, conversationId, false);
     } else {
-      const peerId = targetUserId || conversationId;
+      const otherMember = (effectiveConversation?.members || []).find((m: any) => m.user_id !== user?.id);
+      const peerId = targetUserId || otherMember?.user_id || conversationId;
       call.startCall(peerId, conversationId, false);
     }
   };
@@ -866,7 +867,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
               <button
                 onClick={() => {
-                  const peerId = targetUserId || conversationId;
+                  const otherMember = (effectiveConversation?.members || []).find((m: any) => m.user_id !== user?.id);
+                  const peerId = targetUserId || otherMember?.user_id || conversationId;
                   call.startCall(peerId, conversationId, true);
                 }}
                 className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"

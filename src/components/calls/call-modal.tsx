@@ -376,11 +376,9 @@ export function CallModal({
                 <span className="text-xs font-semibold text-white truncate">
                   {remotePartner?.name || 'Private Call'}
                 </span>
-                {isLiveKitActive && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
-                    LiveKit SFU
-                  </span>
-                )}
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                  Direct P2P
+                </span>
               </div>
 
               <button
@@ -800,11 +798,7 @@ export function CallModal({
               ? 'Video Stream'
               : 'Voice Call'}
           </span>
-          {isLiveKitActive ? (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-cyan-400 font-mono ml-1 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">
-              • Squad LiveKit SFU
-            </span>
-          ) : isNoiseSuppressionEnabled ? (
+          {isNoiseSuppressionEnabled ? (
             <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono ml-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
               • Direct P2P • GCP Studio Filter
             </span>

@@ -659,10 +659,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     // Also update remote persistent audio element if this is an audio track
     if (track.kind === 'audio' && remoteAudioElementRef.current) {
-      if (mediaTransportRef.current === 'livekit') {
-        // LiveKit SFU is authoritative for audio playback; suppress WebRTC fallback playback
-        return;
-      }
       if (remoteAudioElementRef.current.srcObject !== currentStream) {
         remoteAudioElementRef.current.srcObject = currentStream;
       }
@@ -912,10 +908,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!audioEl) return;
 
     if (remoteStream) {
-      if (mediaTransportRef.current !== 'livekit') {
-        if (audioEl.srcObject !== remoteStream) {
-          audioEl.srcObject = remoteStream;
-        }
+      if (audioEl.srcObject !== remoteStream) {
+        audioEl.srcObject = remoteStream;
       }
       audioEl.muted = isDeafened;
       audioEl.volume = 1.0;
@@ -944,9 +938,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
     } else {
       audioEl.pause();
-      if (mediaTransportRef.current !== 'livekit') {
-        audioEl.srcObject = null;
-      }
+      audioEl.srcObject = null;
     }
   }, [remoteStream, isDeafened]);
 
@@ -1193,45 +1185,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     const interval = setInterval(async () => {
       const pc = pcRef.current;
-      const lkRoom = livekitRoomRef.current;
-      const isLkConnected = lkRoom?.state === 'connected' || isLiveKitActive;
-
-      if (!pc && !isLkConnected) return;
+      if (!pc) return;
 
       try {
         const statsReports: RTCStatsReport[] = [];
-        if (pc) {
-          try {
-            const pcStats = await pc.getStats();
-            if (pcStats) statsReports.push(pcStats);
-          } catch {}
-        }
-        if (isLkConnected && lkRoom?.engine) {
-          const engine = lkRoom.engine;
-          const pubTransport = engine.pcManager?.publisher || engine.publisher;
-          const subTransport = engine.pcManager?.subscriber || engine.subscriber;
-          if (pubTransport?.getStats) {
-            try {
-              const pubStats = await pubTransport.getStats();
-              if (pubStats) statsReports.push(pubStats);
-            } catch {}
-          }
-          if (subTransport?.getStats) {
-            try {
-              const subStats = await subTransport.getStats();
-              if (subStats) statsReports.push(subStats);
-            } catch {}
-          }
-        }
+        try {
+          const pcStats = await pc.getStats();
+          if (pcStats) statsReports.push(pcStats);
+        } catch {}
 
         let rtt: number | null = null;
         let jitter: number | null = null;
         let packetLoss: number | null = null;
         let inBitrate: number | null = null;
         let outBitrate: number | null = null;
-        let transportPath: 'direct_p2p' | 'relayed_turn' | 'livekit_sfu' | 'unknown' = isLkConnected
-          ? 'livekit_sfu'
-          : 'direct_p2p';
+        let transportPath: 'direct_p2p' | 'relayed_turn' | 'livekit_sfu' | 'unknown' = 'direct_p2p';
 
         let currentBytesReceived = 0;
         let currentBytesSent = 0;
@@ -1251,14 +1219,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 rtt = Math.round(report.roundTripTime * 1000);
               }
 
-              if (!isLkConnected) {
-                const localCand = statsReport.get(report.localCandidateId);
-                const remoteCand = statsReport.get(report.remoteCandidateId);
-                if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
-                  transportPath = 'relayed_turn';
-                } else {
-                  transportPath = 'direct_p2p';
-                }
+              const localCand = statsReport.get(report.localCandidateId);
+              const remoteCand = statsReport.get(report.remoteCandidateId);
+              if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
+                transportPath = 'relayed_turn';
+              } else {
+                transportPath = 'direct_p2p';
               }
             }
 
@@ -1288,16 +1254,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        // LiveKit SFU Fallback: if candidate-pair RTT was not measured, query LiveKit SignalClient RTT
-        if (rtt === null && isLkConnected) {
-          const lkRtt = lkRoom?.engine?.client?.rtt;
-          if (typeof lkRtt === 'number' && lkRtt > 0) {
-            rtt = Math.round(lkRtt);
-          } else {
-            // Trigger a background ping for subsequent polling cycles
-            lkRoom?.engine?.client?.sendPing?.().catch?.(() => {});
-          }
-        }
 
         const totalPackets = packetsReceived + packetsLost;
         if (totalPackets > 0) {
@@ -1335,16 +1291,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const isFailed =
           Boolean(pc && (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed'));
 
-        const isLkReconnecting = isLkConnected && lkRoom?.state === 'reconnecting';
-
         const currentConnectionState: 'connected' | 'connecting' | 'reconnecting' | 'disconnected' =
-          isLkConnected || isConnected
-            ? isLkReconnecting
-              ? 'reconnecting'
-              : 'connected'
+          isConnected
+            ? 'connected'
             : isFailed
             ? 'reconnecting'
-            : pc?.connectionState === 'closed' || lkRoom?.state === 'disconnected'
+            : pc?.connectionState === 'closed'
             ? 'disconnected'
             : 'connecting';
 
@@ -1514,399 +1466,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return null;
   };
 
-  // Helper to establish LiveKit Cloud SFU connection with Krisp AI Noise Cancellation for private 1-on-1 calls
+  // Helper kept for interface compatibility; LiveKit Cloud SFU is fully bypassed in favor of Direct WebRTC P2P
   const connectLiveKitCall = React.useCallback(
-    async (
-      conversationId: string,
-      currentLocalStream: MediaStream | null,
-      callSessionId: string
-    ): Promise<boolean> => {
-      if (activeCallSessionIdRef.current !== callSessionId) {
-        console.log('[LiveKit Call] Aborting connect; call session is no longer active.');
-        return false;
-      }
-
-      const currentUser = user || userRef.current;
-      if (!currentUser?.id) {
-        console.warn('[LiveKit Call] Cannot connect LiveKit call: unauthenticated user');
-        return false;
-      }
-
-      try {
-        const cleanConvId = (conversationId || '').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
-
-        console.log('[LiveKit Call] Requesting SFU token for private call:', cleanConvId);
-
-        let authHeader = '';
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          if (sessionData?.session?.access_token) {
-            authHeader = `Bearer ${sessionData.session.access_token}`;
-          }
-        } catch {}
-
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId || '');
-        const tokenRes = await fetch('/api/calls/token', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(authHeader ? { Authorization: authHeader } : {}),
-          },
-          body: JSON.stringify({
-            conversationId: isUUID ? conversationId : undefined,
-            roomName: !isUUID ? `nexus-dm-${cleanConvId}` : undefined,
-            userId: currentUser.id,
-            userName: profileRef.current?.display_name || currentUser.email?.split('@')[0],
-          }),
-        });
-
-        if (activeCallSessionIdRef.current !== callSessionId) {
-          console.log('[LiveKit Call] Session superseded while requesting token.');
-          return false;
-        }
-
-        if (!tokenRes.ok) {
-          const errText = await tokenRes.text();
-          console.warn('[LiveKit Call] Token route response not OK:', tokenRes.status, errText);
-          return false;
-        }
-
-        const tokenData = await tokenRes.json();
-        if (!tokenData.isConfigured || !tokenData.token || !tokenData.url) {
-          console.warn('[LiveKit Call] LiveKit not configured or missing token/url. Controlled P2P fallback active.');
-          return false;
-        }
-
-        if (activeCallSessionIdRef.current !== callSessionId) {
-          return false;
-        }
-
-        console.log('[LiveKit Call] Connecting to LiveKit Cloud SFU at', tokenData.url);
-        const { Room, RoomEvent, Track, LocalAudioTrack } = await import('livekit-client');
-        const lkRoom = new Room({
-          adaptiveStream: true,
-          dynacast: true,
-          disconnectOnPageLeave: false,
-        });
-        livekitRoomRef.current = lkRoom;
-
-        lkRoom.on(RoomEvent.Connected, () => {
-          if (activeCallSessionIdRef.current !== callSessionId) {
-            try { lkRoom.disconnect(); } catch {}
-            return;
-          }
-          console.log('[LiveKit Call] Connected to LiveKit Cloud SFU Room:', `nexus-dm-${cleanConvId}`);
-          setIsLiveKitActive(true);
-          mediaTransportRef.current = 'livekit';
-
-          // Disable fallback WebRTC audio senders so no duplicate audio packets stream peer-to-peer
-          if (pcRef.current) {
-            try {
-              pcRef.current.getSenders().forEach((sender) => {
-                if (sender.track && sender.track.kind === 'audio') {
-                  sender.track.enabled = false;
-                }
-              });
-            } catch {}
-          }
-        });
-
-        lkRoom.on(RoomEvent.Disconnected, () => {
-          console.log('[LiveKit Call] Disconnected from LiveKit Cloud SFU');
-          setIsLiveKitActive(false);
-          setIsKrispActive(false);
-          if (mediaTransportRef.current === 'livekit') {
-            mediaTransportRef.current = 'none';
-          }
-        });
-
-        // Listen for browser autoplay restrictions
-        lkRoom.on(RoomEvent.AudioPlaybackStatusChanged, (canPlayAudio: boolean) => {
-          if (!canPlayAudio) {
-            console.warn('[LiveKit Call] Audio playback blocked by browser. Unlocking on next user gesture...');
-            const unlock = () => {
-              lkRoom.startAudio().catch(() => {});
-              if (remoteAudioElementRef.current) {
-                remoteAudioElementRef.current.play().catch(() => {});
-              }
-              window.removeEventListener('click', unlock);
-              window.removeEventListener('keydown', unlock);
-              window.removeEventListener('touchstart', unlock);
-            };
-            window.addEventListener('click', unlock, { once: true, passive: true });
-            window.addEventListener('keydown', unlock, { once: true, passive: true });
-            window.addEventListener('touchstart', unlock, { once: true, passive: true });
-          }
-        });
-
-        // Stop outgoing ringtone and transition to 'in_call' helper
-        const markCallConnected = (peerId?: string, peerName?: string, isVideoTrack: boolean = false) => {
-          RingtonePlayer.stopAll();
-          if (ringtoneRef.current) {
-            ringtoneRef.current.stop();
-            ringtoneRef.current = null;
-          }
-          if (ringingTimerRef.current) {
-            clearTimeout(ringingTimerRef.current);
-            ringingTimerRef.current = null;
-          }
-          if (ringingBeaconRef.current) {
-            clearInterval(ringingBeaconRef.current);
-            ringingBeaconRef.current = null;
-          }
-          callStatusRef.current = 'in_call';
-          setCallStatus('in_call');
-
-          if (peerId) {
-            setParticipants((prev) => {
-              if (prev.some((p) => p.id === peerId)) {
-                return prev.map((p) =>
-                  p.id === peerId && isVideoTrack ? { ...p, isCameraOn: true } : p
-                );
-              }
-              return [
-                ...prev,
-                {
-                  id: peerId,
-                  name: peerName || 'Squadmate',
-                  isSpeaking: false,
-                  isMuted: false,
-                  isCameraOn: isVideoTrack,
-                  isScreenSharing: false,
-                },
-              ];
-            });
-          }
-        };
-
-        // When remote participant connects to the SFU room
-        lkRoom.on(RoomEvent.ParticipantConnected, (participant: any) => {
-          if (activeCallSessionIdRef.current !== callSessionId) return;
-          console.log('[LiveKit Call] Authoritative remote participant joined SFU room:', participant.identity);
-          markCallConnected(participant.identity, participant.name || 'Squadmate', false);
-        });
-
-        // SINGLE AUTHORITATIVE PLAYBACK SINK:
-        // Remote audio is attached directly to remoteAudioElementRef via LiveKit SDK track.attach
-        lkRoom.on(RoomEvent.TrackSubscribed, (track: any, _pub: any, participant: any) => {
-          if (activeCallSessionIdRef.current !== callSessionId) return;
-          console.log('[LiveKit Call] Authoritative remote track subscribed:', participant.identity, track.kind);
-
-          markCallConnected(
-            participant.identity,
-            participant.name || 'Squadmate',
-            track.kind === 'video'
-          );
-
-          if (track.kind === 'audio' || track.kind === Track.Kind.Audio) {
-            if (track.mediaStreamTrack) {
-              track.mediaStreamTrack.enabled = !isDeafenedRef.current;
-            }
-            if (remoteAudioElementRef.current) {
-              try {
-                // Route to saved audio output device if setSinkId is supported
-                const savedOutputId = localStorage.getItem('nexus_audio_output_device');
-                if (savedOutputId && 'setSinkId' in remoteAudioElementRef.current && typeof (remoteAudioElementRef.current as any).setSinkId === 'function') {
-                  (remoteAudioElementRef.current as any).setSinkId(savedOutputId).catch((sinkErr: any) => {
-                    console.warn('[LiveKit Call] Output setSinkId notice:', sinkErr);
-                  });
-                }
-                track.attach(remoteAudioElementRef.current);
-                remoteAudioElementRef.current.muted = isDeafenedRef.current;
-                remoteAudioElementRef.current.volume = 1.0;
-                remoteAudioElementRef.current.play().catch((playErr: any) => {
-                  console.warn('[LiveKit Call] Remote audio autoplay deferred waiting for gesture:', playErr);
-                });
-              } catch (attachErr) {
-                console.warn('[LiveKit Call] Error attaching track to audio element:', attachErr);
-              }
-            }
-          }
-          if (track.mediaStreamTrack) {
-            attachRemoteTrack(track.mediaStreamTrack);
-          }
-        });
-
-        lkRoom.on(RoomEvent.TrackUnsubscribed, (track: any) => {
-          if (track.kind === 'audio' || track.kind === Track.Kind.Audio) {
-            if (remoteAudioElementRef.current) {
-              try {
-                track.detach(remoteAudioElementRef.current);
-              } catch {}
-            }
-          }
-          if (track.mediaStreamTrack && remoteStreamRef.current) {
-            try {
-              remoteStreamRef.current.removeTrack(track.mediaStreamTrack);
-              setRemoteStream(new MediaStream(remoteStreamRef.current.getTracks()));
-            } catch {}
-          }
-        });
-
-        lkRoom.on(RoomEvent.ParticipantDisconnected, () => {
-          if (activeCallSessionIdRef.current !== callSessionId) return;
-          setRemoteStream(null);
-          remoteStreamRef.current = null;
-          if (remoteAudioElementRef.current) {
-            remoteAudioElementRef.current.srcObject = null;
-          }
-        });
-
-        lkRoom.on(RoomEvent.ActiveSpeakersChanged, (speakers: any[]) => {
-          const activeIds = new Set(speakers.map((s) => s.identity));
-          setParticipants((prev) =>
-            prev.map((p) => {
-              const spk = activeIds.has(p.id);
-              return p.isSpeaking !== spk ? { ...p, isSpeaking: spk } : p;
-            })
-          );
-        });
-
-        await lkRoom.connect(tokenData.url, tokenData.token);
-
-        if (activeCallSessionIdRef.current !== callSessionId) {
-          try { lkRoom.disconnect(); } catch {}
-          return false;
-        }
-
-        // Authorize audio playback immediately on connect
-        await lkRoom.startAudio().catch((err) => {
-          console.warn('[LiveKit Call] lkRoom.startAudio() notice:', err);
-        });
-
-        // Clear WebRTC ICE watchdog timer so it doesn't fire and restart ICE while LiveKit SFU is active
-        if (iceWatchdogTimerRef.current) {
-          clearTimeout(iceWatchdogTimerRef.current);
-          iceWatchdogTimerRef.current = null;
-        }
-
-        // Check if remote participants are already in the room upon connection & attach their tracks
-        if (lkRoom.remoteParticipants.size > 0) {
-          console.log('[LiveKit Call] Remote participant(s) already in room on connect');
-          lkRoom.remoteParticipants.forEach((rp: any) => {
-            markCallConnected(rp.identity, rp.name || 'Squadmate', false);
-            rp.trackPublications?.forEach((pub: any) => {
-              if (pub.isSubscribed && pub.track) {
-                if (pub.track.mediaStreamTrack) {
-                  attachRemoteTrack(pub.track.mediaStreamTrack);
-                }
-                if (pub.track.kind === 'audio' || pub.track.kind === Track.Kind.Audio) {
-                  if (remoteAudioElementRef.current) {
-                    try {
-                      pub.track.attach(remoteAudioElementRef.current);
-                      remoteAudioElementRef.current.play().catch(() => {});
-                    } catch {}
-                  }
-                }
-              }
-            });
-          });
-        }
-
-        setIsLiveKitActive(true);
-        mediaTransportRef.current = 'livekit';
-
-        // Publish local audio with explicit Track.Source.Microphone
-        try {
-          let localAudioTrack: any;
-          const existingAudioTrack =
-            rawMicStreamRef.current?.getAudioTracks()[0] ||
-            currentLocalStream?.getAudioTracks()[0] ||
-            localStreamRef.current?.getAudioTracks()[0];
-          const { LocalAudioTrack, createLocalAudioTrack } = await import('livekit-client');
-
-          // Obtain an active AudioContext for LocalAudioTrack processor support
-          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-          const audioCtx =
-            (lkRoom as any).audioContext ||
-            dspAudioCtxRef.current ||
-            (AudioCtx ? new AudioCtx({ latencyHint: 'interactive' }) : undefined);
-          if (audioCtx && audioCtx.state === 'suspended') {
-            audioCtx.resume().catch(() => {});
-          }
-          if (audioCtx && !(lkRoom as any).audioContext) {
-            try {
-              (lkRoom as any).audioContext = audioCtx;
-              (lkRoom as any).setAudioContext?.(audioCtx);
-            } catch {}
-          }
-
-          if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
-            localAudioTrack = new LocalAudioTrack(existingAudioTrack, undefined, true, audioCtx);
-          } else {
-            localAudioTrack = await createLocalAudioTrack({
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            });
-          }
-
-          if (audioCtx) {
-            try {
-              localAudioTrack.setAudioContext(audioCtx);
-            } catch {}
-            try {
-              (localAudioTrack as any).audioContext = audioCtx;
-            } catch {}
-          }
-
-          // Attempt Krisp AI neural noise cancellation filter
-          if (typeof window !== 'undefined') {
-            try {
-              const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
-              const isSupported = isKrispNoiseFilterSupported();
-              console.log('[LiveKit Call] Checking Krisp AI noise filter support:', isSupported);
-              if (isSupported) {
-                const krisp = KrispNoiseFilter();
-                await localAudioTrack.setProcessor(krisp);
-                try {
-                  await krisp.setEnabled(true);
-                } catch {}
-                krispProcessorRef.current = krisp;
-                setIsKrispActive(true);
-                console.log('[LiveKit Call] Krisp AI noise filter activated in private call!');
-              } else {
-                console.log('[LiveKit Call] Krisp AI is not supported by this browser; clean studio DSP active.');
-              }
-            } catch (krispErr) {
-              console.warn('[LiveKit Call] Krisp processor setup notice (using studio audio fallback):', krispErr);
-              try {
-                await localAudioTrack.stopProcessor();
-              } catch {}
-              krispProcessorRef.current = null;
-              setIsKrispActive(false);
-            }
-          }
-
-          // Authoritative publish to LiveKit SFU first, then sync mute state to avoid unpublished track warning
-          await lkRoom.localParticipant.publishTrack(localAudioTrack, { source: Track.Source.Microphone });
-          if (isMicMutedRef.current) {
-            try {
-              await localAudioTrack.mute();
-            } catch {}
-          }
-
-          // If camera was requested on call start, also publish camera track
-          const existingVideoTrack = currentLocalStream?.getVideoTracks()[0] || localStreamRef.current?.getVideoTracks()[0];
-          if (existingVideoTrack && existingVideoTrack.readyState === 'live') {
-            try {
-              await lkRoom.localParticipant.publishTrack(existingVideoTrack, { source: Track.Source.Camera });
-            } catch (vErr) {
-              console.warn('[LiveKit Call] Initial video publish notice:', vErr);
-            }
-          }
-
-          return true;
-        } catch (pubErr) {
-          console.warn('[LiveKit Call] Could not publish local audio to LiveKit SFU:', pubErr);
-          return false;
-        }
-      } catch (lkErr) {
-        console.warn('[LiveKit Call] LiveKit room initialization notice:', lkErr);
-        return false;
-      }
+    async (): Promise<boolean> => {
+      console.log('[LiveKit Call] Cloud SFU bypassed in CallContext; strictly enforcing Direct WebRTC P2P.');
+      setIsLiveKitActive(false);
+      return false;
     },
-    [user, attachRemoteTrack, supabase]
+    []
   );
 
   // Helper to add a remote ICE candidate cleanly with ZeroTier unmasking & deduplication
@@ -1979,10 +1546,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // Dynamic ICE restart to bypass Symmetric NAT, CGNAT, or firewall timeouts
   const restartIceConnection = React.useCallback(async () => {
-    if (mediaTransportRef.current === 'livekit' || isLiveKitActive) {
-      console.log('[CallNAT] Suppressing P2P ICE restart because LiveKit SFU is active.');
-      return;
-    }
     const pc = pcRef.current;
     if (!pc || iceRestartingRef.current) return;
     iceRestartingRef.current = true;
@@ -2551,7 +2114,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     isStartingCallRef.current = true;
 
     // Check if this conversation is a group
-    let isGroup = Boolean(targetUserId && conversationId && targetUserId === conversationId);
+    let isGroup = false;
     let groupName = 'Squad';
     try {
       const { data: convData } = await supabase
@@ -2576,6 +2139,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     if (members && members.length > 1) {
       isGroup = true;
+    } else if (members && members.length <= 1) {
+      isGroup = false;
     }
 
     setIsGroupCall(isGroup);
@@ -2941,18 +2506,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    // In 1-on-1 calls, route directly via Direct WebRTC P2P for ultra-low latency (10-30ms) & local GCP noise processing.
-    // For group squad calls (3+ participants), connect to LiveKit Cloud SFU.
-    let livekitOk = false;
-    if (isGroup) {
-      livekitOk = await connectLiveKitCall(conversationId, stream, callSessionId);
-      if (activeCallSessionIdRef.current !== callSessionId) return;
-
-      if (pttActive && livekitRoomRef.current?.localParticipant) {
-        livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
-      }
-    }
-
     // Setup WebRTC Peer Connection with TURN relay support and candidate pre-fetching
     const pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
     pcRef.current = pc;
@@ -2960,18 +2513,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     pendingRemoteCandidatesRef.current = [];
     seenCandidatesRef.current.clear();
 
-    if (livekitOk) {
-      mediaTransportRef.current = 'livekit';
-      console.log('[CallContext] Squad Call: LiveKit SFU media active.');
-    } else {
-      mediaTransportRef.current = 'webrtc';
-      console.log('[CallContext] 1-on-1 Direct P2P active (10-30ms ping target) with GCP Studio Noise Filter.');
-      if (stream) {
-        stream.getTracks().forEach((track) => {
-          track.enabled = true;
-          pc.addTrack(track, stream);
-        });
-      }
+    mediaTransportRef.current = 'webrtc';
+    console.log('[CallContext] Direct WebRTC P2P active (10-30ms ping target) with GCP Studio Noise Filter.');
+    if (stream) {
+      stream.getTracks().forEach((track) => {
+        track.enabled = true;
+        pc.addTrack(track, stream);
+      });
     }
 
     // Pre-negotiate both audio AND video transceivers so video/screen can be swapped without renegotiation
@@ -2981,12 +2529,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!hasVideo) pc.addTransceiver('video', { direction: 'sendrecv' });
 
     pc.ontrack = (event) => {
-      // Authoritative transport check: if LiveKit is active, suppress WebRTC playback
-      if (mediaTransportRef.current !== 'webrtc') {
-        console.log('[CallSignaling] Suppressing WebRTC track playback; LiveKit is authoritative.');
-        return;
-      }
-      console.log('[CallSignaling] Received remote media track on caller via WebRTC fallback:', event.track.kind);
+      console.log('[CallSignaling] Received remote media track on caller via Direct WebRTC:', event.track.kind);
       attachRemoteTrack(event.track);
       setCallStatus('in_call');
 
@@ -3021,9 +2564,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const recTrack = transceiver.receiver?.track;
       if (recTrack) {
         recTrack.onunmute = () => {
-          if (recTrack.kind === 'audio' && mediaTransportRef.current === 'livekit') {
-            return;
-          }
           console.log('[CallSignaling] Caller remote transceiver track unmuted:', recTrack.kind);
           recTrack.enabled = true;
           attachRemoteTrack(recTrack);
@@ -3034,10 +2574,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }
         };
         if (recTrack.readyState === 'live' && !recTrack.muted) {
-          if (recTrack.kind !== 'audio' || mediaTransportRef.current !== 'livekit') {
-            recTrack.enabled = true;
-            attachRemoteTrack(recTrack);
-          }
+          recTrack.enabled = true;
+          attachRemoteTrack(recTrack);
           if (recTrack.kind === 'video' && video) {
             setParticipants((prev) =>
               prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
@@ -3077,9 +2615,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
 
     pc.onconnectionstatechange = () => {
-      if (mediaTransportRef.current === 'livekit' || isLiveKitActive) {
-        return;
-      }
       if (pc.connectionState === 'connected') {
         if (iceWatchdogTimerRef.current) {
           clearTimeout(iceWatchdogTimerRef.current);
@@ -3421,18 +2956,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    // In 1-on-1 calls, route directly via Direct WebRTC P2P for ultra-low latency (10-30ms) & local GCP noise processing.
-    // For group squad calls (3+ participants), connect to LiveKit Cloud SFU.
-    let livekitOk = false;
-    if (incomingCall.isGroup) {
-      livekitOk = await connectLiveKitCall(conversationId, stream, callSessionId);
-      if (activeCallSessionIdRef.current !== callSessionId) return;
-
-      if (pttActive && livekitRoomRef.current?.localParticipant) {
-        livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
-      }
-    }
-
     // Setup WebRTC Peer Connection with TURN relay and candidate pre-fetching
     const pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
     pcRef.current = pc;
@@ -3440,18 +2963,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     pendingRemoteCandidatesRef.current = [];
     seenCandidatesRef.current.clear();
 
-    if (livekitOk) {
-      mediaTransportRef.current = 'livekit';
-      console.log('[CallContext] Callee Squad Call: LiveKit SFU media active.');
-    } else {
-      mediaTransportRef.current = 'webrtc';
-      console.log('[CallContext] Callee 1-on-1 Direct P2P active (10-30ms ping target) with GCP Studio Noise Filter.');
-      if (stream) {
-        stream.getTracks().forEach((track) => {
-          track.enabled = true;
-          pc.addTrack(track, stream);
-        });
-      }
+    mediaTransportRef.current = 'webrtc';
+    console.log('[CallContext] Callee Direct WebRTC P2P active (10-30ms ping target) with GCP Studio Noise Filter.');
+    if (stream) {
+      stream.getTracks().forEach((track) => {
+        track.enabled = true;
+        pc.addTrack(track, stream);
+      });
     }
 
     // Realtime postgres_changes listener on call_sessions for this conversation (ensures callee exits immediately if caller ends)
@@ -3491,12 +3009,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     pc.ontrack = (event) => {
-      // Authoritative transport check: if LiveKit is active, suppress WebRTC playback
-      if (mediaTransportRef.current !== 'webrtc') {
-        console.log('[CallSignaling] Callee suppressing WebRTC track; LiveKit is authoritative.');
-        return;
-      }
-      console.log('[CallSignaling] Received remote media track on callee via WebRTC fallback:', event.track.kind);
+      console.log('[CallSignaling] Received remote media track on callee via Direct WebRTC:', event.track.kind);
       attachRemoteTrack(event.track);
       setCallStatus('in_call');
       if (event.track.kind === 'video' && (isVideo || (!event.track.muted && event.track.readyState === 'live'))) {
@@ -3511,9 +3024,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const recTrack = transceiver.receiver?.track;
       if (recTrack) {
         recTrack.onunmute = () => {
-          if (recTrack.kind === 'audio' && mediaTransportRef.current === 'livekit') {
-            return;
-          }
           console.log('[CallSignaling] Callee remote transceiver track unmuted:', recTrack.kind);
           recTrack.enabled = true;
           attachRemoteTrack(recTrack);
@@ -3524,10 +3034,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }
         };
         if (recTrack.readyState === 'live' && !recTrack.muted) {
-          if (recTrack.kind !== 'audio' || mediaTransportRef.current !== 'livekit') {
-            recTrack.enabled = true;
-            attachRemoteTrack(recTrack);
-          }
+          recTrack.enabled = true;
+          attachRemoteTrack(recTrack);
           if (recTrack.kind === 'video' && isVideo) {
             setParticipants((prev) =>
               prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
@@ -3567,9 +3075,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
 
     pc.onconnectionstatechange = () => {
-      if (mediaTransportRef.current === 'livekit' || isLiveKitActive) {
-        return;
-      }
       if (pc.connectionState === 'connected') {
         if (iceWatchdogTimerRef.current) {
           clearTimeout(iceWatchdogTimerRef.current);

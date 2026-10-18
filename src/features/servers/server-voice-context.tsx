@@ -6,7 +6,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { SoundboardClip, soundboardEngine } from '@/lib/soundboard/audio-engine';
 import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
-import { createStudioAudioPipeline, StudioAudioPipeline } from '@/lib/webrtc/audio-dsp';
+import { createGcpNoisePipeline, GcpNoisePipeline } from '@/lib/webrtc/gcp-noise-cancellation';
 import {
   Room,
   RoomEvent,
@@ -130,7 +130,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const [remoteParticipants, setRemoteParticipants] = React.useState<VoiceParticipant[]>([]);
   const [remoteVideoStreams, setRemoteVideoStreams] = React.useState<Map<string, MediaStream>>(new Map());
   const remoteVideoStreamsRef = React.useRef<Map<string, MediaStream>>(new Map());
-  const dspPipelineRef = React.useRef<StudioAudioPipeline | null>(null);
+  const dspPipelineRef = React.useRef<GcpNoisePipeline | null>(null);
   const [channelOccupants, setChannelOccupants] = React.useState<Map<string, VoiceParticipant[]>>(new Map());
 
   // Synchronous refs for WebRTC callbacks to prevent stale closures
@@ -1366,19 +1366,54 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 audioCtx.resume().catch(() => {});
               }
 
+              // Route audio through GCP Studio AudioWorklet Noise Cancellation Pipeline
+              let rawStream: MediaStream;
               if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
-                localAudioTrack = new LocalAudioTrack(existingAudioTrack, undefined, true, audioCtx);
+                rawStream = new MediaStream([existingAudioTrack]);
+              } else if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+                const savedMicId = (typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null);
+                rawStream = await navigator.mediaDevices.getUserMedia({
+                  audio: {
+                    echoCancellation: true,
+                    noiseSuppression: isNoiseSuppressionEnabled,
+                    autoGainControl: isNoiseSuppressionEnabled,
+                    ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
+                  },
+                });
               } else {
-                localAudioTrack = await createLocalAudioTrack({
+                const fallbackTrack = await createLocalAudioTrack({
                   echoCancellation: true,
                   noiseSuppression: true,
                   autoGainControl: true,
                 });
-                if (localAudioTrack.mediaStreamTrack) {
-                  const s = new MediaStream([localAudioTrack.mediaStreamTrack]);
-                  setLocalStream(s);
-                  localStreamRef.current = s;
+                rawStream = new MediaStream([fallbackTrack.mediaStreamTrack]);
+              }
+
+              let finalAudioTrack = rawStream.getAudioTracks()[0];
+              try {
+                if (dspPipelineRef.current) {
+                  try { dspPipelineRef.current.cleanup(); } catch {}
+                  dspPipelineRef.current = null;
                 }
+                const pipeline = await createGcpNoisePipeline(rawStream, isNoiseSuppressionEnabled);
+                if (pipeline) {
+                  dspPipelineRef.current = pipeline;
+                  const procTrack = pipeline.outputStream.getAudioTracks()[0];
+                  if (procTrack) {
+                    finalAudioTrack = procTrack;
+                  }
+                }
+              } catch (dspErr) {
+                console.warn('[LiveKit Voice] GCP Noise Pipeline initialization notice:', dspErr);
+              }
+
+              if (finalAudioTrack) {
+                const filteredStream = new MediaStream([finalAudioTrack]);
+                setLocalStream(filteredStream);
+                localStreamRef.current = filteredStream;
+                localAudioTrack = new LocalAudioTrack(finalAudioTrack, undefined, true, audioCtx);
+              } else {
+                localAudioTrack = await createLocalAudioTrack();
               }
 
               if (audioCtx) {
@@ -1388,40 +1423,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 try {
                   (localAudioTrack as any).audioContext = audioCtx;
                 } catch {}
-              }
-
-              // Attempt Krisp AI neural noise cancellation filter
-              if (typeof window !== 'undefined') {
-                try {
-                  const { KrispNoiseFilter, isKrispNoiseFilterSupported } = await import('@livekit/krisp-noise-filter');
-                  const isSupported = isKrispNoiseFilterSupported();
-                  console.log('[LiveKit Voice] Checking Krisp AI noise filter support:', isSupported);
-                  if (isSupported) {
-                    const krisp = KrispNoiseFilter();
-                    await localAudioTrack.setProcessor(krisp);
-                    try {
-                      await krisp.setEnabled(true);
-                    } catch {}
-                    krispProcessorRef.current = krisp;
-                    setIsKrispActive(true);
-                    console.log('[LiveKit Voice] Krisp AI noise filter activated in voice lounge!');
-                  } else {
-                    console.log('[LiveKit Voice] Krisp AI is not supported by this browser; clean studio audio active.');
-                  }
-                } catch (krispErr) {
-                  console.warn('[LiveKit Voice] Krisp processor notice (using clean studio audio fallback):', krispErr);
-                  try {
-                    if ((localAudioTrack as any).processor) {
-                      try { await (localAudioTrack as any).processor.destroy(); } catch {}
-                      (localAudioTrack as any).processor = undefined;
-                    }
-                    if ((localAudioTrack as any).sender) {
-                      await localAudioTrack.stopProcessor();
-                    }
-                  } catch {}
-                  krispProcessorRef.current = null;
-                  setIsKrispActive(false);
-                }
               }
 
               await lkRoom.localParticipant.publishTrack(localAudioTrack, {

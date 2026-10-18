@@ -30,8 +30,15 @@ import {
   Circle,
   HelpCircle,
   RefreshCw,
+  ShieldAlert,
+  KeyRound,
+  Smartphone,
+  Laptop,
+  Trash2,
+  Lock,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
+import { getBrowserClient } from '@/lib/supabase/client';
 import { useModalEscape } from '@/hooks/use-modal-escape';
 import { AccentTheme, UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -96,12 +103,28 @@ const PRESENCE_OPTIONS: { status: UserStatus; label: string; desc: string; color
 ];
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
-  const { profile, settings, updateProfile, updateSettings, signOut } = useAuth();
+  const { user, profile, settings, updateProfile, updateSettings, signOut } = useAuth();
   const { toast } = useToast();
   useModalEscape(open, onOpenChange);
 
-  const [activeTab, setActiveTab] = React.useState<'profile' | 'appearance' | 'studio' | 'audio' | 'shortcuts' | 'notifs' | 'diagnostics'>('profile');
+  const [activeTab, setActiveTab] = React.useState<'profile' | 'appearance' | 'studio' | 'audio' | 'shortcuts' | 'notifs' | 'security' | 'diagnostics'>('profile');
   const [isSaving, setIsSaving] = React.useState(false);
+
+  // Notification categories state
+  const [notifDms, setNotifDms] = React.useState(true);
+  const [notifMentions, setNotifMentions] = React.useState(true);
+  const [notifFriendRequests, setNotifFriendRequests] = React.useState(true);
+  const [notifInvites, setNotifInvites] = React.useState(true);
+  const [notifMissedCalls, setNotifMissedCalls] = React.useState(true);
+
+  // Security & Privacy state
+  const [allowDms, setAllowDms] = React.useState<'everyone' | 'friends' | 'none'>('everyone');
+  const [allowFriendReqs, setAllowFriendReqs] = React.useState<'everyone' | 'friends_of_friends' | 'none'>('everyone');
+  const [isResettingPassword, setIsResettingPassword] = React.useState(false);
+  const [isSigningOutOthers, setIsSigningOutOthers] = React.useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const [deleteInputText, setDeleteInputText] = React.useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = React.useState(false);
 
   // Profile state
   const [displayName, setDisplayName] = React.useState('');
@@ -406,6 +429,13 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       setInputVol(settings.input_volume ?? 85);
       setOutputVol(settings.output_volume ?? 100);
       setDesktopNotifs(settings.desktop_notifications);
+      setNotifDms(settings.notif_dms ?? true);
+      setNotifMentions(settings.notif_mentions ?? true);
+      setNotifFriendRequests(settings.notif_friend_requests ?? true);
+      setNotifInvites(settings.notif_invites ?? true);
+      setNotifMissedCalls(settings.notif_missed_calls ?? true);
+      setAllowDms(settings.allow_direct_messages ?? 'everyone');
+      setAllowFriendReqs(settings.allow_friend_requests ?? 'everyone');
     }
   }, [profile, settings, open]);
 
@@ -499,6 +529,121 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       type: 'info',
       duration: 2000,
     });
+  };
+
+  const handleToggleCategory = async (
+    key: 'notif_dms' | 'notif_mentions' | 'notif_friend_requests' | 'notif_invites' | 'notif_missed_calls',
+    currentVal: boolean
+  ) => {
+    const nextVal = !currentVal;
+    if (key === 'notif_dms') setNotifDms(nextVal);
+    if (key === 'notif_mentions') setNotifMentions(nextVal);
+    if (key === 'notif_friend_requests') setNotifFriendRequests(nextVal);
+    if (key === 'notif_invites') setNotifInvites(nextVal);
+    if (key === 'notif_missed_calls') setNotifMissedCalls(nextVal);
+
+    await updateSettings({ [key]: nextVal });
+    toast({
+      title: 'Preference Updated',
+      description: `Notification category preference saved.`,
+      type: 'info',
+      duration: 2000,
+    });
+  };
+
+  const handleUpdatePrivacy = async (updates: Partial<UserSettings>) => {
+    if (updates.allow_direct_messages) setAllowDms(updates.allow_direct_messages);
+    if (updates.allow_friend_requests) setAllowFriendReqs(updates.allow_friend_requests);
+    await updateSettings(updates);
+    toast({
+      title: 'Privacy Policy Saved',
+      description: 'Communication and invitation policies updated.',
+      type: 'success',
+      duration: 2000,
+    });
+  };
+
+  const handleSendPasswordReset = async () => {
+    const supabase = getBrowserClient();
+    const userEmail = (user as any)?.email;
+    if (!userEmail) {
+      toast({
+        title: 'Password Reset',
+        description: 'No active email address associated with this session.',
+        type: 'error',
+      });
+      return;
+    }
+    setIsResettingPassword(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
+        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined,
+      });
+      if (error) throw error;
+      toast({
+        title: 'Reset Link Dispatched',
+        description: `A password reset link has been dispatched to ${userEmail}.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Reset Request Failed',
+        description: err?.message || 'Could not send reset email.',
+        type: 'error',
+      });
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
+  const handleSignOutOtherSessions = async () => {
+    const supabase = getBrowserClient();
+    setIsSigningOutOthers(true);
+    try {
+      await supabase.auth.signOut({ scope: 'others' });
+      toast({
+        title: 'Sessions Terminated',
+        description: 'All other active browser and device sessions have been invalidated.',
+        type: 'success',
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Action Failed',
+        description: err?.message || 'Could not terminate other sessions.',
+        type: 'error',
+      });
+    } finally {
+      setIsSigningOutOthers(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteInputText.trim() !== 'DELETE') {
+      toast({ title: 'Confirmation Required', description: 'Please type DELETE to confirm.', type: 'error' });
+      return;
+    }
+    const supabase = getBrowserClient();
+    setIsDeletingAccount(true);
+    try {
+      const { error } = await supabase.rpc('delete_user_account');
+      if (error) throw error;
+      toast({
+        title: 'Account Deleted',
+        description: 'Your account and personal data have been removed.',
+        type: 'info',
+      });
+      await signOut();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Account Deletion Failed',
+        description: err?.message || 'Could not delete account.',
+        type: 'error',
+      });
+      setIsDeletingAccount(false);
+    }
   };
 
   return (
@@ -617,6 +762,19 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   >
                     <Bell className="w-4 h-4 shrink-0" />
                     <span>Notifications</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('security')}
+                    className={cn(
+                      'flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all text-left w-full font-medium',
+                      activeTab === 'security'
+                        ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                        : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                    )}
+                  >
+                    <Shield className="w-4 h-4 shrink-0" />
+                    <span>Security & Privacy</span>
                   </button>
 
                   <button
@@ -1412,6 +1570,283 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       )}
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* Phase 4 Category-Specific Notification Settings */}
+              <div className="space-y-3 pt-4 border-t border-white/[0.06]">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notification Categories</h4>
+                  <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+                    Filter persistent inbox entries and unread badges by category.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {[
+                    { key: 'notif_dms' as const, label: 'Direct Messages', desc: 'Private 1-on-1 and squad group direct messages', val: notifDms },
+                    { key: 'notif_mentions' as const, label: 'Mentions & Replies', desc: 'Direct @mentions and replies to your messages', val: notifMentions },
+                    { key: 'notif_friend_requests' as const, label: 'Friend Requests', desc: 'Incoming friend requests and accepted friendships', val: notifFriendRequests },
+                    { key: 'notif_invites' as const, label: 'Server & Squad Invites', desc: 'Invitations to join gaming servers and clans', val: notifInvites },
+                    { key: 'notif_missed_calls' as const, label: 'Missed Calls', desc: 'Alerts when someone attempts to ring you while away', val: notifMissedCalls },
+                  ].map((cat) => (
+                    <div
+                      key={cat.key}
+                      onClick={() => handleToggleCategory(cat.key, cat.val)}
+                      className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.04] transition cursor-pointer"
+                    >
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">{cat.label}</div>
+                        <div className="text-[11px] text-muted-foreground">{cat.desc}</div>
+                      </div>
+                      <div
+                        className={cn(
+                          'w-10 h-5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0',
+                          cat.val ? 'bg-primary' : 'bg-white/20'
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            'w-4 h-4 rounded-full bg-white shadow-md transition-transform',
+                            cat.val ? 'translate-x-5' : 'translate-x-0'
+                          )}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SECURITY & PRIVACY */}
+          {activeTab === 'security' && (
+            <div className="space-y-6 max-w-3xl w-full pb-16">
+              <div>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-primary" />
+                  <span>Account Security & Privacy</span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Manage communication privacy, authentication, active sessions, and account lifecycle.
+                </p>
+              </div>
+
+              {/* 1. Privacy Controls */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Privacy Controls</h4>
+
+                {/* Direct Messages Policy */}
+                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+                  <div>
+                    <div className="text-xs font-bold text-foreground">Who Can Send You Direct Messages</div>
+                    <div className="text-[11px] text-muted-foreground">Choose who is permitted to initiate private conversations</div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: 'everyone', label: 'Everyone', desc: 'Any verified user' },
+                      { id: 'friends', label: 'Friends Only', desc: 'Only accepted friends' },
+                      { id: 'none', label: 'Nobody', desc: 'Block incoming DMs' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleUpdatePrivacy({ allow_direct_messages: opt.id as any })}
+                        className={cn(
+                          'p-2.5 rounded-xl border text-left transition text-xs',
+                          allowDms === opt.id
+                            ? 'bg-primary/20 border-primary text-foreground'
+                            : 'bg-white/[0.02] border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]'
+                        )}
+                      >
+                        <div className="font-semibold">{opt.label}</div>
+                        <div className="text-[10px] opacity-75">{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Friend Requests Policy */}
+                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+                  <div>
+                    <div className="text-xs font-bold text-foreground">Who Can Send You Friend Requests</div>
+                    <div className="text-[11px] text-muted-foreground">Control incoming friendship requests</div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: 'everyone', label: 'Everyone', desc: 'Any user on GCP' },
+                      { id: 'friends_of_friends', label: 'Mutual Friends', desc: 'Friends of friends' },
+                      { id: 'none', label: 'Nobody', desc: 'Disable requests' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleUpdatePrivacy({ allow_friend_requests: opt.id as any })}
+                        className={cn(
+                          'p-2.5 rounded-xl border text-left transition text-xs',
+                          allowFriendReqs === opt.id
+                            ? 'bg-primary/20 border-primary text-foreground'
+                            : 'bg-white/[0.02] border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]'
+                        )}
+                      >
+                        <div className="font-semibold">{opt.label}</div>
+                        <div className="text-[10px] opacity-75">{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Authentication & Account Access */}
+              <div className="space-y-3 pt-3 border-t border-white/[0.06]">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Authentication & MFA</h4>
+
+                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-foreground">Email Verification</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {(user as any)?.email || 'Signed in via provider'}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      {(user as any)?.email_confirmed_at ? 'Email Verified' : 'Verified'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-white/[0.04]">
+                    <div>
+                      <div className="text-xs font-bold text-foreground">Password Management</div>
+                      <div className="text-[11px] text-muted-foreground">Receive a secure reset token link in your email</div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleSendPasswordReset}
+                      disabled={isResettingPassword}
+                      className="border-white/10 hover:bg-white/10 text-xs"
+                    >
+                      {isResettingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <KeyRound className="w-3.5 h-3.5 mr-1.5" />}
+                      Reset Password
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-white/[0.04]">
+                    <div>
+                      <div className="text-xs font-bold text-foreground">Multi-Factor Authentication (MFA)</div>
+                      <div className="text-[11px] text-muted-foreground">Time-based one-time password (TOTP) authenticator app</div>
+                    </div>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                      Standard Security
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Active Sessions & Device Management */}
+              <div className="space-y-3 pt-3 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Active Sessions & Devices</h4>
+                    <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+                      Devices currently authorized to access your profile.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleSignOutOtherSessions}
+                    disabled={isSigningOutOthers}
+                    className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20"
+                  >
+                    {isSigningOutOthers ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <LogOut className="w-3 h-3 mr-1.5" />}
+                    Sign Out Other Sessions
+                  </Button>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
+                      <Laptop className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                        <span>Current Browser Session</span>
+                        <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Active Now
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {typeof navigator !== 'undefined' ? `${navigator.userAgent.slice(0, 45)}...` : 'Web Client'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Danger Zone: Account Deletion */}
+              <div className="space-y-3 pt-4 border-t border-rose-500/20">
+                <div className="p-4 rounded-2xl bg-rose-950/20 border border-rose-500/30 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                      <ShieldAlert className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-rose-300">Danger Zone — Delete Account</div>
+                      <div className="text-[11px] text-rose-300/80 leading-relaxed mt-0.5">
+                        Permanently purge your gamer identity, server memberships, friendship records, and custom settings.
+                        This action cannot be reversed.
+                      </div>
+                    </div>
+                  </div>
+
+                  {!showDeleteConfirm ? (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="bg-rose-600 hover:bg-rose-700 text-white text-xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                      Request Account Deletion
+                    </Button>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-black/40 border border-rose-500/40 space-y-3">
+                      <p className="text-xs text-rose-300 font-semibold">
+                        Type <span className="underline font-mono text-white">DELETE</span> to confirm permanent account purge:
+                      </p>
+                      <div className="flex gap-2">
+                        <Input
+                          value={deleteInputText}
+                          onChange={(e) => setDeleteInputText(e.target.value)}
+                          placeholder="Type DELETE"
+                          className="text-xs bg-white/[0.05] border-white/20 h-8"
+                        />
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={handleDeleteAccount}
+                          disabled={deleteInputText.trim() !== 'DELETE' || isDeletingAccount}
+                          className="text-xs shrink-0"
+                        >
+                          {isDeletingAccount ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                          Confirm Purge
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setShowDeleteConfirm(false);
+                            setDeleteInputText('');
+                          }}
+                          className="text-xs shrink-0"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

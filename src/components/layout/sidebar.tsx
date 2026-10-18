@@ -19,6 +19,7 @@ import { useConversations } from '@/hooks/use-conversations';
 import { useServers } from '@/hooks/use-servers';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { CreateGroupModal } from '@/components/chat/create-group-modal';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -40,6 +41,7 @@ export function Sidebar({
   const { getUserStatus } = usePresence();
   const { conversations } = useConversations();
   const { servers } = useServers();
+  const [showCreateGroup, setShowCreateGroup] = React.useState(false);
 
   return (
     <aside
@@ -127,14 +129,24 @@ export function Sidebar({
           {!collapsed && (
             <div className="flex items-center justify-between px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
               <span>Direct Messages</span>
-              <button
-                onClick={() => router.push('/')}
-                className="text-muted-foreground/60 hover:text-primary transition-colors p-0.5 rounded"
-                title="Start a Direct Message"
-                aria-label="Start Direct Message"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowCreateGroup(true)}
+                  className="text-muted-foreground/60 hover:text-primary transition-colors p-0.5 rounded"
+                  title="Create Squad Group"
+                  aria-label="Create Squad Group"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => router.push('/')}
+                  className="text-muted-foreground/60 hover:text-primary transition-colors p-0.5 rounded"
+                  title="Start a Direct Message"
+                  aria-label="Start Direct Message"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -153,11 +165,12 @@ export function Sidebar({
               )
             ) : (
               conversations.map((conv) => {
+                const isGroup = conv.type === 'group';
                 const otherMemberRow = conv.members.find((m) => m.user_id !== user?.id);
                 const otherMember = otherMemberRow?.profile || null;
                 const otherMemberId = otherMemberRow?.user_id || otherMember?.id;
                 const isSelected = selectedConversationId === conv.id;
-                const title = otherMember?.display_name || conv.name || 'Chat';
+                const title = isGroup ? (conv.name || 'Squad Group') : (otherMember?.display_name || 'Chat');
 
                 return (
                   <div
@@ -172,18 +185,31 @@ export function Sidebar({
                     )}
                     title={title}
                   >
-                    <Avatar
-                      src={otherMember?.avatar_url}
-                      name={title}
-                      status={getUserStatus(otherMemberId)}
-                      showStatus
-                      size="sm"
-                    />
+                    {isGroup ? (
+                      <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center text-primary shrink-0">
+                        <Users className="w-3.5 h-3.5" />
+                      </div>
+                    ) : (
+                      <Avatar
+                        src={otherMember?.avatar_url}
+                        name={title}
+                        status={getUserStatus(otherMemberId)}
+                        showStatus
+                        size="sm"
+                      />
+                    )}
 
                     {!collapsed && (
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-foreground group-hover:text-primary transition-colors text-xs font-medium">
-                          {title}
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="truncate text-foreground group-hover:text-primary transition-colors text-xs font-medium">
+                            {title}
+                          </span>
+                          {isGroup && (
+                            <span className="text-[9px] text-muted-foreground/60 shrink-0 font-normal">
+                              {conv.members.length}
+                            </span>
+                          )}
                         </div>
                         {conv.last_message && (
                           <div className="text-[10px] text-muted-foreground/60 truncate leading-tight mt-0.5">
@@ -192,6 +218,12 @@ export function Sidebar({
                         )}
                       </div>
                     )}
+
+                    {conv.unread_count && conv.unread_count > 0 ? (
+                      <Badge variant="default" className="h-4 px-1 text-[9px] shrink-0">
+                        {conv.unread_count}
+                      </Badge>
+                    ) : null}
 
                     {isSelected && (
                       <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-primary rounded-r" />
@@ -254,6 +286,15 @@ export function Sidebar({
           Nexus • v1.0
         </div>
       )}
+
+      <CreateGroupModal
+        open={showCreateGroup}
+        onOpenChange={setShowCreateGroup}
+        onGroupCreated={(id) => {
+          onSelectConversation?.(id);
+          router.push(`/?conversation=${id}`);
+        }}
+      />
     </aside>
   );
 }

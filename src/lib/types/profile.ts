@@ -35,5 +35,10 @@ export interface UserSettings {
   allow_friend_requests: 'everyone' | 'friends_of_friends' | 'none';
   email_notifications: boolean;
   desktop_notifications: boolean;
+  notif_dms?: boolean;
+  notif_mentions?: boolean;
+  notif_friend_requests?: boolean;
+  notif_invites?: boolean;
+  notif_missed_calls?: boolean;
   updated_at: string;
 }

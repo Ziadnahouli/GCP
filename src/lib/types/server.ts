@@ -137,7 +137,55 @@ export interface ServerMember {
   user_id: string;
   role: ServerRole;
   joined_at: string;
+  timeout_until?: string | null;
   profile?: Profile;
+}
+
+export interface ServerBan {
+  id: string;
+  server_id: string;
+  user_id: string;
+  banned_by: string;
+  reason?: string | null;
+  created_at: string;
+  profile?: Profile;
+  banner_profile?: Profile;
+}
+
+export interface ModerationAuditLog {
+  id: string;
+  server_id: string;
+  actor_id: string;
+  target_id?: string | null;
+  action: 'kick' | 'ban' | 'unban' | 'timeout' | 'untimeout' | 'delete_message' | 'revoke_invite' | 'update_server';
+  reason?: string | null;
+  details?: Record<string, any>;
+  created_at: string;
+  actor?: Profile;
+  target?: Profile;
+}
+
+export interface ServerInvite {
+  id: string;
+  server_id: string;
+  code: string;
+  created_by: string;
+  max_uses: number;
+  uses: number;
+  expires_at?: string | null;
+  is_revoked: boolean;
+  created_at: string;
+}
+
+export interface ReportItem {
+  id: string;
+  reporter_id: string;
+  reported_user_id?: string | null;
+  reported_message_id?: string | null;
+  reason: string;
+  details?: string | null;
+  status: 'pending' | 'resolved' | 'dismissed';
+  created_at: string;
 }
 
 export interface Server {
@@ -150,6 +198,8 @@ export interface Server {
   channels: Channel[];
   members: ServerMember[];
   roles?: RoleDefinition[];
+  bans?: ServerBan[];
+  invites?: ServerInvite[];
 }
 
 export interface ChannelMessage {
@@ -159,6 +209,9 @@ export interface ChannelMessage {
   content: string;
   created_at: string;
   updated_at: string;
+  reply_to_id?: string | null;
+  is_pinned?: boolean;
+  is_edited?: boolean;
   profile?: Profile;
   status?: 'sending' | 'sent' | 'failed';
   error?: string;

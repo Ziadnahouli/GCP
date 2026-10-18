@@ -4,13 +4,14 @@ import * as React from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/toast';
+import type { UserSettings } from '@/lib/types/profile';
 
 export interface NotificationItem {
   id: string;
   user_id: string;
   title: string;
   message: string;
-  type: 'friend_request' | 'mention' | 'message' | 'call' | 'system';
+  type: 'friend_request' | 'mention' | 'message' | 'call' | 'missed_call' | 'server_invitation' | 'reply' | 'system';
   data?: {
     conversation_id?: string;
     server_id?: string;
@@ -26,6 +27,30 @@ export interface NotificationItem {
 
 const LOCAL_NOTIFS_KEY = 'nexus_notifications_v1';
 
+export function isNotificationCategoryEnabled(
+  type: NotificationItem['type'],
+  settings?: Partial<UserSettings> | null
+): boolean {
+  if (!settings) return true;
+  switch (type) {
+    case 'message':
+    case 'reply':
+      return settings.notif_dms !== false;
+    case 'mention':
+      return settings.notif_mentions !== false;
+    case 'friend_request':
+      return settings.notif_friend_requests !== false;
+    case 'server_invitation':
+      return settings.notif_invites !== false;
+    case 'call':
+    case 'missed_call':
+      return settings.notif_missed_calls !== false;
+    case 'system':
+    default:
+      return true;
+  }
+}
+
 export function useNotifications() {
   const { user, settings, isConfigured } = useAuth();
   const { toast } = useToast();
@@ -39,6 +64,16 @@ export function useNotifications() {
   React.useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  const activeResourceIdRef = React.useRef<string | null>(null);
+  const setActiveResource = React.useCallback((id: string | null) => {
+    activeResourceIdRef.current = id;
+  }, []);
+
+  const isCategoryEnabled = React.useCallback(
+    (type: NotificationItem['type']) => isNotificationCategoryEnabled(type, settingsRef.current),
+    []
+  );
 
   // Play subtle incoming notification chime using Web Audio API
   const playNotificationChime = React.useCallback(() => {
@@ -163,9 +198,31 @@ export function useNotifications() {
           const newItem = payload.new as NotificationItem;
           if (newItem && !seenIdsRef.current.has(newItem.id)) {
             seenIdsRef.current.add(newItem.id);
+
+            // If the user is actively viewing this exact conversation or channel, auto-mark as read and suppress chimes
+            const isActive =
+              Boolean(activeResourceIdRef.current) &&
+              (activeResourceIdRef.current === newItem.data?.conversation_id ||
+                activeResourceIdRef.current === newItem.data?.channel_id);
+
+            if (isActive) {
+              newItem.is_read = true;
+              setNotifications((prev) => [newItem, ...prev.filter((p) => p.id !== newItem.id)]);
+              supabase
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('id', newItem.id)
+                .then(() => {}, () => {});
+              return;
+            }
+
             setNotifications((prev) => [newItem, ...prev.filter((p) => p.id !== newItem.id)]);
-            playNotificationChime();
-            displayDesktopNotification(newItem);
+
+            // Respect category preference
+            if (isCategoryEnabled(newItem.type)) {
+              playNotificationChime();
+              displayDesktopNotification(newItem);
+            }
           }
         }
       )
@@ -206,7 +263,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, isConfigured, supabase, playNotificationChime, displayDesktopNotification]);
+  }, [user, isConfigured, supabase, playNotificationChime, displayDesktopNotification, isCategoryEnabled]);
 
   // Mark single notification as read
   const markAsRead = React.useCallback(
@@ -391,5 +448,7 @@ export function useNotifications() {
     clearAll,
     createNotification,
     refresh: loadNotifications,
+    setActiveResource,
+    isNotificationCategoryEnabled: isCategoryEnabled,
   };
 }

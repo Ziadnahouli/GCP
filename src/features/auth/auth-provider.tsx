@@ -39,6 +39,11 @@ const DEFAULT_SETTINGS: UserSettings = {
   allow_friend_requests: 'everyone',
   email_notifications: true,
   desktop_notifications: true,
+  notif_dms: true,
+  notif_mentions: true,
+  notif_friend_requests: true,
+  notif_invites: true,
+  notif_missed_calls: true,
   updated_at: new Date().toISOString(),
 };
 

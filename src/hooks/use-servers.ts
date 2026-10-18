@@ -1,7 +1,16 @@
 'use client';
 
 import * as React from 'react';
-import { Server, Channel, ChannelType, RoleDefinition, ServerPermission } from '@/lib/types/server';
+import {
+  Server,
+  Channel,
+  ChannelType,
+  RoleDefinition,
+  ServerPermission,
+  ServerBan,
+  ModerationAuditLog,
+  ServerInvite,
+} from '@/lib/types/server';
 import { useAuth } from '@/features/auth/auth-provider';
 import { supabase } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
@@ -726,7 +735,7 @@ export function useServersInternal() {
   );
 
   const kickMember = React.useCallback(
-    async (serverId: string, userId: string): Promise<boolean> => {
+    async (serverId: string, userId: string, reason?: string): Promise<boolean> => {
       const updated = servers.map((srv) => {
         if (srv.id === serverId) {
           return {
@@ -741,11 +750,18 @@ export function useServersInternal() {
 
       if (user && supabase) {
         try {
-          await supabase
-            .from('server_members')
-            .delete()
-            .eq('server_id', serverId)
-            .eq('user_id', userId);
+          const { error } = await supabase.rpc('kick_server_member', {
+            p_server_id: serverId,
+            p_user_id: userId,
+            p_reason: reason || null,
+          });
+          if (error) {
+            await supabase
+              .from('server_members')
+              .delete()
+              .eq('server_id', serverId)
+              .eq('user_id', userId);
+          }
           notifyServersUpdate();
           return true;
         } catch {
@@ -755,6 +771,166 @@ export function useServersInternal() {
       return true;
     },
     [servers, user, notifyServersUpdate]
+  );
+
+  const banMember = React.useCallback(
+    async (serverId: string, userId: string, reason?: string): Promise<{ success: boolean; error: string | null }> => {
+      if (!user || !supabase) return { success: false, error: 'Not authenticated' };
+      try {
+        const { error } = await supabase.rpc('ban_server_member', {
+          p_server_id: serverId,
+          p_user_id: userId,
+          p_reason: reason || null,
+        });
+        if (error) throw error;
+        await fetchServers();
+        return { success: true, error: null };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to ban member' };
+      }
+    },
+    [user, fetchServers]
+  );
+
+  const unbanMember = React.useCallback(
+    async (serverId: string, userId: string): Promise<{ success: boolean; error: string | null }> => {
+      if (!user || !supabase) return { success: false, error: 'Not authenticated' };
+      try {
+        const { error } = await supabase.rpc('unban_server_member', {
+          p_server_id: serverId,
+          p_user_id: userId,
+        });
+        if (error) throw error;
+        await fetchServers();
+        return { success: true, error: null };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to unban member' };
+      }
+    },
+    [user, fetchServers]
+  );
+
+  const timeoutMember = React.useCallback(
+    async (
+      serverId: string,
+      userId: string,
+      durationSeconds: number,
+      reason?: string
+    ): Promise<{ success: boolean; error: string | null }> => {
+      if (!user || !supabase) return { success: false, error: 'Not authenticated' };
+      try {
+        const { error } = await supabase.rpc('timeout_server_member', {
+          p_server_id: serverId,
+          p_user_id: userId,
+          p_duration_seconds: durationSeconds,
+          p_reason: reason || null,
+        });
+        if (error) throw error;
+        await fetchServers();
+        return { success: true, error: null };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to timeout member' };
+      }
+    },
+    [user, fetchServers]
+  );
+
+  const createInvite = React.useCallback(
+    async (
+      serverId: string,
+      maxUses = 0,
+      expiresInHours = 0
+    ): Promise<{ invite: ServerInvite | null; error: string | null }> => {
+      if (!user || !supabase) return { invite: null, error: 'Not authenticated' };
+      try {
+        const { data, error } = await supabase.rpc('create_server_invite', {
+          p_server_id: serverId,
+          p_max_uses: maxUses,
+          p_expires_in_hours: expiresInHours,
+        });
+        if (error) throw error;
+        return { invite: data as ServerInvite, error: null };
+      } catch (err: any) {
+        return { invite: null, error: err?.message || 'Failed to generate invite' };
+      }
+    },
+    [user]
+  );
+
+  const revokeInvite = React.useCallback(
+    async (inviteId: string): Promise<{ success: boolean; error: string | null }> => {
+      if (!user || !supabase) return { success: false, error: 'Not authenticated' };
+      try {
+        const { error } = await supabase.rpc('revoke_server_invite', {
+          p_invite_id: inviteId,
+        });
+        if (error) throw error;
+        return { success: true, error: null };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to revoke invite' };
+      }
+    },
+    [user]
+  );
+
+  const fetchAuditLogs = React.useCallback(
+    async (serverId: string): Promise<ModerationAuditLog[]> => {
+      if (!user || !supabase) return [];
+      try {
+        const { data } = await supabase
+          .from('moderation_audit_logs')
+          .select(`
+            id, server_id, actor_id, target_id, action, reason, details, created_at,
+            actor:actor_id ( id, username, display_name, avatar_url ),
+            target:target_id ( id, username, display_name, avatar_url )
+          `)
+          .eq('server_id', serverId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        return (data as unknown as ModerationAuditLog[]) || [];
+      } catch {
+        return [];
+      }
+    },
+    [user]
+  );
+
+  const fetchBans = React.useCallback(
+    async (serverId: string): Promise<ServerBan[]> => {
+      if (!user || !supabase) return [];
+      try {
+        const { data } = await supabase
+          .from('server_bans')
+          .select(`
+            id, server_id, user_id, banned_by, reason, created_at,
+            profile:user_id ( id, username, display_name, avatar_url ),
+            banner_profile:banned_by ( id, username, display_name, avatar_url )
+          `)
+          .eq('server_id', serverId)
+          .order('created_at', { ascending: false });
+        return (data as unknown as ServerBan[]) || [];
+      } catch {
+        return [];
+      }
+    },
+    [user]
+  );
+
+  const fetchInvites = React.useCallback(
+    async (serverId: string): Promise<ServerInvite[]> => {
+      if (!user || !supabase) return [];
+      try {
+        const { data } = await supabase
+          .from('server_invites')
+          .select('*')
+          .eq('server_id', serverId)
+          .order('created_at', { ascending: false });
+        return (data as unknown as ServerInvite[]) || [];
+      } catch {
+        return [];
+      }
+    },
+    [user]
   );
 
   const createRole = React.useCallback(
@@ -890,6 +1066,14 @@ export function useServersInternal() {
     leaveServer,
     updateMemberRole,
     kickMember,
+    banMember,
+    unbanMember,
+    timeoutMember,
+    createInvite,
+    revokeInvite,
+    fetchAuditLogs,
+    fetchBans,
+    fetchInvites,
     createRole,
     updateRole,
     deleteRole,

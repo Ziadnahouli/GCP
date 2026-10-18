@@ -23,7 +23,14 @@ import {
   UploadCloud,
   Maximize2,
   File,
+  Users,
+  Forward,
+  Flag,
+  ArrowDown,
 } from 'lucide-react';
+import { GroupSettingsModal } from '@/components/chat/group-settings-modal';
+import { ForwardModal } from '@/components/chat/forward-modal';
+import { ReportModal } from '@/components/social/report-modal';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useMessages } from '@/hooks/use-messages';
 import { useConversations } from '@/hooks/use-conversations';
@@ -87,6 +94,31 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const [showSearchInput, setShowSearchInput] = React.useState(false);
   const [showSoundboard, setShowSoundboard] = React.useState(false);
 
+  // Phase 4: Group settings, forward, report, draft, and jump-to-latest
+  const [showGroupSettings, setShowGroupSettings] = React.useState(false);
+  const [forwardingMessage, setForwardingMessage] = React.useState<Message | null>(null);
+  const [reportingMessage, setReportingMessage] = React.useState<Message | null>(null);
+  const [isScrolledUp, setIsScrolledUp] = React.useState(false);
+
+  // Restore draft for this conversation
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && conversationId) {
+      const saved = localStorage.getItem(`nexus_draft_conv_${conversationId}`);
+      if (saved) setInputContent(saved);
+    }
+  }, [conversationId]);
+
+  // Persist draft on edit
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && conversationId) {
+      if (inputContent) {
+        localStorage.setItem(`nexus_draft_conv_${conversationId}`, inputContent);
+      } else {
+        localStorage.removeItem(`nexus_draft_conv_${conversationId}`);
+      }
+    }
+  }, [inputContent, conversationId]);
+
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const isNearBottomRef = React.useRef(true);
@@ -96,7 +128,9 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-    isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 150;
+    const nearBottom = scrollHeight - scrollTop - clientHeight < 150;
+    isNearBottomRef.current = nearBottom;
+    setIsScrolledUp(!nearBottom);
   };
 
   const supabase = React.useMemo(() => getBrowserClient(), []);
@@ -241,9 +275,14 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         setInputContent('');
         setSelectedFiles([]);
         setReplyingTo(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(`nexus_draft_conv_${conversationId}`);
+        }
         inputRef.current?.focus();
         // Unconditional scroll to bottom when current user sends a message
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        setIsScrolledUp(false);
+        isNearBottomRef.current = true;
       }
     } catch (err: unknown) {
       toast({
@@ -320,20 +359,32 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           )}
 
           {/* Member / Chat Avatar */}
-          <Avatar
-            src={targetMember?.avatar_url || null}
-            name={targetMember?.display_name || currentConversation?.name || 'Chat'}
-            status={getUserStatus(targetUserId || targetMember?.id)}
-            showStatus
-            size="sm"
-          />
+          {currentConversation?.type === 'group' ? (
+            <div
+              onClick={() => setShowGroupSettings(true)}
+              className="w-8 h-8 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center text-primary cursor-pointer hover:bg-primary/30 transition shrink-0"
+              title="Squad Settings"
+            >
+              <Users className="w-4 h-4" />
+            </div>
+          ) : (
+            <Avatar
+              src={targetMember?.avatar_url || null}
+              name={targetMember?.display_name || currentConversation?.name || 'Chat'}
+              status={getUserStatus(targetUserId || targetMember?.id)}
+              showStatus
+              size="sm"
+            />
+          )}
 
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-semibold text-foreground truncate">
-                {targetMember?.display_name || currentConversation?.name || 'Squad Chat'}
+                {currentConversation?.type === 'group'
+                  ? currentConversation.name || 'Squad Group'
+                  : targetMember?.display_name || 'Squad Chat'}
               </h2>
-              {targetMember && (
+              {currentConversation?.type !== 'group' && targetMember && (
                 <span className="text-[11px] text-muted-foreground/60 font-mono truncate">
                   @{targetMember.username}
                 </span>
@@ -341,7 +392,15 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             </div>
 
             <div className="text-[10px] text-muted-foreground/60 truncate">
-              {targetMember?.game_activity ? (
+              {currentConversation?.type === 'group' ? (
+                <button
+                  onClick={() => setShowGroupSettings(true)}
+                  className="hover:text-primary transition-colors flex items-center gap-1"
+                >
+                  <span>{currentConversation.members.length} squad members</span>
+                  <span className="text-primary/70 font-semibold">• Manage Squad</span>
+                </button>
+              ) : targetMember?.game_activity ? (
                 <span className="text-primary font-medium flex items-center gap-1">
                   <Gamepad2 className="w-3 h-3" /> Playing {targetMember.game_activity}
                 </span>
@@ -388,6 +447,18 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-primary" />
             )}
           </button>
+
+          {/* Group Settings Button */}
+          {currentConversation?.type === 'group' && (
+            <button
+              onClick={() => setShowGroupSettings(true)}
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
+              title="Squad Settings & Members"
+              aria-label="Squad Settings & Members"
+            >
+              <Users className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Voice & Video Call */}
           <button
@@ -756,6 +827,24 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                   <Pin className="w-3 h-3" />
                 </button>
 
+                <button
+                  onClick={() => setForwardingMessage(msg)}
+                  className="p-1 rounded-full hover:bg-white/[0.08] text-muted-foreground hover:text-foreground transition-colors"
+                  title="Forward Message"
+                >
+                  <Forward className="w-3 h-3" />
+                </button>
+
+                {!isMe && (
+                  <button
+                    onClick={() => setReportingMessage(msg)}
+                    className="p-1 rounded-full hover:bg-white/[0.08] text-muted-foreground hover:text-rose-400 transition-colors"
+                    title="Report Message"
+                  >
+                    <Flag className="w-3 h-3" />
+                  </button>
+                )}
+
                 {isMe && (
                   <>
                     <button
@@ -963,8 +1052,47 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         </div>
       )}
 
+      {/* Floating Jump to Latest Button */}
+      {isScrolledUp && (
+        <button
+          onClick={() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            setIsScrolledUp(false);
+            isNearBottomRef.current = true;
+          }}
+          className="absolute bottom-20 right-6 z-30 px-3 py-1.5 rounded-full bg-primary text-black font-semibold text-xs shadow-lg flex items-center gap-1.5 hover:brightness-110 transition animate-in fade-in"
+        >
+          <ArrowDown className="w-3.5 h-3.5" />
+          <span>Jump to latest</span>
+        </button>
+      )}
+
       {/* Soundboard Modal */}
       <SoundboardModal open={showSoundboard} onOpenChange={setShowSoundboard} />
+
+      {/* Group DM Settings Modal */}
+      <GroupSettingsModal
+        conversation={currentConversation}
+        open={showGroupSettings}
+        onOpenChange={setShowGroupSettings}
+        onLeftGroup={() => onBack?.()}
+      />
+
+      {/* Forward Message Modal */}
+      <ForwardModal
+        message={forwardingMessage}
+        open={Boolean(forwardingMessage)}
+        onOpenChange={(op) => !op && setForwardingMessage(null)}
+      />
+
+      {/* Report Modal */}
+      <ReportModal
+        reportedUserId={reportingMessage?.sender_id || null}
+        reportedUserName={reportingMessage?.sender?.display_name || 'User'}
+        messageId={reportingMessage?.id || null}
+        open={Boolean(reportingMessage)}
+        onOpenChange={(op) => !op && setReportingMessage(null)}
+      />
     </div>
   );
 }

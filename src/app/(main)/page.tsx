@@ -21,6 +21,7 @@ import { ChannelView } from '@/components/servers/channel-view';
 import { useServers } from '@/hooks/use-servers';
 import { useSocial } from '@/hooks/use-social';
 import { useConversations } from '@/hooks/use-conversations';
+import { useNotifications } from '@/hooks/use-notifications';
 import { useToast } from '@/components/ui/toast';
 
 import { StatusSelector } from '@/components/layout/status-selector';
@@ -38,9 +39,14 @@ function HomePageContent() {
   const { servers } = useServers();
   const { friends } = useSocial();
   const { getOrCreateDirectConversation } = useConversations();
+  const { setActiveResource } = useNotifications();
   const { toast } = useToast();
   const [showSettings, setShowSettings] = React.useState(false);
   const [showPresencePicker, setShowPresencePicker] = React.useState(false);
+
+  React.useEffect(() => {
+    setActiveResource(conversationId || channelId || null);
+  }, [conversationId, channelId, setActiveResource]);
 
   const handleStatusChange = async (newStatus: UserStatus) => {
     const res = await updateProfile({ status: newStatus });

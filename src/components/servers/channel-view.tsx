@@ -34,7 +34,14 @@ import {
   CheckCircle2,
   Maximize2,
   Minimize2,
+  Reply,
+  Forward,
+  Flag,
+  ArrowDown,
 } from 'lucide-react';
+import { ForwardModal } from '@/components/chat/forward-modal';
+import { ReportModal } from '@/components/social/report-modal';
+import { ChannelMessage } from '@/lib/types/server';
 import { useRouter } from 'next/navigation';
 import { Server, Channel, hasServerPermission } from '@/lib/types/server';
 import { useChannelMessages } from '@/hooks/use-channel-messages';
@@ -118,6 +125,41 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showSearch, setShowSearch] = React.useState(false);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const isNearBottomRef = React.useRef(true);
+
+  // Phase 4 enhancements: reply, forward, report, draft, and jump-to-latest
+  const [replyingTo, setReplyingTo] = React.useState<ChannelMessage | null>(null);
+  const [forwardingMessage, setForwardingMessage] = React.useState<any | null>(null);
+  const [reportingMessage, setReportingMessage] = React.useState<any | null>(null);
+  const [isScrolledUp, setIsScrolledUp] = React.useState(false);
+
+  // Restore draft for this channel
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && channel?.id) {
+      const saved = localStorage.getItem(`nexus_draft_chan_${channel.id}`);
+      if (saved) setInputText(saved);
+    }
+  }, [channel?.id]);
+
+  // Persist draft on edit
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && channel?.id) {
+      if (inputText) {
+        localStorage.setItem(`nexus_draft_chan_${channel.id}`, inputText);
+      } else {
+        localStorage.removeItem(`nexus_draft_chan_${channel.id}`);
+      }
+    }
+  }, [inputText, channel?.id]);
+
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const nearBottom = scrollHeight - scrollTop - clientHeight < 150;
+    isNearBottomRef.current = nearBottom;
+    setIsScrolledUp(!nearBottom);
+  };
 
   // Screen Share Box and Fullscreen
   const screenShareBoxRef = React.useRef<HTMLDivElement>(null);
@@ -211,6 +253,13 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
         });
       } else {
         setInputText('');
+        setReplyingTo(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(`nexus_draft_chan_${channel.id}`);
+        }
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        setIsScrolledUp(false);
+        isNearBottomRef.current = true;
       }
     } catch (err: unknown) {
       toast({
@@ -1175,7 +1224,11 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
         ) : (
           /* Classic Text Channel Chat Feed */
           <>
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3"
+            >
               {/* Channel Start Banner */}
               <div className="py-4 space-y-2 border-b border-white/[0.06] mb-3">
                 <div className="w-11 h-11 rounded-xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center text-primary">
@@ -1275,14 +1328,82 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         <MessageContent content={msg.content} />
                       </div>
                     </div>
+
+                    {/* Hover Action Bar */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-surface-header/90 backdrop-blur-md px-1.5 py-0.5 rounded-lg border border-white/[0.08] shrink-0 ml-auto self-start">
+                      <button
+                        onClick={() => setReplyingTo(msg)}
+                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition"
+                        title="Reply"
+                      >
+                        <Reply className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() =>
+                          setForwardingMessage({
+                            id: msg.id,
+                            content: msg.content,
+                            sender: msg.profile,
+                          })
+                        }
+                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition"
+                        title="Forward"
+                      >
+                        <Forward className="w-3 h-3" />
+                      </button>
+                      {msg.user_id !== user?.id && (
+                        <button
+                          onClick={() =>
+                            setReportingMessage({
+                              id: msg.id,
+                              user_id: msg.user_id,
+                              sender: msg.profile,
+                            })
+                          }
+                          className="p-1 rounded text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition"
+                          title="Report"
+                        >
+                          <Flag className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Floating Jump to Latest Button */}
+            {isScrolledUp && (
+              <button
+                onClick={() => {
+                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                  setIsScrolledUp(false);
+                  isNearBottomRef.current = true;
+                }}
+                className="absolute bottom-20 right-6 z-30 px-3 py-1.5 rounded-full bg-primary text-black font-semibold text-xs shadow-lg flex items-center gap-1.5 hover:brightness-110 transition animate-in fade-in"
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
+                <span>Jump to latest</span>
+              </button>
+            )}
+
             {/* Input Bar */}
             <div className="p-3 border-t border-white/[0.06] bg-surface-header/50 backdrop-blur-md shrink-0">
+              {replyingTo && (
+                <div className="flex items-center justify-between px-3 py-1.5 bg-primary/10 border-t border-primary/20 text-xs text-primary rounded-t-lg mb-1">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <Reply className="w-3.5 h-3.5 rotate-180" />
+                    <span>
+                      Replying to <strong>@{replyingTo.profile?.username || 'member'}</strong>: &ldquo;
+                      {replyingTo.content.slice(0, 50)}...&rdquo;
+                    </span>
+                  </div>
+                  <button onClick={() => setReplyingTo(null)} className="hover:opacity-80 p-0.5">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
               <form
                 onSubmit={handleSend}
                 className="flex items-center gap-2 bg-white/[0.02] border border-white/[0.06] rounded-lg p-1.5 px-3 focus-within:border-white/[0.12] focus-within:bg-white/[0.03] transition-all"
@@ -1416,6 +1537,24 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
       {/* Invite Squadmates Modal */}
       <InviteModal open={showInviteModal} onOpenChange={setShowInviteModal} server={server} />
+
+      {/* Forward Modal */}
+      <ForwardModal
+        message={forwardingMessage}
+        open={Boolean(forwardingMessage)}
+        onOpenChange={(op) => !op && setForwardingMessage(null)}
+      />
+
+      {/* Report Modal */}
+      <ReportModal
+        reportedUserId={reportingMessage?.user_id || reportingMessage?.sender?.id || null}
+        reportedUserName={reportingMessage?.sender?.display_name || 'Member'}
+        serverId={server.id}
+        channelId={channel.id}
+        messageId={reportingMessage?.id || null}
+        open={Boolean(reportingMessage)}
+        onOpenChange={(op) => !op && setReportingMessage(null)}
+      />
     </div>
   );
 }

@@ -10,11 +10,14 @@ import {
   X,
   MessageSquare,
   Phone,
+  PhoneMissed,
   UserPlus,
   Sparkles,
   Shield,
   Clock,
   ExternalLink,
+  Reply,
+  Radio,
 } from 'lucide-react';
 import { NotificationItem } from '@/hooks/use-notifications';
 import { useModalEscape } from '@/hooks/use-modal-escape';
@@ -58,6 +61,12 @@ function getNotificationIcon(type: NotificationItem['type']) {
       return <Sparkles className="w-3.5 h-3.5 text-primary" />;
     case 'message':
       return <MessageSquare className="w-3.5 h-3.5 text-sky-400" />;
+    case 'reply':
+      return <Reply className="w-3.5 h-3.5 text-indigo-400" />;
+    case 'server_invitation':
+      return <Radio className="w-3.5 h-3.5 text-amber-400" />;
+    case 'missed_call':
+      return <PhoneMissed className="w-3.5 h-3.5 text-rose-400" />;
     case 'call':
       return <Phone className="w-3.5 h-3.5 text-violet-400" />;
     case 'system':

@@ -20,6 +20,7 @@ import { PermissionsModal } from '@/components/layout/permissions-modal';
 import { LogsWindow } from '@/components/diagnostics/logs-window';
 import { VoiceLoungePopup } from '@/components/servers/voice-lounge-popup';
 import { MixerAdapterBridge } from '@/components/audio/mixer-adapter-bridge';
+import { OfflineBanner } from '@/components/network/offline-banner';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers, ServersProvider } from '@/hooks/use-servers';
 import { ConversationsProvider } from '@/hooks/use-conversations';
@@ -162,9 +163,11 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background">
-      {/* 1. Desktop Docked Sidebars (Rail + Sub-Sidebar) - Hidden on Mobile */}
-      <div className="hidden md:flex flex-row shrink-0 h-full">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
+      <OfflineBanner />
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* 1. Desktop Docked Sidebars (Rail + Sub-Sidebar) - Hidden on Mobile */}
+        <div className="hidden md:flex flex-row shrink-0 h-full">
         <ServerRail
           servers={servers}
           activeServerId={selectedServerId}
@@ -471,8 +474,9 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
       {/* Chrome Call Controls Mixer Adapter Bridge */}
       <MixerAdapterBridge />
 
-      {/* Global Diagnostics & Live Telemetry Logs Console */}
-      <LogsWindow />
+        {/* Global Diagnostics & Live Telemetry Logs Console */}
+        <LogsWindow />
+      </div>
     </div>
   );
 }

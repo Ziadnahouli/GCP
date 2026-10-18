@@ -273,10 +273,113 @@ export function useConversationsInternal() {
     }
   };
 
+  const createGroupConversation = async (
+    name: string,
+    memberIds: string[],
+    iconUrl?: string
+  ): Promise<{ conversationId: string | null; error: string | null }> => {
+    if (!user) return { conversationId: null, error: 'User is not authenticated' };
+    try {
+      const { data, error } = await supabase.rpc('create_group_conversation', {
+        p_name: name,
+        p_member_ids: memberIds,
+        p_icon_url: iconUrl || null,
+      });
+
+      if (error) throw error;
+      await fetchConversations(true);
+      return { conversationId: data as string, error: null };
+    } catch (err: any) {
+      return { conversationId: null, error: err?.message || 'Failed to create group conversation' };
+    }
+  };
+
+  const addGroupMembers = async (
+    conversationId: string,
+    userIds: string[]
+  ): Promise<{ success: boolean; error: string | null }> => {
+    if (!user) return { success: false, error: 'User is not authenticated' };
+    try {
+      const { error } = await supabase.rpc('add_group_members', {
+        p_conversation_id: conversationId,
+        p_user_ids: userIds,
+      });
+
+      if (error) throw error;
+      await fetchConversations(true);
+      return { success: true, error: null };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to add members' };
+    }
+  };
+
+  const removeGroupMember = async (
+    conversationId: string,
+    userId: string
+  ): Promise<{ success: boolean; error: string | null }> => {
+    if (!user) return { success: false, error: 'User is not authenticated' };
+    try {
+      const { error } = await supabase.rpc('remove_group_member', {
+        p_conversation_id: conversationId,
+        p_user_id: userId,
+      });
+
+      if (error) throw error;
+      await fetchConversations(true);
+      return { success: true, error: null };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to remove member' };
+    }
+  };
+
+  const leaveGroup = async (
+    conversationId: string
+  ): Promise<{ success: boolean; error: string | null }> => {
+    if (!user) return { success: false, error: 'User is not authenticated' };
+    try {
+      const { error } = await supabase.rpc('leave_group_conversation', {
+        p_conversation_id: conversationId,
+      });
+
+      if (error) throw error;
+      await fetchConversations(true);
+      return { success: true, error: null };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to leave group' };
+    }
+  };
+
+  const updateGroupMetadata = async (
+    conversationId: string,
+    updates: { name?: string; icon_url?: string }
+  ): Promise<{ success: boolean; error: string | null }> => {
+    if (!user) return { success: false, error: 'User is not authenticated' };
+    try {
+      const { error } = await supabase
+        .from('conversations')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversationId);
+
+      if (error) throw error;
+      await fetchConversations(true);
+      return { success: true, error: null };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to update group metadata' };
+    }
+  };
+
   return {
     conversations,
     isLoading,
     getOrCreateDirectConversation,
+    createGroupConversation,
+    addGroupMembers,
+    removeGroupMember,
+    leaveGroup,
+    updateGroupMetadata,
     refetch: fetchConversations,
   };
 }

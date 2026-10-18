@@ -19,6 +19,13 @@ import {
   Sliders,
   Check,
   Sparkles,
+  Clock,
+  ShieldAlert,
+  Ban,
+  Link2,
+  Copy,
+  FileText,
+  Loader2,
 } from 'lucide-react';
 import {
   Server,
@@ -29,11 +36,16 @@ import {
   ServerPermission,
   ALL_SERVER_PERMISSIONS,
   DEFAULT_ROLE_PERMISSIONS,
+  ServerBan,
+  ModerationAuditLog,
+  ServerInvite,
 } from '@/lib/types/server';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
 import { useAuth } from '@/features/auth/auth-provider';
+import { useServers } from '@/hooks/use-servers';
 import { useToast } from '@/components/ui/toast';
 import { useModalEscape } from '@/hooks/use-modal-escape';
 import { cn } from '@/lib/utils';
@@ -78,11 +90,54 @@ export function ServerSettingsModal({
 }: ServerSettingsModalProps) {
   useModalEscape(open, onOpenChange);
   const { user, profile } = useAuth();
+  const {
+    banMember,
+    unbanMember,
+    timeoutMember,
+    createInvite,
+    revokeInvite,
+    fetchAuditLogs,
+    fetchBans,
+    fetchInvites,
+  } = useServers();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = React.useState<'overview' | 'channels' | 'roles' | 'members' | 'danger'>('overview');
+  const [activeTab, setActiveTab] = React.useState<
+    'overview' | 'channels' | 'roles' | 'members' | 'invites' | 'bans' | 'audit' | 'danger'
+  >('overview');
   const [serverName, setServerName] = React.useState(server.name);
   const [serverDesc, setServerDesc] = React.useState(server.description || '');
   const [savingOverview, setSavingOverview] = React.useState(false);
+
+  // Moderation state
+  const [auditLogs, setAuditLogs] = React.useState<ModerationAuditLog[]>([]);
+  const [bansList, setBansList] = React.useState<ServerBan[]>([]);
+  const [invitesList, setInvitesList] = React.useState<ServerInvite[]>([]);
+  const [loadingModeration, setLoadingModeration] = React.useState(false);
+
+  // Invite creator state
+  const [inviteMaxUses, setInviteMaxUses] = React.useState(0);
+  const [inviteExpiresHours, setInviteExpiresHours] = React.useState(24);
+  const [isCreatingInvite, setIsCreatingInvite] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    if (activeTab === 'audit') {
+      setLoadingModeration(true);
+      fetchAuditLogs(server.id)
+        .then(setAuditLogs)
+        .finally(() => setLoadingModeration(false));
+    } else if (activeTab === 'bans') {
+      setLoadingModeration(true);
+      fetchBans(server.id)
+        .then(setBansList)
+        .finally(() => setLoadingModeration(false));
+    } else if (activeTab === 'invites') {
+      setLoadingModeration(true);
+      fetchInvites(server.id)
+        .then(setInvitesList)
+        .finally(() => setLoadingModeration(false));
+    }
+  }, [activeTab, open, server.id, fetchAuditLogs, fetchBans, fetchInvites]);
 
   // Edit channel state
   const [editingChannelId, setEditingChannelId] = React.useState<string | null>(null);
@@ -337,6 +392,45 @@ export function ServerSettingsModal({
             </button>
 
             <button
+              onClick={() => setActiveTab('invites')}
+              className={cn(
+                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
+                activeTab === 'invites'
+                  ? 'bg-primary text-primary-foreground shadow-subtle'
+                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+              )}
+            >
+              <Link2 className="w-3.5 h-3.5 text-sky-400" />
+              <span>Invites & Access</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('bans')}
+              className={cn(
+                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
+                activeTab === 'bans'
+                  ? 'bg-primary text-primary-foreground shadow-subtle'
+                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+              )}
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+              <span>Bans & Restrictions</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('audit')}
+              className={cn(
+                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
+                activeTab === 'audit'
+                  ? 'bg-primary text-primary-foreground shadow-subtle'
+                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+              )}
+            >
+              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Audit Logs</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('danger')}
               className={cn(
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
@@ -367,6 +461,9 @@ export function ServerSettingsModal({
                 {activeTab === 'channels' && 'Manage Channels'}
                 {activeTab === 'roles' && 'Roles & Permission Matrix'}
                 {activeTab === 'members' && 'Squad Members & Role Assignments'}
+                {activeTab === 'invites' && 'Server Invites & Access Control'}
+                {activeTab === 'bans' && 'Bans & Security Restrictions'}
+                {activeTab === 'audit' && 'Moderation Audit Logs'}
                 {activeTab === 'danger' && 'Danger Zone'}
               </h2>
               <p className="text-[11px] text-muted-foreground">
@@ -929,6 +1026,54 @@ export function ServerSettingsModal({
                             </select>
                           )}
 
+                          {/* Timeout Button */}
+                          <button
+                            onClick={async () => {
+                              const mins = prompt('Enter timeout duration in minutes (0 to remove):', '60');
+                              if (mins === null) return;
+                              const numMins = parseInt(mins, 10);
+                              if (isNaN(numMins)) return;
+                              const seconds = numMins * 60;
+                              const reason = prompt('Reason for timeout:', 'Violation of server rules') || 'Moderator timeout';
+                              const res = await timeoutMember(server.id, mem.user_id, seconds, reason);
+                              if (res.success) {
+                                toast({
+                                  title: seconds > 0 ? 'Member Timed Out' : 'Timeout Removed',
+                                  description: seconds > 0 ? `Timed out for ${numMins} minutes.` : 'Member can now chat.',
+                                  type: 'info',
+                                });
+                              } else {
+                                toast({ title: 'Timeout Failed', description: res.error || 'Failed', type: 'error' });
+                              }
+                            }}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                            title="Timeout Member"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Ban Button */}
+                          <button
+                            onClick={async () => {
+                              const reason = prompt(`Reason for banning ${mem.profile?.display_name || 'member'}:`, 'Violating squad conduct');
+                              if (reason === null) return;
+                              const res = await banMember(server.id, mem.user_id, reason);
+                              if (res.success) {
+                                toast({
+                                  title: 'Member Banned',
+                                  description: `${mem.profile?.display_name || 'Member'} was banned from the server.`,
+                                  type: 'info',
+                                });
+                              } else {
+                                toast({ title: 'Ban Failed', description: res.error || 'Failed to ban', type: 'error' });
+                              }
+                            }}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                            title="Ban from Server"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                          </button>
+
                           {/* Kick Button */}
                           {onKickMember && (
                             <button
@@ -952,6 +1097,264 @@ export function ServerSettingsModal({
                       </div>
                     ));
                   })()}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: SERVER INVITES */}
+            {activeTab === 'invites' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Server Invites & Access Links</h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Generate revocable squad invite codes with custom usage limits and expirations.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Create Invite Strip */}
+                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-muted-foreground">Expires In</label>
+                      <select
+                        value={inviteExpiresHours}
+                        onChange={(e) => setInviteExpiresHours(parseInt(e.target.value, 10))}
+                        className="px-2 py-1 rounded-lg border border-white/10 bg-surface-panel text-xs text-foreground focus:outline-none"
+                      >
+                        <option value="24">24 Hours</option>
+                        <option value="168">7 Days</option>
+                        <option value="0">Never</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-muted-foreground">Max Uses</label>
+                      <select
+                        value={inviteMaxUses}
+                        onChange={(e) => setInviteMaxUses(parseInt(e.target.value, 10))}
+                        className="px-2 py-1 rounded-lg border border-white/10 bg-surface-panel text-xs text-foreground focus:outline-none"
+                      >
+                        <option value="0">Unlimited</option>
+                        <option value="1">1 Use</option>
+                        <option value="5">5 Uses</option>
+                        <option value="25">25 Uses</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      setIsCreatingInvite(true);
+                      try {
+                        const res = await createInvite(server.id, inviteMaxUses, inviteExpiresHours);
+                        if (res.invite) {
+                          toast({ title: 'Invite Created', description: `Code: ${res.invite.code}`, type: 'success' });
+                          fetchInvites(server.id).then(setInvitesList);
+                        } else {
+                          toast({ title: 'Failed', description: res.error || 'Could not create', type: 'error' });
+                        }
+                      } finally {
+                        setIsCreatingInvite(false);
+                      }
+                    }}
+                    disabled={isCreatingInvite}
+                    className="text-xs mt-3 shrink-0"
+                  >
+                    {isCreatingInvite ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
+                    Generate New Invite
+                  </Button>
+                </div>
+
+                {/* Invites List */}
+                <div className="space-y-2 select-none">
+                  {loadingModeration ? (
+                    <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      Loading invites...
+                    </div>
+                  ) : invitesList.length === 0 ? (
+                    <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                      No active custom invites. Default server ID link is also functional.
+                    </div>
+                  ) : (
+                    invitesList.map((inv) => (
+                      <div
+                        key={inv.id}
+                        className="flex items-center justify-between p-3 rounded-xl border border-white/[0.06] bg-surface-panel/40"
+                      >
+                        <div>
+                          <div className="text-xs font-mono font-bold text-foreground flex items-center gap-2">
+                            <span className="text-primary">{inv.code}</span>
+                            {inv.is_revoked && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                Revoked
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            Uses: {inv.uses} / {inv.max_uses === 0 ? 'Unlimited' : inv.max_uses} • Expires:{' '}
+                            {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString() : 'Never'}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              const link = `${window.location.origin}/?join=${inv.code}`;
+                              navigator.clipboard.writeText(link);
+                              toast({ title: 'Copied', description: 'Invite link copied to clipboard.', type: 'info' });
+                            }}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+                            title="Copy Invite Link"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          {!inv.is_revoked && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={async () => {
+                                const res = await revokeInvite(inv.id);
+                                if (res.success) {
+                                  toast({ title: 'Invite Revoked', description: 'Code invalidated.', type: 'info' });
+                                  fetchInvites(server.id).then(setInvitesList);
+                                }
+                              }}
+                              className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 h-7"
+                            >
+                              Revoke
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: BANS & RESTRICTIONS */}
+            {activeTab === 'bans' && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Server Bans & Blacklist</h4>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Users banned from joining or interacting with this server.
+                  </p>
+                </div>
+
+                <div className="space-y-2 select-none">
+                  {loadingModeration ? (
+                    <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      Loading bans...
+                    </div>
+                  ) : bansList.length === 0 ? (
+                    <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                      No users are currently banned from this server.
+                    </div>
+                  ) : (
+                    bansList.map((ban) => (
+                      <div
+                        key={ban.id}
+                        className="flex items-center justify-between p-3 rounded-xl border border-rose-500/20 bg-rose-500/5"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Avatar
+                            src={ban.profile?.avatar_url}
+                            name={ban.profile?.display_name || 'Banned'}
+                            size="sm"
+                          />
+                          <div>
+                            <div className="text-xs font-semibold text-foreground">
+                              {ban.profile?.display_name || 'User'}
+                              <span className="text-[10px] text-muted-foreground ml-1 font-mono">
+                                @{ban.profile?.username || 'user'}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-rose-300/80 mt-0.5">
+                              Reason: {ban.reason || 'No reason specified'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            const res = await unbanMember(server.id, ban.user_id);
+                            if (res.success) {
+                              toast({ title: 'User Unbanned', description: 'Ban record lifted.', type: 'success' });
+                              fetchBans(server.id).then(setBansList);
+                            }
+                          }}
+                          className="text-xs border-white/10 hover:bg-white/10 h-7"
+                        >
+                          Unban
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: AUDIT LOGS */}
+            {activeTab === 'audit' && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Moderation Audit Logs</h4>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Immutable history of staff moderation actions, timeouts, bans, and invite revocations.
+                  </p>
+                </div>
+
+                <div className="space-y-2 select-none">
+                  {loadingModeration ? (
+                    <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      Loading audit logs...
+                    </div>
+                  ) : auditLogs.length === 0 ? (
+                    <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                      No moderation actions recorded in the server log yet.
+                    </div>
+                  ) : (
+                    auditLogs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="p-3 rounded-xl border border-white/[0.06] bg-surface-panel/40 flex items-start justify-between gap-3"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="font-semibold text-foreground">
+                              {log.actor?.display_name || 'Moderator'}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-mono uppercase bg-primary/15 text-primary border border-primary/30">
+                              {log.action}
+                            </span>
+                            {log.target && (
+                              <span className="text-muted-foreground">
+                                on <span className="text-foreground font-semibold">{log.target.display_name}</span>
+                              </span>
+                            )}
+                          </div>
+                          {log.reason && (
+                            <div className="text-[11px] text-muted-foreground/80 mt-1">
+                              Reason: &ldquo;{log.reason}&rdquo;
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-[10px] text-muted-foreground/60 font-mono shrink-0">
+                          {new Date(log.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}

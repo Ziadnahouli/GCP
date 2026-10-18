@@ -206,10 +206,12 @@ CREATE TABLE IF NOT EXISTS public.server_bans (
 CREATE INDEX IF NOT EXISTS idx_server_bans_srv ON public.server_bans(server_id);
 ALTER TABLE public.server_bans ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Server owners and admins can view bans" ON public.server_bans;
 CREATE POLICY "Server owners and admins can view bans"
     ON public.server_bans FOR SELECT
     USING (public.is_server_owner_or_admin(server_id, auth.uid()));
 
+DROP POLICY IF EXISTS "Server owners and admins can manage bans" ON public.server_bans;
 CREATE POLICY "Server owners and admins can manage bans"
     ON public.server_bans FOR ALL
     USING (public.is_server_owner_or_admin(server_id, auth.uid()));
@@ -248,10 +250,12 @@ CREATE TABLE IF NOT EXISTS public.moderation_audit_logs (
 CREATE INDEX IF NOT EXISTS idx_moderation_audit_srv ON public.moderation_audit_logs(server_id, created_at DESC);
 ALTER TABLE public.moderation_audit_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Server owners and admins can view audit logs" ON public.moderation_audit_logs;
 CREATE POLICY "Server owners and admins can view audit logs"
     ON public.moderation_audit_logs FOR SELECT
     USING (public.is_server_owner_or_admin(server_id, auth.uid()));
 
+DROP POLICY IF EXISTS "Server owners and admins can insert audit logs" ON public.moderation_audit_logs;
 CREATE POLICY "Server owners and admins can insert audit logs"
     ON public.moderation_audit_logs FOR INSERT
     WITH CHECK (public.is_server_owner_or_admin(server_id, auth.uid()));
@@ -273,6 +277,7 @@ CREATE INDEX IF NOT EXISTS idx_server_invites_srv ON public.server_invites(serve
 CREATE INDEX IF NOT EXISTS idx_server_invites_code ON public.server_invites(code);
 ALTER TABLE public.server_invites ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can look up active invites by code" ON public.server_invites;
 CREATE POLICY "Anyone can look up active invites by code"
     ON public.server_invites FOR SELECT
     USING (
@@ -280,6 +285,7 @@ CREATE POLICY "Anyone can look up active invites by code"
         public.is_server_owner_or_admin(server_id, auth.uid())
     );
 
+DROP POLICY IF EXISTS "Server owners and admins can manage invites" ON public.server_invites;
 CREATE POLICY "Server owners and admins can manage invites"
     ON public.server_invites FOR ALL
     USING (public.is_server_owner_or_admin(server_id, auth.uid()));
@@ -565,24 +571,43 @@ ALTER TABLE public.channel_messages
 CREATE TABLE IF NOT EXISTS public.reports (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     reporter_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    reported_user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
-    channel_id UUID REFERENCES public.channels(id) ON DELETE CASCADE,
-    message_id UUID,
+    reported_user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     reason TEXT NOT NULL,
     details TEXT,
-    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'reviewed', 'dismissed', 'actioned')),
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
+
+-- Ensure all Phase 4 columns exist even if public.reports pre-existed from migration 00001
+ALTER TABLE public.reports
+  ADD COLUMN IF NOT EXISTS server_id UUID REFERENCES public.servers(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS channel_id UUID REFERENCES public.channels(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS message_id UUID,
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+
+-- Reconcile reported_user_id nullability if needed
+ALTER TABLE public.reports ALTER COLUMN reported_user_id DROP NOT NULL;
+
+-- Update status check constraint safely
+DO $$
+BEGIN
+    ALTER TABLE public.reports DROP CONSTRAINT IF EXISTS reports_status_check;
+    ALTER TABLE public.reports ADD CONSTRAINT reports_status_check CHECK (status IN ('pending', 'reviewed', 'resolved', 'dismissed', 'actioned'));
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_reports_server ON public.reports(server_id);
 CREATE INDEX IF NOT EXISTS idx_reports_reporter ON public.reports(reporter_id);
 ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can create reports" ON public.reports;
+DROP POLICY IF EXISTS "Users can insert their own reports" ON public.reports;
 CREATE POLICY "Users can create reports"
     ON public.reports FOR INSERT
     WITH CHECK (auth.uid() = reporter_id);
 
+DROP POLICY IF EXISTS "Users can view own reports" ON public.reports;
+DROP POLICY IF EXISTS "Users can view their own reports" ON public.reports;
 CREATE POLICY "Users can view own reports"
     ON public.reports FOR SELECT
     USING (
@@ -590,6 +615,7 @@ CREATE POLICY "Users can view own reports"
         (server_id IS NOT NULL AND public.is_server_owner_or_admin(server_id, auth.uid()))
     );
 
+DROP POLICY IF EXISTS "Server admins can update reports for their server" ON public.reports;
 CREATE POLICY "Server admins can update reports for their server"
     ON public.reports FOR UPDATE
     USING (server_id IS NOT NULL AND public.is_server_owner_or_admin(server_id, auth.uid()));

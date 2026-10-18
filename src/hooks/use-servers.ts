@@ -797,7 +797,7 @@ export function useServersInternal() {
     async (
       serverId: string,
       userId: string,
-      restoreMember = false
+      restoreMember = true
     ): Promise<{ success: boolean; error: string | null }> => {
       if (!user || !supabase) return { success: false, error: 'Not authenticated' };
       try {
@@ -808,6 +808,7 @@ export function useServersInternal() {
         });
         if (error) throw error;
         await fetchServers();
+        notifyServersUpdate();
         return { success: true, error: null };
       } catch (err: any) {
         return { success: false, error: err?.message || 'Failed to unban member' };
@@ -1050,12 +1051,17 @@ export function useServersInternal() {
     async (reportId: string, actionTaken = 'Action taken') => {
       if (!user || !supabase) return false;
       try {
+        const { error: rpcErr } = await supabase.rpc('resolve_report', {
+          p_report_id: reportId,
+          p_status: 'resolved',
+          p_action_taken: actionTaken,
+        });
+        if (!rpcErr) return true;
+
         const { error } = await supabase
           .from('reports')
           .update({
             status: 'resolved',
-            action_taken: actionTaken,
-            resolved_at: new Date().toISOString(),
           })
           .eq('id', reportId);
         return !error;
@@ -1070,12 +1076,17 @@ export function useServersInternal() {
     async (reportId: string) => {
       if (!user || !supabase) return false;
       try {
+        const { error: rpcErr } = await supabase.rpc('resolve_report', {
+          p_report_id: reportId,
+          p_status: 'dismissed',
+          p_action_taken: 'Dismissed by moderator',
+        });
+        if (!rpcErr) return true;
+
         const { error } = await supabase
           .from('reports')
           .update({
             status: 'dismissed',
-            action_taken: 'Dismissed by moderator',
-            resolved_at: new Date().toISOString(),
           })
           .eq('id', reportId);
         return !error;

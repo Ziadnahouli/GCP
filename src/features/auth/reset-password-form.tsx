@@ -27,7 +27,28 @@ export function ResetPasswordForm() {
   React.useEffect(() => {
     let mounted = true;
 
-    // 1. Check if URL contains ?code= (direct PKCE redirect)
+    // 1. Check if URL contains hash params (#access_token=...&refresh_token=...)
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      if (accessToken && refreshToken) {
+        supabase.auth
+          .setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          })
+          .then(({ data, error }) => {
+            if (!mounted) return;
+            if (!error && data?.session) {
+              setSessionReady(true);
+              setGeneralError(null);
+            }
+          });
+      }
+    }
+
+    // 2. Check if URL contains ?code= (direct PKCE redirect)
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
@@ -43,7 +64,7 @@ export function ResetPasswordForm() {
           }
         });
       } else {
-        // 2. Check existing session
+        // 3. Check existing session
         supabase.auth.getSession().then(({ data: { session } }) => {
           if (!mounted) return;
           setSessionReady(!!session);

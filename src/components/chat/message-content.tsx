@@ -37,8 +37,11 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
   // Check if content contains a general web URL for safe preview (excluding server invites)
   const previewUrl = React.useMemo(() => {
     if (inviteMatch) return null;
-    const match = content.match(/https?:\/\/[^\s]+/i);
-    return match ? match[0] : null;
+    const match = content.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/i);
+    if (!match) return null;
+    let urlStr = match[0];
+    if (urlStr.startsWith('www.')) urlStr = `https://${urlStr}`;
+    return urlStr;
   }, [content, inviteMatch]);
 
   // Check if user is already a member

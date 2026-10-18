@@ -599,13 +599,25 @@ export function useMessages(conversationId: string | null) {
           .maybeSingle();
 
         if (otherMember?.user_id) {
-          const { data: targetSettings } = await supabase
-            .from('user_settings')
-            .select('allow_direct_messages')
-            .eq('user_id', otherMember.user_id)
-            .maybeSingle();
+          let dmPolicy = 'everyone';
+          try {
+            const { data: rpcPolicy } = await supabase.rpc('get_user_dm_policy', {
+              p_user_id: otherMember.user_id,
+            });
+            if (rpcPolicy?.allow_direct_messages) {
+              dmPolicy = rpcPolicy.allow_direct_messages;
+            } else {
+              const { data: targetSettings } = await supabase
+                .from('user_settings')
+                .select('allow_direct_messages')
+                .eq('user_id', otherMember.user_id)
+                .maybeSingle();
+              if (targetSettings?.allow_direct_messages) {
+                dmPolicy = targetSettings.allow_direct_messages;
+              }
+            }
+          } catch {}
 
-          const dmPolicy = targetSettings?.allow_direct_messages;
           if (dmPolicy === 'none') {
             toast({
               title: 'Cannot Send Message',

@@ -180,6 +180,16 @@ export function useNotifications() {
     loadNotifications();
   }, [user?.id, loadNotifications]);
 
+  // Periodic background sync every 8 seconds
+  React.useEffect(() => {
+    if (!user || !isConfigured) return;
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      loadNotifications();
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [user, isConfigured, loadNotifications]);
+
   // Realtime subscription for incoming notifications
   React.useEffect(() => {
     if (!user || !isConfigured || !supabase) return;
@@ -196,29 +206,8 @@ export function useNotifications() {
         },
         (payload: any) => {
           const newItem = payload.new as NotificationItem;
-          if (newItem && !seenIdsRef.current.has(newItem.id)) {
-            seenIdsRef.current.add(newItem.id);
-
-            // If the user is actively viewing this exact conversation or channel, auto-mark as read and suppress chimes
-            const isActive =
-              Boolean(activeResourceIdRef.current) &&
-              (activeResourceIdRef.current === newItem.data?.conversation_id ||
-                activeResourceIdRef.current === newItem.data?.channel_id);
-
-            if (isActive) {
-              newItem.is_read = true;
-              setNotifications((prev) => [newItem, ...prev.filter((p) => p.id !== newItem.id)]);
-              supabase
-                .from('notifications')
-                .update({ is_read: true })
-                .eq('id', newItem.id)
-                .then(() => {}, () => {});
-              return;
-            }
-
-            setNotifications((prev) => [newItem, ...prev.filter((p) => p.id !== newItem.id)]);
-
-            // Respect category preference
+          if (newItem) {
+            setNotifications((prev) => [newItem, ...prev.filter((item) => item.id !== newItem.id)]);
             if (isCategoryEnabled(newItem.type)) {
               playNotificationChime();
               displayDesktopNotification(newItem);
@@ -238,7 +227,7 @@ export function useNotifications() {
           const updated = payload.new as NotificationItem;
           if (updated) {
             setNotifications((prev) =>
-              prev.map((item) => (item.id === updated.id ? updated : item))
+              prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
             );
           }
         }
@@ -252,9 +241,9 @@ export function useNotifications() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload: any) => {
-          if (payload.old?.id) {
-            seenIdsRef.current.delete(payload.old.id);
-            setNotifications((prev) => prev.filter((item) => item.id !== payload.old.id));
+          const oldItem = payload.old;
+          if (oldItem?.id) {
+            setNotifications((prev) => prev.filter((item) => item.id !== oldItem.id));
           }
         }
       )
@@ -263,7 +252,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, isConfigured, supabase, playNotificationChime, displayDesktopNotification, isCategoryEnabled]);
+  }, [user, isConfigured, supabase, isCategoryEnabled, playNotificationChime, displayDesktopNotification]);
 
   // Mark single notification as read
   const markAsRead = React.useCallback(

@@ -619,10 +619,31 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   }, [user]);
 
   React.useEffect(() => {
-    if (open && activeTab === 'security') {
-      loadDevices();
-    }
-  }, [open, activeTab, loadDevices]);
+    if (!open || activeTab !== 'security' || !user) return;
+    const supabase = getBrowserClient();
+    loadDevices();
+
+    if (!supabase) return;
+    const channel = supabase
+      .channel(`devices_sync_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_devices',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          loadDevices();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [open, activeTab, user, loadDevices]);
 
   const handleSignOutOtherSessions = async () => {
     const supabase = getBrowserClient();

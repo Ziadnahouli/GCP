@@ -1320,11 +1320,11 @@ export function ServerSettingsModal({
                             size="sm"
                             variant="outline"
                             onClick={async () => {
-                              const res = await unbanMember(server.id, ban.user_id, false);
+                              const res = await unbanMember(server.id, ban.user_id, true);
                               if (res.success) {
                                 toast({
                                   title: 'User Unbanned',
-                                  description: 'Ban record lifted. The user can rejoin using an invite link.',
+                                  description: 'Ban record lifted and server membership restored!',
                                   type: 'success',
                                 });
                                 fetchBans(server.id).then(setBansList);

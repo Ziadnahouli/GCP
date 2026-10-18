@@ -180,7 +180,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   }, [conversationId, currentConversation, supabase]);
 
   const effectiveConversation = currentConversation || fetchedConversation;
-  const isGroup = effectiveConversation?.type === 'group';
+  const isGroup =
+    effectiveConversation?.type === 'group' ||
+    Boolean((effectiveConversation as any)?.is_group) ||
+    (effectiveConversation?.members || []).length > 2;
 
   const [activeCallSession, setActiveCallSession] = React.useState<any>(null);
 
@@ -234,11 +237,24 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       })
       .subscribe();
 
+    // Periodic poll for active squad call sessions every 4s
+    const pollTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      checkCallSession();
+    }, 4000);
+
     return () => {
+      clearInterval(pollTimer);
       supabase.removeChannel(dbChannel);
       supabase.removeChannel(roomChannel);
     };
   }, [conversationId, supabase]);
+
+  const isSquadCallActive = Boolean(
+    activeCallSession ||
+    (call.incomingCall?.isGroup && call.incomingCall?.conversationId === conversationId) ||
+    (call.callStatus === 'incoming_ringing' && call.activeConversationId === conversationId && isGroup)
+  );
 
   const otherMember = React.useMemo(() => {
     if (!effectiveConversation) return null;
@@ -305,16 +321,29 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       return;
     }
     let isMounted = true;
-    supabase
-      .from('user_settings')
-      .select('allow_direct_messages')
-      .eq('user_id', targetUserId)
-      .maybeSingle()
-      .then(({ data }) => {
+    const fetchPolicy = async () => {
+      try {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('get_user_dm_policy', {
+          p_user_id: targetUserId,
+        });
+        if (isMounted && !rpcErr && rpcData) {
+          setRecipientPrivacy(rpcData as any);
+          return;
+        }
+
+        const { data } = await supabase
+          .from('user_settings')
+          .select('allow_direct_messages')
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
         if (isMounted && data) {
           setRecipientPrivacy(data as any);
         }
-      });
+      } catch {}
+    };
+
+    fetchPolicy();
     return () => {
       isMounted = false;
     };
@@ -691,7 +720,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
       {/* Active Squad Voice Call Banner */}
       {isGroup &&
-        activeCallSession &&
+        isSquadCallActive &&
         (call.activeConversationId !== conversationId || call.callStatus !== 'in_call') && (
           <div className="mx-4 my-2 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between text-xs animate-in fade-in">
             <div className="flex items-center gap-2 text-emerald-400">
@@ -703,7 +732,13 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               </span>
             </div>
             <button
-              onClick={() => call.startCall(conversationId, conversationId, false)}
+              onClick={() => {
+                if (call.callStatus === 'incoming_ringing') {
+                  call.acceptCall();
+                } else {
+                  call.startCall(conversationId, conversationId, false);
+                }
+              }}
               className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm transition-all"
             >
               <Phone className="w-3.5 h-3.5" />

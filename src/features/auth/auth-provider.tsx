@@ -151,6 +151,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     async function init() {
+      // Automatic detection of email recovery links landing on root with hash or query
+      if (typeof window !== 'undefined') {
+        const hash = window.location.hash || '';
+        const search = window.location.search || '';
+        if (hash.includes('type=recovery') || search.includes('type=recovery')) {
+          if (window.location.pathname !== '/reset-password') {
+            window.location.href = `/reset-password${search}${hash}`;
+            return;
+          }
+        }
+      }
+
       try {
         const {
           data: { session },
@@ -180,6 +192,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         data: { subscription },
       } = supabase.auth.onAuthStateChange((_event, session) => {
         if (!mounted) return;
+
+        // Auto-navigate to reset password form when Supabase triggers PASSWORD_RECOVERY
+        if (_event === 'PASSWORD_RECOVERY') {
+          if (typeof window !== 'undefined' && window.location.pathname !== '/reset-password') {
+            window.location.href = '/reset-password';
+            return;
+          }
+        }
 
         if (session?.user) {
           setUser(session.user);
@@ -247,6 +267,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const recordDevice = async () => {
       try {
+        const { error: rpcErr } = await supabase.rpc('record_user_device', {
+          p_device_id: deviceId,
+          p_device_name: deviceName,
+          p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+        });
+        if (!rpcErr) return;
+
         await supabase
           .from('user_devices')
           .upsert(

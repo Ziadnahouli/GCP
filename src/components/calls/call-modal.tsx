@@ -837,7 +837,7 @@ export function CallModal({
             aria-label="Diagnostics"
           >
             <Activity className="w-3.5 h-3.5" />
-            <span>{stats.rttMs ?? 0}ms</span>
+            <span>{stats.rttMs !== null ? `${stats.rttMs}ms` : '—'}</span>
           </button>
 
           {/* Pop out Above All (Floats above all games and desktop windows) */}
@@ -1070,9 +1070,15 @@ export function CallModal({
 
         {/* Telemetry diagnostics popup panel */}
         {showDiagnostics && (
-          <div className="absolute top-4 right-4 z-20 w-80 max-w-[calc(100%-2rem)]">
+          <div className="absolute top-4 right-4 z-20 w-96 max-w-[calc(100%-2rem)]">
             <NetworkDiagnostics
               stats={stats}
+              localStream={localStream}
+              screenStream={screenStream}
+              isMicMuted={isMicMuted}
+              isCameraOn={isCameraOn}
+              isScreenSharing={isScreenSharing}
+              isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
               onRestartConnection={onRestartConnection}
               onClose={() => setShowDiagnostics(false)}
             />

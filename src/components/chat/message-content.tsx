@@ -42,6 +42,9 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
 
   // Local fallback check if isCallActive prop is not explicitly passed
   const [sessionActive, setSessionActive] = React.useState<boolean>(false);
+  const [broadcastParticipants, setBroadcastParticipants] = React.useState<
+    Array<{ id: string; name: string; avatar_url?: string | null; isSpeaking?: boolean; isMuted?: boolean }>
+  >([]);
 
   React.useEffect(() => {
     if (!squadCallConvId || isCallActive !== undefined) return;
@@ -72,11 +75,19 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
         { event: '*', schema: 'public', table: 'call_sessions', filter: `conversation_id=eq.${squadCallConvId}` },
         () => checkSession()
       )
-      .on('broadcast', { event: 'squad_call_active' }, () => {
-        if (mounted) setSessionActive(true);
+      .on('broadcast', { event: 'squad_call_active' }, ({ payload }: any) => {
+        if (mounted) {
+          setSessionActive(true);
+          if (payload?.participants && Array.isArray(payload.participants)) {
+            setBroadcastParticipants(payload.participants);
+          }
+        }
       })
       .on('broadcast', { event: 'squad_call_ended' }, () => {
-        if (mounted) setSessionActive(false);
+        if (mounted) {
+          setSessionActive(false);
+          setBroadcastParticipants([]);
+        }
       })
       .subscribe();
 
@@ -85,6 +96,27 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
       supabase.removeChannel(ch);
     };
   }, [squadCallConvId, isCallActive, supabase]);
+
+  const activeParticipants: Array<{ id: string; name: string; avatar_url?: string | null; isSpeaking?: boolean; isMuted?: boolean }> = React.useMemo(() => {
+    if (!squadCallConvId) return [];
+    const fromCtx = call.getSquadCallParticipants?.(squadCallConvId) || [];
+    if (fromCtx.length > 0) return fromCtx;
+    if (broadcastParticipants.length > 0) return broadcastParticipants;
+    const squad = call.activeSquadCalls?.get(squadCallConvId);
+    if (squad?.participants && Array.isArray(squad.participants) && squad.participants.length > 0) {
+      return squad.participants;
+    }
+    if (squad?.caller_name) {
+      return [
+        {
+          id: squad.caller_id || 'caller',
+          name: squad.caller_name,
+          avatar_url: squad.caller_avatar || null,
+        },
+      ];
+    }
+    return [];
+  }, [squadCallConvId, call, broadcastParticipants]);
 
   const isLive = isCallActive !== undefined
     ? isCallActive
@@ -287,46 +319,74 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
         isLive ? (
           <div
             onClick={(e) => e.stopPropagation()}
-            className="mt-2.5 w-full max-w-sm rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-[#0d1411]/90 to-[#0e1713]/95 backdrop-blur-md p-3.5 shadow-xl select-none text-left flex items-center justify-between gap-3 animate-in fade-in"
+            className="mt-2.5 w-full max-w-sm rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-[#0d1411]/90 to-[#0e1713]/95 backdrop-blur-md p-3.5 shadow-xl select-none text-left flex flex-col gap-2.5 animate-in fade-in"
           >
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 shadow-inner">
-                <Phone className="w-5 h-5 animate-pulse" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="text-xs font-bold text-white tracking-tight">Squad Voice Call</span>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 shadow-inner">
+                  <Phone className="w-5 h-5 animate-pulse" />
                 </div>
-                <p className="text-[10px] text-emerald-300/80 truncate mt-0.5">
-                  Squad call is live. Tap to join!
-                </p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="text-xs font-bold text-white tracking-tight">Squad Voice Call</span>
+                  </div>
+                  <p className="text-[10px] text-emerald-300/80 truncate mt-0.5">
+                    {activeParticipants.length > 0
+                      ? `${activeParticipants.length} squadmate${activeParticipants.length === 1 ? '' : 's'} in call`
+                      : 'Squad call is live. Tap to join!'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="shrink-0">
+                {call.activeConversationId === squadCallConvId && call.callStatus === 'in_call' ? (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>Connected</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (call.callStatus === 'incoming_ringing') {
+                        call.acceptCall();
+                      } else {
+                        call.startCall(squadCallConvId, squadCallConvId, false);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-900/40 transition-all hover:scale-[1.02]"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Join Voice</span>
+                  </button>
+                )}
               </div>
             </div>
 
-            <div className="shrink-0">
-              {call.activeConversationId === squadCallConvId && call.callStatus === 'in_call' ? (
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>Connected</span>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (call.callStatus === 'incoming_ringing') {
-                      call.acceptCall();
-                    } else {
-                      call.startCall(squadCallConvId, squadCallConvId, false);
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-900/40 transition-all hover:scale-[1.02]"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>Join Voice</span>
-                </button>
-              )}
-            </div>
+            {/* List of squad members currently inside the call */}
+            {activeParticipants.length > 0 && (
+              <div className="pt-2 border-t border-emerald-500/20 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-bold text-emerald-400/90 uppercase tracking-wider mr-1">
+                  In Voice ({activeParticipants.length}):
+                </span>
+                {activeParticipants.map((p) => (
+                  <div
+                    key={p.id}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-[11px] font-medium transition-all"
+                    title={p.name}
+                  >
+                    <span
+                      className={cn(
+                        'w-1.5 h-1.5 rounded-full shrink-0',
+                        p.isSpeaking ? 'bg-emerald-400 animate-pulse' : 'bg-emerald-500/60'
+                      )}
+                    />
+                    <span className="max-w-[120px] truncate">{p.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div

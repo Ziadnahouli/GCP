@@ -893,13 +893,25 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         isSquadCallActive &&
         (call.activeConversationId !== conversationId || call.callStatus !== 'in_call') && (
           <div className="mx-4 my-2 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between text-xs animate-in fade-in">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <Volume2 className="w-4 h-4 text-emerald-400" />
-              <span className="font-semibold">Active Squad Voice Call</span>
-              <span className="text-muted-foreground hidden sm:inline">
-                — squadmates are in voice room
-              </span>
+            <div className="flex items-center gap-2 text-emerald-400 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+              <Volume2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="font-semibold shrink-0">Active Squad Voice Call</span>
+              {(() => {
+                const bannerMembers = call.getSquadCallParticipants?.(conversationId) || [];
+                if (bannerMembers.length > 0) {
+                  return (
+                    <span className="text-emerald-300/90 text-[11px] font-medium truncate">
+                      • In Call: {bannerMembers.map((m) => m.name).join(', ')}
+                    </span>
+                  );
+                }
+                return (
+                  <span className="text-muted-foreground hidden sm:inline truncate">
+                    — squadmates are in voice room
+                  </span>
+                );
+              })()}
             </div>
             <button
               onClick={() => {

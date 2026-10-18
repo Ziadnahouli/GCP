@@ -23,6 +23,7 @@ export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_
 export interface CallParticipant {
   id: string;
   name: string;
+  avatar_url?: string | null;
   isSpeaking: boolean;
   isMuted: boolean;
   isCameraOn: boolean;
@@ -81,6 +82,13 @@ interface CallContextType {
   forceMute: () => void;
   activeSquadCalls: Map<string, any>;
   isSquadCallActive: (conversationId?: string | null) => boolean;
+  getSquadCallParticipants: (conversationId?: string | null) => Array<{
+    id: string;
+    name: string;
+    avatar_url?: string | null;
+    isSpeaking?: boolean;
+    isMuted?: boolean;
+  }>;
 }
 
 export const CallContext = React.createContext<CallContextType | null>(null);
@@ -346,16 +354,51 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const seenCandidatesRef = React.useRef<Set<string>>(new Set());
 
   const [participants, setParticipants] = React.useState<CallParticipant[]>([]);
+  const participantsRef = React.useRef<CallParticipant[]>([]);
+  participantsRef.current = participants;
+
+  const reconnectAttemptsRef = React.useRef<number>(0);
+  const reconnectFailuresRef = React.useRef<number>(0);
+  const lastReconnectReasonRef = React.useRef<string | null>(null);
+  const lastFailureTimestampRef = React.useRef<string | null>(null);
+  const micLevelRef = React.useRef<number>(0);
 
   const [stats, setStats] = React.useState<DiagnosticsStats>({
     connectionState: 'disconnected',
     rttMs: null,
     jitterMs: null,
     packetLossPercent: null,
+    packetsLost: 0,
+    packetsReceived: 0,
+    packetsSent: 0,
     incomingBitrateKbps: null,
     outgoingBitrateKbps: null,
     transportPath: 'unknown',
     isZeroTierActive: false,
+    micLevel: 0,
+    isMicMuted: false,
+    reconnectAttempts: 0,
+    reconnectFailures: 0,
+    lastReconnectReason: null,
+    lastFailureTimestamp: null,
+    audioDevice: {
+      label: 'Default Audio Device',
+      sampleRate: 48000,
+      channelCount: 1,
+      echoCancellation: true,
+      autoGainControl: true,
+      noiseSuppression: true,
+    },
+    isNoiseSuppressionEnabled: true,
+    isKrispActive: false,
+    videoPublishing: {
+      isPublishingCamera: false,
+      cameraResolution: null,
+      cameraFrameRate: null,
+      isPublishingScreen: false,
+      screenResolution: null,
+      screenFrameRate: null,
+    },
   });
 
   const prevStatsRef = React.useRef<{
@@ -994,6 +1037,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Web Audio Speech Activity Monitoring for local mic
   React.useEffect(() => {
     if (callStatus !== 'in_call' || !localStream || isMicMuted) {
+      micLevelRef.current = 0;
       setParticipants((prev) =>
         prev.map((p) => (p.id === user?.id && p.isSpeaking ? { ...p, isSpeaking: false } : p))
       );
@@ -1045,6 +1089,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
         const rms = Math.sqrt(sumSquares / timeBuffer.length);
         const isSpeaking = rms > 0.02;
+        micLevelRef.current = isMicMuted ? 0 : Math.min(100, Math.round(rms * 350));
 
         setParticipants((prev) =>
           prev.map((p) => {
@@ -1062,6 +1107,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     return () => {
+      micLevelRef.current = 0;
       if (animId) cancelAnimationFrame(animId);
       if (audioCtx) {
         try {
@@ -1078,15 +1124,46 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         callStatus === 'outgoing_ringing' || callStatus === 'incoming_ringing'
           ? 'connecting'
           : 'disconnected';
+
+      const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+      const audioSettings = audioTrack?.getSettings?.() || {};
+
       setStats({
         connectionState: connState,
         rttMs: null,
         jitterMs: null,
         packetLossPercent: null,
+        packetsLost: 0,
+        packetsReceived: 0,
+        packetsSent: 0,
         incomingBitrateKbps: null,
         outgoingBitrateKbps: null,
         transportPath: 'unknown',
         isZeroTierActive: false,
+        micLevel: 0,
+        isMicMuted: isMicMutedRef.current,
+        reconnectAttempts: reconnectAttemptsRef.current,
+        reconnectFailures: reconnectFailuresRef.current,
+        lastReconnectReason: lastReconnectReasonRef.current,
+        lastFailureTimestamp: lastFailureTimestampRef.current,
+        audioDevice: {
+          label: audioTrack?.label || 'Default Audio Device',
+          sampleRate: audioSettings.sampleRate ?? 48000,
+          channelCount: audioSettings.channelCount ?? 1,
+          echoCancellation: audioSettings.echoCancellation ?? true,
+          autoGainControl: audioSettings.autoGainControl ?? true,
+          noiseSuppression: audioSettings.noiseSuppression ?? true,
+        },
+        isNoiseSuppressionEnabled: isNoiseSuppressionEnabled,
+        isKrispActive: isKrispActive,
+        videoPublishing: {
+          isPublishingCamera: false,
+          cameraResolution: null,
+          cameraFrameRate: null,
+          isPublishingScreen: false,
+          screenResolution: null,
+          screenFrameRate: null,
+        },
       });
       prevStatsRef.current = null;
       return;
@@ -1109,6 +1186,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         let currentBytesSent = 0;
         let packetsLost = 0;
         let packetsReceived = 0;
+        let packetsSent = 0;
 
         statsReport.forEach((report) => {
           if (
@@ -1148,6 +1226,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           if (report.type === 'outbound-rtp' && (report.kind === 'audio' || report.kind === 'video')) {
             if (typeof report.bytesSent === 'number') {
               currentBytesSent += report.bytesSent;
+            }
+            if (typeof report.packetsSent === 'number') {
+              packetsSent += report.packetsSent;
             }
           }
         });
@@ -1200,15 +1281,53 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             ? 'disconnected'
             : 'connecting';
 
+        const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+        const audioSettings = audioTrack?.getSettings?.() || {};
+
+        const camTrack = localStreamRef.current?.getVideoTracks()[0];
+        const camSettings = camTrack?.getSettings?.() || {};
+        const isCamActive = Boolean(isCameraOn && camTrack && camTrack.readyState === 'live');
+
+        const scrTrack = screenStreamRef.current?.getVideoTracks()[0];
+        const scrSettings = scrTrack?.getSettings?.() || {};
+        const isScreenActive = Boolean(isScreenSharing && scrTrack && scrTrack.readyState === 'live');
+
         setStats({
           connectionState: currentConnectionState,
           rttMs: rtt,
           jitterMs: jitter,
           packetLossPercent: packetLoss,
+          packetsLost,
+          packetsReceived,
+          packetsSent,
           incomingBitrateKbps: inBitrate,
           outgoingBitrateKbps: outBitrate,
           transportPath,
           isZeroTierActive: isTauriPresent,
+          micLevel: micLevelRef.current,
+          isMicMuted: isMicMutedRef.current,
+          reconnectAttempts: reconnectAttemptsRef.current,
+          reconnectFailures: reconnectFailuresRef.current,
+          lastReconnectReason: lastReconnectReasonRef.current,
+          lastFailureTimestamp: lastFailureTimestampRef.current,
+          audioDevice: {
+            label: audioTrack?.label || 'Default Audio Device',
+            sampleRate: audioSettings.sampleRate ?? 48000,
+            channelCount: audioSettings.channelCount ?? 1,
+            echoCancellation: audioSettings.echoCancellation ?? true,
+            autoGainControl: audioSettings.autoGainControl ?? true,
+            noiseSuppression: audioSettings.noiseSuppression ?? true,
+          },
+          isNoiseSuppressionEnabled: isNoiseSuppressionEnabled,
+          isKrispActive: isKrispActive,
+          videoPublishing: {
+            isPublishingCamera: isCamActive,
+            cameraResolution: isCamActive && camSettings.width ? `${camSettings.width}x${camSettings.height}` : null,
+            cameraFrameRate: isCamActive && camSettings.frameRate ? Math.round(camSettings.frameRate) : null,
+            isPublishingScreen: isScreenActive,
+            screenResolution: isScreenActive && scrSettings.width ? `${scrSettings.width}x${scrSettings.height}` : null,
+            screenFrameRate: isScreenActive && scrSettings.frameRate ? Math.round(scrSettings.frameRate) : null,
+          },
         });
       } catch {}
     }, 2000);
@@ -1216,7 +1335,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return () => {
       clearInterval(interval);
     };
-  }, [callStatus, isLiveKitActive]);
+  }, [callStatus, isLiveKitActive, isCameraOn, isScreenSharing, isNoiseSuppressionEnabled, isKrispActive]);
 
   // Acquire local microphone with studio-grade Web Audio DSP noise cancellation and optional camera
   const getMedia = async (video: boolean): Promise<MediaStream | null> => {
@@ -1909,6 +2028,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const pc = pcRef.current;
     if (!pc || iceRestartingRef.current) return;
     iceRestartingRef.current = true;
+    reconnectAttemptsRef.current += 1;
+    lastReconnectReasonRef.current = 'ICE restart initiated';
 
     try {
       console.log('[CallNAT] Initiating WebRTC ICE restart & relay candidate gathering...');
@@ -1944,8 +2065,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (targetId) {
         sendSignalToUser(targetId, 'ice_restart_offer', payload);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[CallNAT] ICE restart offer error:', err);
+      reconnectFailuresRef.current += 1;
+      lastFailureTimestampRef.current = new Date().toLocaleTimeString();
+      lastReconnectReasonRef.current = 'ICE restart error: ' + (err?.message || 'unknown');
     } finally {
       setTimeout(() => {
         iceRestartingRef.current = false;
@@ -2563,6 +2687,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           try {
             const room = roomChannelRef.current;
             if (room && room.state === 'joined') {
+              const activeMembers = participantsRef.current.length > 0
+                ? participantsRef.current.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    avatar_url: p.avatar_url || (p.id === user.id ? profile?.avatar_url : null),
+                    isSpeaking: p.isSpeaking,
+                    isMuted: p.isMuted,
+                  }))
+                : [
+                    {
+                      id: user.id,
+                      name: profile?.display_name || user.email?.split('@')[0] || 'Squadmate',
+                      avatar_url: profile?.avatar_url || null,
+                      isSpeaking: false,
+                      isMuted: isMicMuted,
+                    },
+                  ];
+
               room.send({
                 type: 'broadcast',
                 event: 'squad_call_active',
@@ -2571,8 +2713,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                   conversation_id: conversationId,
                   caller_id: user.id,
                   caller_name: profile?.display_name || user.email?.split('@')[0],
+                  caller_avatar: profile?.avatar_url || null,
                   status: 'active',
                   started_at: new Date().toISOString(),
+                  participants: activeMembers,
                 },
               }).catch(() => {});
             }
@@ -2608,6 +2752,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const roomBroadcastChannel = supabase.channel(`call-room-${conversationId}`);
         roomBroadcastChannel.subscribe((subStatus) => {
           if (subStatus === 'SUBSCRIBED') {
+            const initialMembers = [
+              {
+                id: user.id,
+                name: profile?.display_name || profile?.username || user.email?.split('@')[0] || 'Squadmate',
+                avatar_url: profile?.avatar_url || null,
+                isSpeaking: false,
+                isMuted: isMicMuted,
+              },
+            ];
+
             roomBroadcastChannel.send({
               type: 'broadcast',
               event: 'squad_call_active',
@@ -2616,8 +2770,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 conversation_id: conversationId,
                 caller_id: user.id,
                 caller_name: profile?.display_name || user.email?.split('@')[0],
+                caller_avatar: profile?.avatar_url || null,
                 status: 'active',
                 started_at: new Date().toISOString(),
+                participants: initialMembers,
               },
             });
           }
@@ -2928,8 +3084,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           iceWatchdogTimerRef.current = null;
         }
         setCallStatus('in_call');
+      } else if (pc.iceConnectionState === 'disconnected') {
+        reconnectAttemptsRef.current += 1;
+        lastReconnectReasonRef.current = 'ICE state disconnected';
       } else if (pc.iceConnectionState === 'failed') {
         console.warn('[CallNAT] Caller ICE connection failed, restarting ICE...');
+        reconnectFailuresRef.current += 1;
+        lastFailureTimestampRef.current = new Date().toLocaleTimeString();
+        lastReconnectReasonRef.current = 'ICE connection state failed';
         restartIceConnection();
       }
     };
@@ -2946,6 +3108,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setCallStatus('in_call');
       } else if (pc.connectionState === 'failed') {
         console.warn('[CallNAT] Caller connectionState failed, restarting ICE...');
+        reconnectFailuresRef.current += 1;
+        lastFailureTimestampRef.current = new Date().toLocaleTimeString();
+        lastReconnectReasonRef.current = 'WebRTC connectionState failed';
         restartIceConnection();
       }
     };
@@ -3132,6 +3297,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           try {
             const room = roomChannelRef.current;
             if (room && room.state === 'joined') {
+              const activeMembers = participantsRef.current.length > 0
+                ? participantsRef.current.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    avatar_url: p.avatar_url || (p.id === user.id ? profile?.avatar_url : null),
+                    isSpeaking: p.isSpeaking,
+                    isMuted: p.isMuted,
+                  }))
+                : [
+                    {
+                      id: user.id,
+                      name: profile?.display_name || user.email?.split('@')[0] || 'Squadmate',
+                      avatar_url: profile?.avatar_url || null,
+                      isSpeaking: false,
+                      isMuted: isMicMuted,
+                    },
+                  ];
+
               room.send({
                 type: 'broadcast',
                 event: 'squad_call_active',
@@ -3140,8 +3323,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                   conversation_id: activeConversationIdRef.current || conversationId,
                   caller_id: user.id,
                   caller_name: profile?.display_name || user.email?.split('@')[0],
+                  caller_avatar: profile?.avatar_url || null,
                   status: 'active',
                   started_at: new Date().toISOString(),
+                  participants: activeMembers,
                 },
               }).catch(() => {});
             }
@@ -3349,8 +3534,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           iceWatchdogTimerRef.current = null;
         }
         setCallStatus('in_call');
+      } else if (pc.iceConnectionState === 'disconnected') {
+        reconnectAttemptsRef.current += 1;
+        lastReconnectReasonRef.current = 'ICE state disconnected';
       } else if (pc.iceConnectionState === 'failed') {
         console.warn('[CallNAT] Callee ICE connection failed, restarting ICE...');
+        reconnectFailuresRef.current += 1;
+        lastFailureTimestampRef.current = new Date().toLocaleTimeString();
+        lastReconnectReasonRef.current = 'ICE connection state failed';
         restartIceConnection();
       }
     };
@@ -3367,6 +3558,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setCallStatus('in_call');
       } else if (pc.connectionState === 'failed') {
         console.warn('[CallNAT] Callee connectionState failed, restarting ICE...');
+        reconnectFailuresRef.current += 1;
+        lastFailureTimestampRef.current = new Date().toLocaleTimeString();
+        lastReconnectReasonRef.current = 'WebRTC connectionState failed';
         restartIceConnection();
       }
     };
@@ -4357,6 +4551,36 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const getSquadCallParticipants = React.useCallback(
+    (convId?: string | null) => {
+      if (!convId) return [];
+      if (
+        activeConversationIdRef.current === convId &&
+        callStatusRef.current === 'in_call' &&
+        participantsRef.current.length > 0
+      ) {
+        return participantsRef.current;
+      }
+      const squad = activeSquadCalls.get(convId);
+      if (squad?.participants && Array.isArray(squad.participants) && squad.participants.length > 0) {
+        return squad.participants;
+      }
+      if (squad?.caller_name) {
+        return [
+          {
+            id: squad.caller_id || 'caller',
+            name: squad.caller_name,
+            avatar_url: squad.caller_avatar || null,
+            isSpeaking: false,
+            isMuted: false,
+          },
+        ];
+      }
+      return [];
+    },
+    [activeSquadCalls]
+  );
+
   const callContextValue = React.useMemo(
     () => ({
       callStatus,
@@ -4396,6 +4620,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       forceMute,
       activeSquadCalls,
       isSquadCallActive,
+      getSquadCallParticipants,
     }),
     [
       callStatus,
@@ -4435,6 +4660,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       forceMute,
       activeSquadCalls,
       isSquadCallActive,
+      getSquadCallParticipants,
     ]
   );
 

@@ -2505,6 +2505,27 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
+      // Broadcast real-time active squad call event for instant banner display in chat
+      try {
+        const roomBroadcastChannel = supabase.channel(`call-room-${conversationId}`);
+        roomBroadcastChannel.subscribe((subStatus) => {
+          if (subStatus === 'SUBSCRIBED') {
+            roomBroadcastChannel.send({
+              type: 'broadcast',
+              event: 'squad_call_active',
+              payload: {
+                id: callSessionId,
+                conversation_id: conversationId,
+                caller_id: user.id,
+                caller_name: profile?.display_name || user.email?.split('@')[0],
+                status: 'active',
+                started_at: new Date().toISOString(),
+              },
+            });
+          }
+        });
+      } catch {}
+
       // Persist call session to database
       try {
         supabase
@@ -3565,6 +3586,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             .eq('conversation_id', convId)
             .in('status', ['ringing', 'active', 'in_call'])
             .then(() => {}, () => {});
+        } catch {}
+      } else {
+        try {
+          const roomBroadcastChannel = supabase.channel(`call-room-${convId}`);
+          roomBroadcastChannel.subscribe((subStatus) => {
+            if (subStatus === 'SUBSCRIBED') {
+              roomBroadcastChannel.send({
+                type: 'broadcast',
+                event: 'squad_call_ended',
+                payload: { conversation_id: convId },
+              });
+            }
+          });
         } catch {}
       }
     }

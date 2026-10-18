@@ -28,6 +28,7 @@ import {
   Flag,
   ArrowDown,
   Volume2,
+  AlertTriangle,
 } from 'lucide-react';
 import { GroupSettingsModal } from '@/components/chat/group-settings-modal';
 import { ForwardModal } from '@/components/chat/forward-modal';
@@ -35,6 +36,7 @@ import { ReportModal } from '@/components/social/report-modal';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useMessages } from '@/hooks/use-messages';
 import { useConversations } from '@/hooks/use-conversations';
+import { useSocial } from '@/hooks/use-social';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -140,10 +142,50 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     return conversations.find((c) => c.id === conversationId) || null;
   }, [conversations, conversationId]);
 
+  // Fallback direct conversation fetch if cache is still hydrating
+  const [fetchedConversation, setFetchedConversation] = React.useState<any>(null);
+
+  React.useEffect(() => {
+    if (currentConversation) {
+      setFetchedConversation(currentConversation);
+      return;
+    }
+    if (!conversationId || !supabase) return;
+    let active = true;
+    supabase
+      .from('conversations')
+      .select(`
+        id,
+        name,
+        type,
+        created_by,
+        avatar_url,
+        members:conversation_members(
+          id,
+          user_id,
+          role,
+          profile:user_id(id, username, display_name, avatar_url, status)
+        )
+      `)
+      .eq('id', conversationId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active && data) {
+          setFetchedConversation(data);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [conversationId, currentConversation, supabase]);
+
+  const effectiveConversation = currentConversation || fetchedConversation;
+  const isGroup = effectiveConversation?.type === 'group';
+
   const [activeCallSession, setActiveCallSession] = React.useState<any>(null);
 
   React.useEffect(() => {
-    if (!conversationId || currentConversation?.type !== 'group' || !supabase) {
+    if (!conversationId || !supabase) {
       setActiveCallSession(null);
       return;
     }
@@ -164,7 +206,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
     checkCallSession();
 
-    const channel = supabase
+    // 1. Database level postgres changes
+    const dbChannel = supabase
       .channel(`active_call_session_${conversationId}`)
       .on(
         'postgres_changes',
@@ -180,15 +223,27 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       )
       .subscribe();
 
+    // 2. Real-time WebRTC broadcast channel for instant banner updates
+    const roomChannel = supabase
+      .channel(`call-room-${conversationId}`)
+      .on('broadcast', { event: 'squad_call_active' }, (payload: any) => {
+        setActiveCallSession(payload.payload || { status: 'active', started_at: new Date().toISOString() });
+      })
+      .on('broadcast', { event: 'squad_call_ended' }, () => {
+        setActiveCallSession(null);
+      })
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(dbChannel);
+      supabase.removeChannel(roomChannel);
     };
-  }, [conversationId, currentConversation?.type, supabase]);
+  }, [conversationId, supabase]);
 
   const otherMember = React.useMemo(() => {
-    if (!currentConversation) return null;
-    return currentConversation.members.find((m) => m.user_id !== user?.id) || null;
-  }, [currentConversation, user]);
+    if (!effectiveConversation) return null;
+    return (effectiveConversation.members || []).find((m: any) => m.user_id !== user?.id) || null;
+  }, [effectiveConversation, user]);
 
   const [directRecipient, setDirectRecipient] = React.useState<{
     id: string;
@@ -237,6 +292,50 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
   const targetMember = otherMember?.profile || directRecipient?.profile || null;
   const targetUserId = otherMember?.user_id || directRecipient?.id || null;
+
+  // Direct Message Privacy Enforcement
+  const { friends } = useSocial();
+  const [recipientPrivacy, setRecipientPrivacy] = React.useState<{
+    allow_direct_messages?: 'everyone' | 'friends' | 'none';
+  } | null>(null);
+
+  React.useEffect(() => {
+    if (!targetUserId || !supabase || isGroup) {
+      setRecipientPrivacy(null);
+      return;
+    }
+    let isMounted = true;
+    supabase
+      .from('user_settings')
+      .select('allow_direct_messages')
+      .eq('user_id', targetUserId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (isMounted && data) {
+          setRecipientPrivacy(data as any);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [targetUserId, supabase, isGroup]);
+
+  const isFriend = React.useMemo(() => {
+    if (!targetUserId) return false;
+    return friends.some((f) => f.id === targetUserId || (f as any).friend?.id === targetUserId);
+  }, [friends, targetUserId]);
+
+  const dmBlockedReason = React.useMemo(() => {
+    if (isGroup || !recipientPrivacy) return null;
+    const policy = recipientPrivacy.allow_direct_messages;
+    if (policy === 'none') {
+      return 'This user does not accept direct messages from anyone.';
+    }
+    if (policy === 'friends' && !isFriend) {
+      return 'This user only accepts direct messages from friends.';
+    }
+    return null;
+  }, [isGroup, recipientPrivacy, isFriend]);
 
   const pinnedCount = React.useMemo(() => {
     return rawMessages.filter((m) => m.is_pinned).length;
@@ -405,7 +504,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           )}
 
           {/* Member / Chat Avatar */}
-          {currentConversation?.type === 'group' ? (
+          {isGroup ? (
             <div
               onClick={() => setShowGroupSettings(true)}
               className="w-8 h-8 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center text-primary cursor-pointer hover:bg-primary/30 transition shrink-0"
@@ -416,7 +515,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           ) : (
             <Avatar
               src={targetMember?.avatar_url || null}
-              name={targetMember?.display_name || currentConversation?.name || 'Chat'}
+              name={targetMember?.display_name || effectiveConversation?.name || 'Chat'}
               status={getUserStatus(targetUserId || targetMember?.id)}
               showStatus
               size="sm"
@@ -426,11 +525,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-semibold text-foreground truncate">
-                {currentConversation?.type === 'group'
-                  ? currentConversation.name || 'Squad Group'
+                {isGroup
+                  ? effectiveConversation?.name || 'Squad Group'
                   : targetMember?.display_name || 'Squad Chat'}
               </h2>
-              {currentConversation?.type !== 'group' && targetMember && (
+              {!isGroup && targetMember && (
                 <span className="text-[11px] text-muted-foreground/60 font-mono truncate">
                   @{targetMember.username}
                 </span>
@@ -438,12 +537,12 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             </div>
 
             <div className="text-[10px] text-muted-foreground/60 truncate">
-              {currentConversation?.type === 'group' ? (
+              {isGroup ? (
                 <button
                   onClick={() => setShowGroupSettings(true)}
                   className="hover:text-primary transition-colors flex items-center gap-1"
                 >
-                  <span>{currentConversation.members.length} squad members</span>
+                  <span>{(effectiveConversation?.members || []).length} squad members</span>
                   <span className="text-primary/70 font-semibold">• Manage Squad</span>
                 </button>
               ) : targetMember?.game_activity ? (
@@ -495,7 +594,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           </button>
 
           {/* Group Settings Button */}
-          {currentConversation?.type === 'group' && (
+          {isGroup && (
             <button
               onClick={() => setShowGroupSettings(true)}
               className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
@@ -528,19 +627,19 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                 }}
                 className={cn(
                   'p-1.5 rounded-lg transition-colors',
-                  currentConversation?.type === 'group' && activeCallSession
+                  isGroup && activeCallSession
                     ? 'text-emerald-400 hover:text-emerald-300 bg-emerald-500/10'
                     : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
                 )}
                 title={
-                  currentConversation?.type === 'group'
+                  isGroup
                     ? activeCallSession
                       ? 'Join Ongoing Squad Voice Call'
                       : 'Start Squad Voice Call'
                     : 'Start Voice Call'
                 }
                 aria-label={
-                  currentConversation?.type === 'group'
+                  isGroup
                     ? activeCallSession
                       ? 'Join Ongoing Squad Voice Call'
                       : 'Start Squad Voice Call'
@@ -591,7 +690,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       )}
 
       {/* Active Squad Voice Call Banner */}
-      {currentConversation?.type === 'group' &&
+      {isGroup &&
         activeCallSession &&
         (call.activeConversationId !== conversationId || call.callStatus !== 'in_call') && (
           <div className="mx-4 my-2 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between text-xs animate-in fade-in">
@@ -1034,6 +1133,14 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         </div>
       )}
 
+      {/* Direct Messaging Privacy Warning Banner */}
+      {dmBlockedReason && (
+        <div className="mx-4 mb-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-2 text-xs text-amber-300 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+          <span>{dmBlockedReason}</span>
+        </div>
+      )}
+
       {/* Chat Input Bar */}
       <div className="p-3 sm:p-3.5 border-t border-white/[0.06] bg-surface-header/50">
         <form onSubmit={handleSend} className="relative flex items-center gap-1.5 sm:gap-2">
@@ -1050,8 +1157,9 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
+            disabled={Boolean(dmBlockedReason)}
             aria-label="Attach media or file"
-            className="p-2 rounded-lg hover:bg-white/[0.04] text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            className="p-2 rounded-lg hover:bg-white/[0.04] text-muted-foreground hover:text-foreground transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Attach Media or File (Max 25MB)"
           >
             <Paperclip className="w-4 h-4" />
@@ -1061,8 +1169,9 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           <button
             type="button"
             onClick={() => setShowSoundboard(true)}
+            disabled={Boolean(dmBlockedReason)}
             aria-label="Soundboard meme effects"
-            className="p-2 rounded-lg hover:bg-white/[0.04] text-muted-foreground hover:text-amber-400 transition-colors shrink-0"
+            className="p-2 rounded-lg hover:bg-white/[0.04] text-muted-foreground hover:text-amber-400 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Soundboard Meme Effects"
           >
             <Sparkles className="w-4 h-4" />
@@ -1073,20 +1182,26 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             <input
               ref={inputRef}
               type="text"
+              disabled={Boolean(dmBlockedReason)}
               aria-label={`Message @${targetMember?.username || 'squad'}`}
-              placeholder={`Message @${targetMember?.username || 'squad'}...`}
+              placeholder={
+                dmBlockedReason
+                  ? 'Direct messaging disabled by recipient privacy settings'
+                  : `Message @${targetMember?.username || 'squad'}...`
+              }
               value={inputContent}
               onChange={(e) => setInputContent(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="w-full h-10 pl-3.5 pr-10 rounded-xl bg-surface-default/80 border border-white/[0.08] hover:border-white/[0.14] text-xs sm:text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50 transition-colors font-normal"
+              className="w-full h-10 pl-3.5 pr-10 rounded-xl bg-surface-default/80 border border-white/[0.08] hover:border-white/[0.14] text-xs sm:text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/50 transition-colors font-normal disabled:opacity-50 disabled:cursor-not-allowed"
             />
 
             {/* Quick Emoji Trigger */}
             <button
               type="button"
               onClick={() => setInputContent((prev) => prev + ' 🔥')}
+              disabled={Boolean(dmBlockedReason)}
               aria-label="Add fire emoji"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title="Add Emoji"
             >
               <Smile className="w-4 h-4" />
@@ -1099,7 +1214,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             size="default"
             aria-label="Send message"
             className="h-10 px-3.5 gap-1.5 shrink-0 rounded-xl font-medium"
-            disabled={isSending || (!inputContent.trim() && selectedFiles.length === 0)}
+            disabled={
+              Boolean(dmBlockedReason) ||
+              isSending ||
+              (!inputContent.trim() && selectedFiles.length === 0)
+            }
           >
             {isSending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -1174,7 +1293,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
       {/* Group DM Settings Modal */}
       <GroupSettingsModal
-        conversation={currentConversation}
+        conversation={effectiveConversation}
         open={showGroupSettings}
         onOpenChange={setShowGroupSettings}
         onLeftGroup={() => onBack?.()}

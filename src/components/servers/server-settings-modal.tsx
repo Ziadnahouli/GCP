@@ -26,6 +26,7 @@ import {
   Copy,
   FileText,
   Loader2,
+  Flag,
 } from 'lucide-react';
 import {
   Server,
@@ -99,10 +100,13 @@ export function ServerSettingsModal({
     fetchAuditLogs,
     fetchBans,
     fetchInvites,
+    fetchServerReports,
+    resolveReport,
+    dismissReport,
   } = useServers();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState<
-    'overview' | 'channels' | 'roles' | 'members' | 'invites' | 'bans' | 'audit' | 'danger'
+    'overview' | 'channels' | 'roles' | 'members' | 'invites' | 'bans' | 'audit' | 'reports' | 'danger'
   >('overview');
   const [serverName, setServerName] = React.useState(server.name);
   const [serverDesc, setServerDesc] = React.useState(server.description || '');
@@ -112,6 +116,7 @@ export function ServerSettingsModal({
   const [auditLogs, setAuditLogs] = React.useState<ModerationAuditLog[]>([]);
   const [bansList, setBansList] = React.useState<ServerBan[]>([]);
   const [invitesList, setInvitesList] = React.useState<ServerInvite[]>([]);
+  const [reportsList, setReportsList] = React.useState<any[]>([]);
   const [loadingModeration, setLoadingModeration] = React.useState(false);
 
   // Invite creator state
@@ -121,6 +126,9 @@ export function ServerSettingsModal({
 
   React.useEffect(() => {
     if (!open) return;
+    // Always check reports count for badge
+    fetchServerReports(server.id).then(setReportsList).catch(() => {});
+
     if (activeTab === 'audit') {
       setLoadingModeration(true);
       fetchAuditLogs(server.id)
@@ -136,8 +144,13 @@ export function ServerSettingsModal({
       fetchInvites(server.id)
         .then(setInvitesList)
         .finally(() => setLoadingModeration(false));
+    } else if (activeTab === 'reports') {
+      setLoadingModeration(true);
+      fetchServerReports(server.id)
+        .then(setReportsList)
+        .finally(() => setLoadingModeration(false));
     }
-  }, [activeTab, open, server.id, fetchAuditLogs, fetchBans, fetchInvites]);
+  }, [activeTab, open, server.id, fetchAuditLogs, fetchBans, fetchInvites, fetchServerReports]);
 
   // Edit channel state
   const [editingChannelId, setEditingChannelId] = React.useState<string | null>(null);
@@ -431,6 +444,26 @@ export function ServerSettingsModal({
             </button>
 
             <button
+              onClick={() => setActiveTab('reports')}
+              className={cn(
+                'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
+                activeTab === 'reports'
+                  ? 'bg-primary text-primary-foreground shadow-subtle'
+                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Flag className="w-3.5 h-3.5 text-amber-400" />
+                <span>Reports & Flags</span>
+              </div>
+              {reportsList.filter((r) => r.status === 'pending').length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-black">
+                  {reportsList.filter((r) => r.status === 'pending').length}
+                </span>
+              )}
+            </button>
+
+            <button
               onClick={() => setActiveTab('danger')}
               className={cn(
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
@@ -464,6 +497,7 @@ export function ServerSettingsModal({
                 {activeTab === 'invites' && 'Server Invites & Access Control'}
                 {activeTab === 'bans' && 'Bans & Security Restrictions'}
                 {activeTab === 'audit' && 'Moderation Audit Logs'}
+                {activeTab === 'reports' && 'Member & Content Reports'}
                 {activeTab === 'danger' && 'Danger Zone'}
               </h2>
               <p className="text-[11px] text-muted-foreground">
@@ -1242,7 +1276,7 @@ export function ServerSettingsModal({
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Server Bans & Blacklist</h4>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Users banned from joining or interacting with this server.
+                    Users banned from joining or interacting with this server. Unbanning permits them to rejoin with an invite link.
                   </p>
                 </div>
 
@@ -1281,20 +1315,44 @@ export function ServerSettingsModal({
                           </div>
                         </div>
 
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async () => {
-                            const res = await unbanMember(server.id, ban.user_id);
-                            if (res.success) {
-                              toast({ title: 'User Unbanned', description: 'Ban record lifted.', type: 'success' });
-                              fetchBans(server.id).then(setBansList);
-                            }
-                          }}
-                          className="text-xs border-white/10 hover:bg-white/10 h-7"
-                        >
-                          Unban
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              const res = await unbanMember(server.id, ban.user_id, false);
+                              if (res.success) {
+                                toast({
+                                  title: 'User Unbanned',
+                                  description: 'Ban record lifted. The user can rejoin using an invite link.',
+                                  type: 'success',
+                                });
+                                fetchBans(server.id).then(setBansList);
+                              }
+                            }}
+                            className="text-xs border-white/10 hover:bg-white/10 h-7"
+                          >
+                            Unban
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={async () => {
+                              const res = await unbanMember(server.id, ban.user_id, true);
+                              if (res.success) {
+                                toast({
+                                  title: 'User Unbanned & Restored',
+                                  description: 'Ban record lifted and server membership restored!',
+                                  type: 'success',
+                                });
+                                fetchBans(server.id).then(setBansList);
+                              }
+                            }}
+                            className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white h-7 font-medium"
+                          >
+                            Unban & Restore
+                          </Button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -1352,6 +1410,136 @@ export function ServerSettingsModal({
                         <div className="text-[10px] text-muted-foreground/60 font-mono shrink-0">
                           {new Date(log.created_at).toLocaleString()}
                         </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: REPORTS & CONTENT FLAGS */}
+            {activeTab === 'reports' && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Reports & Safety Queue</h4>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    User reports submitted regarding behavior, harassment, or offensive chat content in this server.
+                  </p>
+                </div>
+
+                <div className="space-y-2 select-none">
+                  {loadingModeration ? (
+                    <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      Loading reports...
+                    </div>
+                  ) : reportsList.length === 0 ? (
+                    <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                      No reports have been submitted for this server. Comms are peaceful!
+                    </div>
+                  ) : (
+                    reportsList.map((rep) => (
+                      <div
+                        key={rep.id}
+                        className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <Avatar
+                              src={rep.reported?.avatar_url}
+                              name={rep.reported?.display_name || 'Reported'}
+                              size="sm"
+                            />
+                            <div>
+                              <div className="text-xs font-semibold text-foreground flex items-center gap-2">
+                                <span>Reported: {rep.reported?.display_name || 'User'}</span>
+                                <span className="text-[10px] text-muted-foreground font-mono">
+                                  @{rep.reported?.username || 'user'}
+                                </span>
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    'text-[9px] uppercase px-1.5 py-0.2 font-mono',
+                                    rep.status === 'pending'
+                                      ? 'border-amber-500/40 text-amber-400 bg-amber-500/10'
+                                      : rep.status === 'resolved'
+                                      ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
+                                      : 'border-white/20 text-muted-foreground'
+                                  )}
+                                >
+                                  {rep.status}
+                                </Badge>
+                              </div>
+                              <div className="text-[11px] text-amber-300 font-medium mt-0.5">
+                                Reason: {rep.reason}
+                              </div>
+                              {rep.description && (
+                                <p className="text-xs text-foreground/80 mt-1 bg-white/[0.02] p-2 rounded-lg border border-white/[0.04]">
+                                  &ldquo;{rep.description}&rdquo;
+                                </p>
+                              )}
+                              <div className="text-[10px] text-muted-foreground/60 mt-1">
+                                Reported by {rep.reporter?.display_name || 'A squadmate'} on {new Date(rep.created_at).toLocaleString()}
+                                {rep.action_taken && ` • Action: ${rep.action_taken}`}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {rep.status === 'pending' && (
+                          <div className="flex items-center gap-2 pt-2 border-t border-white/[0.04]">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                await timeoutMember(server.id, rep.reported_user_id, 900, 'Report: ' + rep.reason);
+                                await resolveReport(rep.id, 'Timed out member (15m)');
+                                toast({ title: 'Member Timed Out', description: 'Timed out for 15 minutes.', type: 'info' });
+                                fetchServerReports(server.id).then(setReportsList);
+                              }}
+                              className="text-xs h-7 border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+                            >
+                              Timeout (15m)
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={async () => {
+                                await banMember(server.id, rep.reported_user_id, 'Report: ' + rep.reason);
+                                await resolveReport(rep.id, 'Banned member');
+                                toast({ title: 'Member Banned', description: 'User banned from server.', type: 'error' });
+                                fetchServerReports(server.id).then(setReportsList);
+                              }}
+                              className="text-xs h-7"
+                            >
+                              Ban User
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={async () => {
+                                await dismissReport(rep.id);
+                                toast({ title: 'Report Dismissed', description: 'Marked as dismissed.', type: 'info' });
+                                fetchServerReports(server.id).then(setReportsList);
+                              }}
+                              className="text-xs h-7 text-muted-foreground hover:text-foreground"
+                            >
+                              Dismiss
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                await resolveReport(rep.id, 'Reviewed and resolved');
+                                toast({ title: 'Report Resolved', description: 'Marked as resolved.', type: 'success' });
+                                fetchServerReports(server.id).then(setReportsList);
+                              }}
+                              className="text-xs h-7 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 ml-auto"
+                            >
+                              Mark Resolved
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     ))
                   )}

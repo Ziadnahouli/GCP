@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { Server } from '@/lib/types/server';
+import { LinkPreviewCard } from '@/components/chat/link-preview';
 
 interface MessageContentProps {
   content: string;
@@ -32,6 +33,13 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
   }, [content]);
 
   const inviteServerId = inviteMatch ? inviteMatch[1] : null;
+
+  // Check if content contains a general web URL for safe preview (excluding server invites)
+  const previewUrl = React.useMemo(() => {
+    if (inviteMatch) return null;
+    const match = content.match(/https?:\/\/[^\s]+/i);
+    return match ? match[0] : null;
+  }, [content, inviteMatch]);
 
   // Check if user is already a member
   const existingServer = React.useMemo(() => {
@@ -249,6 +257,13 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
               )}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Safe Link Preview Card */}
+      {previewUrl && (
+        <div className="mt-2 max-w-sm">
+          <LinkPreviewCard url={previewUrl} />
         </div>
       )}
     </div>

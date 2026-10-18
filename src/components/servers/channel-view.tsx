@@ -38,6 +38,7 @@ import {
   Forward,
   Flag,
   ArrowDown,
+  Clock,
 } from 'lucide-react';
 import { ForwardModal } from '@/components/chat/forward-modal';
 import { ReportModal } from '@/components/social/report-modal';
@@ -196,12 +197,22 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
     return null;
   }, [voice.isScreenSharing, voice.screenStream, voice.remoteParticipants, voice.remoteVideoStreams, user?.id, profile?.display_name]);
 
+  // Current member and timeout state
+  const currentMember = React.useMemo(() => {
+    return (server.members || []).find((m) => m.user_id === user?.id) || null;
+  }, [server.members, user?.id]);
+
+  const isTimedOut = React.useMemo(() => {
+    if (!currentMember?.timeout_until) return false;
+    return new Date(currentMember.timeout_until) > new Date();
+  }, [currentMember?.timeout_until]);
+
   // Permissions for current user
-  const canSendMessages = hasServerPermission(server, user?.id, 'send_messages');
+  const canSendMessages = !isTimedOut && hasServerPermission(server, user?.id, 'send_messages');
   const canConnectVoice = hasServerPermission(server, user?.id, 'connect_voice');
-  const canSpeakVoice = hasServerPermission(server, user?.id, 'speak_voice');
-  const canShareScreen = hasServerPermission(server, user?.id, 'share_screen');
-  const canUseSoundboard = hasServerPermission(server, user?.id, 'use_soundboard');
+  const canSpeakVoice = !isTimedOut && hasServerPermission(server, user?.id, 'speak_voice');
+  const canShareScreen = !isTimedOut && hasServerPermission(server, user?.id, 'share_screen');
+  const canUseSoundboard = !isTimedOut && hasServerPermission(server, user?.id, 'use_soundboard');
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -231,6 +242,14 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (isTimedOut) {
+      toast({
+        title: 'Timed Out',
+        description: `You are timed out in this server until ${new Date(currentMember!.timeout_until!).toLocaleTimeString()}.`,
+        type: 'error',
+      });
+      return;
+    }
     if (!canSendMessages) {
       toast({ title: 'Restricted', description: 'Your role does not have permission to send messages.', type: 'error' });
       return;
@@ -1404,6 +1423,14 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   </button>
                 </div>
               )}
+              {isTimedOut && (
+                <div className="mb-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-2 text-xs text-amber-300 animate-in fade-in">
+                  <Clock className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span>
+                    You are currently timed out in this server until {new Date(currentMember!.timeout_until!).toLocaleTimeString()}. You cannot send messages.
+                  </span>
+                </div>
+              )}
               <form
                 onSubmit={handleSend}
                 className="flex items-center gap-2 bg-white/[0.02] border border-white/[0.06] rounded-lg p-1.5 px-3 focus-within:border-white/[0.12] focus-within:bg-white/[0.03] transition-all"
@@ -1427,7 +1454,13 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   onKeyDown={handleKeyDown}
                   disabled={!canSendMessages}
                   aria-label={`Message #${channel.name}`}
-                  placeholder={canSendMessages ? `Message #${channel.name}...` : "You don't have permission to post messages here"}
+                  placeholder={
+                    isTimedOut
+                      ? 'You are currently timed out in this server'
+                      : canSendMessages
+                      ? `Message #${channel.name}...`
+                      : "You don't have permission to post messages here"
+                  }
                   className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none resize-none max-h-28 py-1 font-normal disabled:opacity-50"
                 />
 
@@ -1504,6 +1537,12 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         {isMe && (
                           <span className="text-[9px] text-muted-foreground/60 font-mono">(You)</span>
                         )}
+                        {(server.members || []).find((sm) => sm.user_id === m.id)?.timeout_until &&
+                          new Date((server.members || []).find((sm) => sm.user_id === m.id)!.timeout_until!) > new Date() && (
+                            <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
+                              Timed Out
+                            </span>
+                          )}
                       </div>
                       <div className="text-[10px] text-muted-foreground/60 font-mono truncate">
                         @{m.username}

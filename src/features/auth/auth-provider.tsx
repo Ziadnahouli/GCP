@@ -47,6 +47,31 @@ const DEFAULT_SETTINGS: UserSettings = {
   updated_at: new Date().toISOString(),
 };
 
+export function getLocalDeviceId(): string {
+  if (typeof window === 'undefined') return 'server';
+  let id = localStorage.getItem('nexus_device_id');
+  if (!id) {
+    id =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    localStorage.setItem('nexus_device_id', id);
+  }
+  return id;
+}
+
+export function getDeviceName(): string {
+  if (typeof navigator === 'undefined') return 'Web Client';
+  const ua = navigator.userAgent;
+  if (/iPhone/i.test(ua)) return 'iPhone • Safari';
+  if (/iPad/i.test(ua)) return 'iPad • Safari';
+  if (/Android/i.test(ua)) return 'Android Device';
+  if (/Windows/i.test(ua)) return 'Windows PC • Browser';
+  if (/Macintosh|Mac OS X/i.test(ua)) return 'Mac • Browser';
+  if (/Linux/i.test(ua)) return 'Linux • Browser';
+  return 'Desktop Client';
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<User | null>(null);
   const [profile, setProfile] = React.useState<UserProfile | null>(null);
@@ -213,6 +238,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cleanupPromise.then((cleanup) => cleanup && cleanup());
     };
   }, [supabase, fetchProfileAndSettings]);
+
+  // Multi-Device Tracking & Heartbeat
+  React.useEffect(() => {
+    if (!user || !supabase || !config.isConfigured) return;
+    const deviceId = getLocalDeviceId();
+    const deviceName = getDeviceName();
+
+    const recordDevice = async () => {
+      try {
+        await supabase
+          .from('user_devices')
+          .upsert(
+            {
+              user_id: user.id,
+              device_id: deviceId,
+              device_name: deviceName,
+              user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+              last_active_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id,device_id' }
+          );
+      } catch {}
+    };
+
+    recordDevice();
+    const interval = setInterval(recordDevice, 60000);
+    return () => clearInterval(interval);
+  }, [user?.id, supabase, config.isConfigured]);
 
   // Sign in with password
   const signInWithPassword = React.useCallback(

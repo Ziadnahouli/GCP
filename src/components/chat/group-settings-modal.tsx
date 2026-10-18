@@ -56,9 +56,11 @@ export function GroupSettingsModal({
   const [isAdding, setIsAdding] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
 
+  const membersList = React.useMemo(() => conversation?.members || [], [conversation?.members]);
+
   const currentMember = React.useMemo(() => {
-    return conversation?.members.find((m) => m.user_id === user?.id) || null;
-  }, [conversation, user]);
+    return membersList.find((m) => m.user_id === user?.id) || null;
+  }, [membersList, user]);
 
   const isOwner = currentMember?.role === 'owner' || conversation?.created_by === user?.id;
   const isAdmin = isOwner || currentMember?.role === 'admin';
@@ -74,7 +76,7 @@ export function GroupSettingsModal({
   if (!conversation) return null;
 
   // Friends not currently in this group
-  const existingMemberIds = new Set(conversation.members.map((m) => m.user_id));
+  const existingMemberIds = new Set(membersList.map((m) => m.user_id));
   const candidateFriends = friends.filter((f) => !existingMemberIds.has(f.friend.id));
 
   const filteredCandidates = candidateFriends.filter(
@@ -165,7 +167,7 @@ export function GroupSettingsModal({
                   {conversation.name || 'Squad Group'}
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  {conversation.members.length} Squad Member{conversation.members.length === 1 ? '' : 's'}
+                  {membersList.length} Squad Member{membersList.length === 1 ? '' : 's'}
                 </p>
               </div>
             </div>
@@ -217,7 +219,7 @@ export function GroupSettingsModal({
           {activeTab === 'members' && (
             <div className="space-y-3">
               <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 select-none">
-                {conversation.members.map((member) => {
+                {membersList.map((member) => {
                   const isCurrent = member.user_id === user?.id;
                   const role = member.role || (member.user_id === conversation.created_by ? 'owner' : 'member');
                   const canKick = isAdmin && !isCurrent && role !== 'owner';

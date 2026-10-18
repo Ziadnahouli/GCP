@@ -22,6 +22,49 @@ export function ResetPasswordForm() {
   const [errors, setErrors] = React.useState<Partial<Record<keyof ResetPasswordFormData, string>>>({});
   const [loading, setLoading] = React.useState(false);
   const [generalError, setGeneralError] = React.useState<string | null>(null);
+  const [sessionReady, setSessionReady] = React.useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    // 1. Check if URL contains ?code= (direct PKCE redirect)
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      if (code) {
+        supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+          if (!mounted) return;
+          if (error) {
+            console.error('[ResetPassword] Code exchange error:', error);
+            setGeneralError('Invalid or expired password reset link. Please request a new one.');
+            setSessionReady(false);
+          } else {
+            setSessionReady(true);
+          }
+        });
+      } else {
+        // 2. Check existing session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (!mounted) return;
+          setSessionReady(!!session);
+        });
+      }
+    }
+
+    // 3. Listen for auth changes (PASSWORD_RECOVERY event)
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      if (event === 'PASSWORD_RECOVERY' || !!session) {
+        setSessionReady(true);
+        setGeneralError(null);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      authListener?.subscription?.unsubscribe();
+    };
+  }, [supabase]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,10 +91,13 @@ export function ResetPasswordForm() {
       });
 
       if (updateErr) {
-        setGeneralError(updateErr.message);
+        const errorMsg = updateErr.message?.toLowerCase().includes('auth session missing')
+          ? 'Recovery session expired or not authenticated. Please request a fresh reset link from the sign in page.'
+          : updateErr.message;
+        setGeneralError(errorMsg);
         toast({
           title: 'Update Failed',
-          description: updateErr.message,
+          description: errorMsg,
           type: 'error',
         });
       } else {
@@ -84,6 +130,12 @@ export function ResetPasswordForm() {
       {generalError && (
         <div className="mb-5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium">
           {generalError}
+        </div>
+      )}
+
+      {sessionReady === false && !generalError && (
+        <div className="mb-5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-medium">
+          Note: Please ensure you open this page by clicking the verification link received in your email.
         </div>
       )}
 

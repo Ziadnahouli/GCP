@@ -100,6 +100,13 @@ export function hasServerPermission(
     return DEFAULT_ROLE_PERMISSIONS.member.includes(permission);
   }
 
+  // Check if member is currently timed out
+  if (member.timeout_until && new Date(member.timeout_until) > new Date()) {
+    if (['send_messages', 'speak_voice', 'share_screen', 'use_soundboard'].includes(permission)) {
+      return false;
+    }
+  }
+
   // 1. Check custom roles configured on server
   if (server.roles && server.roles.length > 0) {
     const customRole = server.roles.find(

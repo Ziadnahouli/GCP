@@ -75,7 +75,7 @@ export function useServersInternal() {
           id, name, description, icon_url, owner_id, created_at,
           channels ( id, server_id, name, type, topic, position, created_at ),
           server_members (
-            id, server_id, user_id, role, joined_at,
+            id, server_id, user_id, role, joined_at, timeout_until,
             profile:user_id (
               id, username, display_name, avatar_url, banner_url, banner_color,
               bio, custom_status, status, game_activity, created_at, updated_at
@@ -133,6 +133,7 @@ export function useServersInternal() {
                 user_id: m.user_id,
                 role: m.role,
                 joined_at: m.joined_at,
+                timeout_until: m.timeout_until || null,
                 profile: (m.profile as unknown as UserProfile) || undefined,
               })),
             };
@@ -793,12 +794,17 @@ export function useServersInternal() {
   );
 
   const unbanMember = React.useCallback(
-    async (serverId: string, userId: string): Promise<{ success: boolean; error: string | null }> => {
+    async (
+      serverId: string,
+      userId: string,
+      restoreMember = false
+    ): Promise<{ success: boolean; error: string | null }> => {
       if (!user || !supabase) return { success: false, error: 'Not authenticated' };
       try {
         const { error } = await supabase.rpc('unban_server_member', {
           p_server_id: serverId,
           p_user_id: userId,
+          p_restore_member: restoreMember,
         });
         if (error) throw error;
         await fetchServers();
@@ -807,7 +813,7 @@ export function useServersInternal() {
         return { success: false, error: err?.message || 'Failed to unban member' };
       }
     },
-    [user, fetchServers]
+    [user, fetchServers, supabase]
   );
 
   const timeoutMember = React.useCallback(
@@ -832,7 +838,7 @@ export function useServersInternal() {
         return { success: false, error: err?.message || 'Failed to timeout member' };
       }
     },
-    [user, fetchServers]
+    [user, fetchServers, supabase]
   );
 
   const createInvite = React.useCallback(
@@ -854,7 +860,7 @@ export function useServersInternal() {
         return { invite: null, error: err?.message || 'Failed to generate invite' };
       }
     },
-    [user]
+    [user, supabase]
   );
 
   const revokeInvite = React.useCallback(
@@ -870,50 +876,109 @@ export function useServersInternal() {
         return { success: false, error: err?.message || 'Failed to revoke invite' };
       }
     },
-    [user]
+    [user, supabase]
   );
 
   const fetchAuditLogs = React.useCallback(
     async (serverId: string): Promise<ModerationAuditLog[]> => {
       if (!user || !supabase) return [];
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('moderation_audit_logs')
           .select(`
             id, server_id, actor_id, target_id, action, reason, details, created_at,
-            actor:actor_id ( id, username, display_name, avatar_url ),
-            target:target_id ( id, username, display_name, avatar_url )
+            actor:profiles!actor_id ( id, username, display_name, avatar_url ),
+            target:profiles!target_id ( id, username, display_name, avatar_url )
           `)
           .eq('server_id', serverId)
           .order('created_at', { ascending: false })
           .limit(50);
-        return (data as unknown as ModerationAuditLog[]) || [];
+
+        if (!error && data) {
+          return data as unknown as ModerationAuditLog[];
+        }
+
+        // Resilient fallback query if FK join alias resolution encounters PostgREST issues
+        const { data: rawLogs } = await supabase
+          .from('moderation_audit_logs')
+          .select('*')
+          .eq('server_id', serverId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (!rawLogs || rawLogs.length === 0) return [];
+
+        const userIds = Array.from(
+          new Set(rawLogs.flatMap((l) => [l.actor_id, l.target_id]).filter(Boolean) as string[])
+        );
+
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', userIds);
+
+        const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
+
+        return rawLogs.map((log) => ({
+          ...log,
+          actor: log.actor_id ? profileMap.get(log.actor_id) : undefined,
+          target: log.target_id ? profileMap.get(log.target_id) : undefined,
+        })) as ModerationAuditLog[];
       } catch {
         return [];
       }
     },
-    [user]
+    [user, supabase]
   );
 
   const fetchBans = React.useCallback(
     async (serverId: string): Promise<ServerBan[]> => {
       if (!user || !supabase) return [];
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('server_bans')
           .select(`
             id, server_id, user_id, banned_by, reason, created_at,
-            profile:user_id ( id, username, display_name, avatar_url ),
-            banner_profile:banned_by ( id, username, display_name, avatar_url )
+            profile:profiles!user_id ( id, username, display_name, avatar_url ),
+            banner_profile:profiles!banned_by ( id, username, display_name, avatar_url )
           `)
           .eq('server_id', serverId)
           .order('created_at', { ascending: false });
-        return (data as unknown as ServerBan[]) || [];
+
+        if (!error && data) {
+          return data as unknown as ServerBan[];
+        }
+
+        // Resilient fallback query
+        const { data: rawBans } = await supabase
+          .from('server_bans')
+          .select('*')
+          .eq('server_id', serverId)
+          .order('created_at', { ascending: false });
+
+        if (!rawBans || rawBans.length === 0) return [];
+
+        const userIds = Array.from(
+          new Set(rawBans.flatMap((b) => [b.user_id, b.banned_by]).filter(Boolean) as string[])
+        );
+
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', userIds);
+
+        const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
+
+        return rawBans.map((ban) => ({
+          ...ban,
+          profile: ban.user_id ? profileMap.get(ban.user_id) : undefined,
+          banner_profile: ban.banned_by ? profileMap.get(ban.banned_by) : undefined,
+        })) as ServerBan[];
       } catch {
         return [];
       }
     },
-    [user]
+    [user, supabase]
   );
 
   const fetchInvites = React.useCallback(
@@ -930,7 +995,95 @@ export function useServersInternal() {
         return [];
       }
     },
-    [user]
+    [user, supabase]
+  );
+
+  const fetchServerReports = React.useCallback(
+    async (serverId: string) => {
+      if (!user || !supabase) return [];
+      try {
+        const { data, error } = await supabase
+          .from('reports')
+          .select(`
+            id, reporter_id, reported_user_id, server_id, message_id, reason, description, status, action_taken, created_at,
+            reporter:profiles!reporter_id ( id, username, display_name, avatar_url ),
+            reported:profiles!reported_user_id ( id, username, display_name, avatar_url )
+          `)
+          .eq('server_id', serverId)
+          .order('created_at', { ascending: false });
+
+        if (!error && data) return data;
+
+        // Fallback
+        const { data: rawReports } = await supabase
+          .from('reports')
+          .select('*')
+          .eq('server_id', serverId)
+          .order('created_at', { ascending: false });
+
+        if (!rawReports || rawReports.length === 0) return [];
+
+        const userIds = Array.from(
+          new Set(rawReports.flatMap((r) => [r.reporter_id, r.reported_user_id]).filter(Boolean) as string[])
+        );
+
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', userIds);
+
+        const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
+
+        return rawReports.map((r) => ({
+          ...r,
+          reporter: r.reporter_id ? profileMap.get(r.reporter_id) : undefined,
+          reported: r.reported_user_id ? profileMap.get(r.reported_user_id) : undefined,
+        }));
+      } catch {
+        return [];
+      }
+    },
+    [user, supabase]
+  );
+
+  const resolveReport = React.useCallback(
+    async (reportId: string, actionTaken = 'Action taken') => {
+      if (!user || !supabase) return false;
+      try {
+        const { error } = await supabase
+          .from('reports')
+          .update({
+            status: 'resolved',
+            action_taken: actionTaken,
+            resolved_at: new Date().toISOString(),
+          })
+          .eq('id', reportId);
+        return !error;
+      } catch {
+        return false;
+      }
+    },
+    [user, supabase]
+  );
+
+  const dismissReport = React.useCallback(
+    async (reportId: string) => {
+      if (!user || !supabase) return false;
+      try {
+        const { error } = await supabase
+          .from('reports')
+          .update({
+            status: 'dismissed',
+            action_taken: 'Dismissed by moderator',
+            resolved_at: new Date().toISOString(),
+          })
+          .eq('id', reportId);
+        return !error;
+      } catch {
+        return false;
+      }
+    },
+    [user, supabase]
   );
 
   const createRole = React.useCallback(
@@ -1074,6 +1227,9 @@ export function useServersInternal() {
     fetchAuditLogs,
     fetchBans,
     fetchInvites,
+    fetchServerReports,
+    resolveReport,
+    dismissReport,
     createRole,
     updateRole,
     deleteRole,

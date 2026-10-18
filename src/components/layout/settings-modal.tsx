@@ -37,7 +37,7 @@ import {
   Trash2,
   Lock,
 } from 'lucide-react';
-import { useAuth } from '@/features/auth/auth-provider';
+import { useAuth, getLocalDeviceId } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useModalEscape } from '@/hooks/use-modal-escape';
 import { AccentTheme, UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
@@ -125,6 +125,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [deleteInputText, setDeleteInputText] = React.useState('');
   const [isDeletingAccount, setIsDeletingAccount] = React.useState(false);
+  const [activeDevices, setActiveDevices] = React.useState<any[]>([]);
+  const [loadingDevices, setLoadingDevices] = React.useState(false);
 
   // Profile state
   const [displayName, setDisplayName] = React.useState('');
@@ -577,7 +579,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     setIsResettingPassword(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
-        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined,
+        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/callback?next=/reset-password` : undefined,
       });
       if (error) throw error;
       toast({
@@ -596,16 +598,52 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   };
 
+  const localDeviceId = React.useMemo(() => getLocalDeviceId(), []);
+
+  const loadDevices = React.useCallback(async () => {
+    if (!user) return;
+    const supabase = getBrowserClient();
+    setLoadingDevices(true);
+    try {
+      const { data } = await supabase
+        .from('user_devices')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('last_active_at', { ascending: false });
+      setActiveDevices(data || []);
+    } catch {
+      setActiveDevices([]);
+    } finally {
+      setLoadingDevices(false);
+    }
+  }, [user]);
+
+  React.useEffect(() => {
+    if (open && activeTab === 'security') {
+      loadDevices();
+    }
+  }, [open, activeTab, loadDevices]);
+
   const handleSignOutOtherSessions = async () => {
     const supabase = getBrowserClient();
     setIsSigningOutOthers(true);
     try {
-      await supabase.auth.signOut({ scope: 'others' });
+      if (supabase && user?.id) {
+        await supabase
+          .from('user_devices')
+          .delete()
+          .eq('user_id', user.id)
+          .neq('device_id', localDeviceId);
+        try {
+          await supabase.auth.signOut({ scope: 'others' });
+        } catch {}
+      }
       toast({
         title: 'Sessions Terminated',
         description: 'All other active browser and device sessions have been invalidated.',
         type: 'success',
       });
+      loadDevices();
     } catch (err: any) {
       toast({
         title: 'Action Failed',
@@ -614,6 +652,36 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       });
     } finally {
       setIsSigningOutOthers(false);
+    }
+  };
+
+  const handleRevokeDevice = async (deviceId: string) => {
+    const supabase = getBrowserClient();
+    try {
+      if (deviceId === localDeviceId) {
+        await signOut();
+        if (typeof window !== 'undefined') window.location.href = '/login';
+        return;
+      }
+      if (supabase && user?.id) {
+        await supabase
+          .from('user_devices')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('device_id', deviceId);
+      }
+      toast({
+        title: 'Device Removed',
+        description: 'Session invalidated for this device.',
+        type: 'info',
+      });
+      loadDevices();
+    } catch (err: any) {
+      toast({
+        title: 'Action Failed',
+        description: err?.message || 'Could not revoke session.',
+        type: 'error',
+      });
     }
   };
 
@@ -1764,24 +1832,92 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   </Button>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
-                      <Laptop className="w-5 h-5" />
+                <div className="space-y-2">
+                  {loadingDevices ? (
+                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      Loading authorized sessions...
                     </div>
-                    <div>
-                      <div className="text-xs font-bold text-foreground flex items-center gap-2">
-                        <span>Current Browser Session</span>
-                        <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          Active Now
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {typeof navigator !== 'undefined' ? `${navigator.userAgent.slice(0, 45)}...` : 'Web Client'}
+                  ) : activeDevices.length > 0 ? (
+                    activeDevices.map((dev: any) => {
+                      const isCurrent = dev.device_id === localDeviceId;
+                      const isMobile = dev.device_name?.toLowerCase().includes('phone') || 
+                                       dev.device_name?.toLowerCase().includes('android') || 
+                                       dev.device_name?.toLowerCase().includes('iphone') || 
+                                       dev.user_agent?.toLowerCase().includes('mobile');
+                      return (
+                        <div
+                          key={dev.id || dev.device_id}
+                          className={cn(
+                            "p-3.5 rounded-2xl border flex items-center justify-between transition-all",
+                            isCurrent
+                              ? "bg-primary/[0.04] border-primary/20"
+                              : "bg-white/[0.02] border-white/[0.06] hover:border-white/10"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              "w-9 h-9 rounded-xl border flex items-center justify-center shrink-0",
+                              isCurrent
+                                ? "bg-primary/15 border-primary/30 text-primary"
+                                : "bg-white/[0.04] border-white/10 text-muted-foreground"
+                            )}>
+                              {isMobile ? <Smartphone className="w-4 h-4" /> : <Laptop className="w-4 h-4" />}
+                            </div>
+                            <div className="space-y-0.5">
+                              <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                                <span>{dev.device_name || 'Browser Client'}</span>
+                                {isCurrent ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                    This Device
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground/80 font-normal">
+                                    Last active: {new Date(dev.last_active_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground line-clamp-1 max-w-[280px]">
+                                {dev.user_agent ? dev.user_agent.slice(0, 50) + '...' : 'Web Session'}
+                              </div>
+                            </div>
+                          </div>
+                          {!isCurrent && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleRevokeDevice(dev.device_id)}
+                              className="h-7 px-2.5 text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20"
+                            >
+                              <LogOut className="w-3 h-3 mr-1" />
+                              Revoke
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
+                          <Laptop className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                            <span>Current Browser Session</span>
+                            <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Active Now
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {typeof navigator !== 'undefined' ? `${navigator.userAgent.slice(0, 45)}...` : 'Web Client'}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 

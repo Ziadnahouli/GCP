@@ -7,9 +7,11 @@ import { Message, MessageAttachment, MessageReaction } from '@/lib/types/messagi
 import { UserProfile } from '@/lib/types/profile';
 import { uploadAttachmentFile } from '@/lib/storage/upload';
 import { debugLogger } from '@/lib/logger/debug-logger';
+import { useToast } from '@/components/ui/toast';
 
 export function useMessages(conversationId: string | null) {
   const { user, profile, isConfigured } = useAuth();
+  const { toast } = useToast();
   const userId = user?.id;
   const currentUsername = profile?.username;
   const supabase = React.useMemo(() => getBrowserClient(), []);
@@ -579,6 +581,59 @@ export function useMessages(conversationId: string | null) {
     if (!user) {
       return { error: 'User is not authenticated' };
     }
+
+    // Direct Message Privacy Enforcement Check
+    try {
+      const { data: convInfo } = await supabase
+        .from('conversations')
+        .select('type')
+        .eq('id', conversationId)
+        .maybeSingle();
+
+      if (convInfo?.type === 'direct') {
+        const { data: otherMember } = await supabase
+          .from('conversation_members')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .neq('user_id', user.id)
+          .maybeSingle();
+
+        if (otherMember?.user_id) {
+          const { data: targetSettings } = await supabase
+            .from('user_settings')
+            .select('allow_direct_messages')
+            .eq('user_id', otherMember.user_id)
+            .maybeSingle();
+
+          const dmPolicy = targetSettings?.allow_direct_messages;
+          if (dmPolicy === 'none') {
+            toast({
+              title: 'Cannot Send Message',
+              description: 'This user does not accept direct messages from anyone.',
+              type: 'error',
+            });
+            return { error: 'This user does not accept direct messages from anyone.' };
+          }
+
+          if (dmPolicy === 'friends') {
+            const { data: friendRow } = await supabase
+              .from('friendships')
+              .select('id')
+              .or(`and(user_id.eq.${user.id},friend_id.eq.${otherMember.user_id}),and(user_id.eq.${otherMember.user_id},friend_id.eq.${user.id})`)
+              .maybeSingle();
+
+            if (!friendRow) {
+              toast({
+                title: 'Cannot Send Message',
+                description: 'This user only accepts direct messages from friends.',
+                type: 'error',
+              });
+              return { error: 'This user only accepts direct messages from friends.' };
+            }
+          }
+        }
+      }
+    } catch {}
 
     // Validate reply ID: must reference an existing real message in this conversation
     const cleanReplyId =

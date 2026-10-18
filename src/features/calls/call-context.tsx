@@ -280,6 +280,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const callStatusRef = React.useRef<CallStatus>('idle');
   callStatusRef.current = callStatus;
   const roomChannelRef = React.useRef<RealtimeChannel | null>(null);
+  const sessionStatusChannelRef = React.useRef<RealtimeChannel | null>(null);
+  const recentlyDeclinedCallsRef = React.useRef<Map<string, number>>(new Map());
   const outboundChannelsRef = React.useRef<Map<string, RealtimeChannel>>(new Map());
   const outboundQueueRef = React.useRef<Map<string, Array<{ event: string; payload: unknown }>>>(new Map());
   const roomQueueRef = React.useRef<Array<{ event: string; payload: unknown }>>([]);
@@ -395,6 +397,36 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             }
           }
         });
+      }
+    },
+    [supabase]
+  );
+
+  // Dedicated guaranteed signal sender that is resilient against immediate stopMediaTracks() cleanup
+  const sendDirectSignal = React.useCallback(
+    (channelTopic: string, event: string, payload: unknown) => {
+      if (!supabase || !channelTopic) return;
+      try {
+        const ch = supabase.channel(channelTopic);
+        if (ch.state === 'joined') {
+          ch.send({ type: 'broadcast', event, payload }).catch(() => {});
+          return;
+        }
+        ch.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            ch.send({ type: 'broadcast', event, payload })
+              .catch(() => {})
+              .finally(() => {
+                setTimeout(() => {
+                  try {
+                    supabase.removeChannel(ch);
+                  } catch {}
+                }, 1500);
+              });
+          }
+        });
+      } catch (err) {
+        console.warn('[CallSignaling] Error in sendDirectSignal:', err);
       }
     },
     [supabase]
@@ -711,6 +743,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     }
     outboundChannelsRef.current.clear();
+
+    if (roomChannelRef.current && supabase) {
+      try {
+        roomChannelRef.current.unsubscribe();
+        supabase.removeChannel(roomChannelRef.current);
+      } catch {}
+      roomChannelRef.current = null;
+    }
+
+    if (sessionStatusChannelRef.current && supabase) {
+      try {
+        sessionStatusChannelRef.current.unsubscribe();
+        supabase.removeChannel(sessionStatusChannelRef.current);
+      } catch {}
+      sessionStatusChannelRef.current = null;
+    }
     isStartingCallRef.current = false;
 
     if (remoteAudioElementRef.current) {
@@ -2088,6 +2136,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   sendSignalToUserRef.current = sendSignalToUser;
   const sendSignalToRoomRef = React.useRef(sendSignalToRoom);
   sendSignalToRoomRef.current = sendSignalToRoom;
+  const sendDirectSignalRef = React.useRef(sendDirectSignal);
+  sendDirectSignalRef.current = sendDirectSignal;
 
   // 1. GLOBAL SIGNALING LISTENER: Subscribes on mount for the authenticated user
   React.useEffect(() => {
@@ -2103,6 +2153,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         // If user is already in active call or dialing, do not disrupt
         if (callStatusRef.current === 'in_call' || callStatusRef.current === 'outgoing_ringing') {
           console.log('[CallSignaling] Ignoring incoming call beacon while already active or dialing');
+          return;
+        }
+
+        // If user has recently declined this exact call session/conversation, suppress beacons and re-signal rejection
+        const sessionKey = `${payload.callerId}_${payload.conversationId}`;
+        const declinedExpiry = recentlyDeclinedCallsRef.current.get(sessionKey);
+        if (declinedExpiry && Date.now() < declinedExpiry) {
+          console.log('[CallSignaling] Suppressing incoming_call beacon for recently declined call:', sessionKey);
+          sendDirectSignalRef.current(`user-signals-${payload.callerId}`, 'call_rejected', {
+            conversationId: payload.conversationId,
+            calleeId: user.id,
+          });
           return;
         }
 
@@ -2202,8 +2264,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .on('broadcast', { event: 'call_rejected' }, () => {
+        console.log('[CallSignaling] call_rejected received in mailbox');
         toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
         stopMediaTracksRef.current();
+        setCallStatus('idle');
       })
       .on('broadcast', { event: 'ice_restart_offer' }, async ({ payload }) => {
         if (!payload?.sdp || payload.senderId === user.id) return;
@@ -2424,18 +2488,74 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }, () => {});
     } catch {}
 
+    // Realtime postgres_changes listener on call_sessions for this conversation
+    if (conversationId && supabase) {
+      if (sessionStatusChannelRef.current) {
+        try {
+          supabase.removeChannel(sessionStatusChannelRef.current);
+        } catch {}
+      }
+      const sessionChan = supabase
+        .channel(`call-status-sync-${conversationId}-${Date.now()}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'call_sessions',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload: any) => {
+            const newStatus = payload?.new?.status;
+            if (newStatus === 'rejected') {
+              console.log('[CallSignaling] Instant call_rejected from Postgres call_sessions update');
+              toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
+              stopMediaTracks();
+            } else if (newStatus === 'ended') {
+              console.log('[CallSignaling] Instant call_ended from Postgres call_sessions update');
+              toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
+              stopMediaTracks();
+            }
+          }
+        );
+      sessionChan.subscribe();
+      sessionStatusChannelRef.current = sessionChan;
+    }
+
     // Pulse beacon every 2 seconds during outgoing_ringing so recipient reliably catches it
     if (ringingBeaconRef.current) clearInterval(ringingBeaconRef.current);
-    ringingBeaconRef.current = setInterval(() => {
+    ringingBeaconRef.current = setInterval(async () => {
       if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
-        sendSignalToUser(recipientId, 'incoming_call', activeCallPayloadRef.current);
-        const room = roomChannelRef.current;
-        if (room && room.state === 'joined') {
-          room.send({
-            type: 'broadcast',
-            event: 'incoming_call',
-            payload: activeCallPayloadRef.current,
-          }).catch(() => {});
+        // Active check of database status in case WebSocket broadcast was dropped
+        if (conversationId && supabase) {
+          try {
+            const { data: currentSession } = await supabase
+              .from('call_sessions')
+              .select('status')
+              .eq('conversation_id', conversationId)
+              .order('started_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (currentSession && (currentSession.status === 'rejected' || currentSession.status === 'ended')) {
+              console.log('[CallSignaling] Detected call declined or ended in database during beacon check');
+              toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
+              stopMediaTracks();
+              return;
+            }
+          } catch {}
+        }
+
+        if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
+          sendSignalToUser(recipientId, 'incoming_call', activeCallPayloadRef.current);
+          const room = roomChannelRef.current;
+          if (room && room.state === 'joined') {
+            room.send({
+              type: 'broadcast',
+              event: 'incoming_call',
+              payload: activeCallPayloadRef.current,
+            }).catch(() => {});
+          }
         }
       } else {
         if (ringingBeaconRef.current) {
@@ -3252,11 +3372,35 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const rejectCall = () => {
     const callerId = incomingCallRef.current?.callerId || incomingCall?.callerId;
     const convId = incomingCallRef.current?.conversationId || incomingCall?.conversationId;
+
     if (callerId) {
-      sendSignalToUser(callerId, 'call_rejected', {});
+      // Mark as rejected in recent cooldown cache to suppress stray in-flight beacons
+      const key = `${callerId}_${convId || ''}`;
+      recentlyDeclinedCallsRef.current.set(key, Date.now() + 15000);
+
+      // Send guaranteed direct signal to caller's personal channel
+      sendDirectSignal(`user-signals-${callerId}`, 'call_rejected', {
+        conversationId: convId,
+        calleeId: user?.id,
+      });
+      sendSignalToUser(callerId, 'call_rejected', {
+        conversationId: convId,
+        calleeId: user?.id,
+      });
     }
-    sendSignalToRoom('call_rejected', {});
+
     if (convId) {
+      // Also broadcast to the call room channel in case caller is listening there
+      sendDirectSignal(`call-room-${convId}`, 'call_rejected', {
+        conversationId: convId,
+        calleeId: user?.id,
+      });
+      sendSignalToRoom('call_rejected', {
+        conversationId: convId,
+        calleeId: user?.id,
+      });
+
+      // Update call_sessions table in Supabase
       try {
         supabase
           .from('call_sessions')
@@ -3267,19 +3411,39 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
 
+    // Stop ringtone and clean up incoming ringing state immediately
+    RingtonePlayer.stopAll();
+    if (ringtoneRef.current) {
+      ringtoneRef.current.stop();
+      ringtoneRef.current = null;
+    }
+    setIncomingCall(null);
+    incomingCallRef.current = null;
+    setCallStatus('idle');
+    callStatusRef.current = 'idle';
+
     stopMediaTracks();
   };
 
   // 5. END ACTIVE CALL
   const endCall = () => {
     const target = peerUserIdRef.current || peerUserId || incomingCallRef.current?.callerId;
+    const convId = activeConversationIdRef.current || activeConversationId;
+
     if (target) {
+      sendDirectSignal(`user-signals-${target}`, 'call_ended', {
+        conversationId: convId,
+        senderId: user?.id,
+      });
       sendSignalToUser(target, 'call_ended', {});
     }
-    sendSignalToRoom('call_ended', {});
 
-    const convId = activeConversationIdRef.current || activeConversationId;
     if (convId) {
+      sendDirectSignal(`call-room-${convId}`, 'call_ended', {
+        conversationId: convId,
+        senderId: user?.id,
+      });
+      sendSignalToRoom('call_ended', {});
       try {
         supabase
           .from('call_sessions')

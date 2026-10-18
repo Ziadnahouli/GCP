@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useDiagnosticsLogs } from '@/hooks/use-diagnostics-logs';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 import { LogEntry } from '@/lib/logger/debug-logger';
 
 interface LogsWindowProps {
@@ -63,6 +64,7 @@ export function LogsWindow({ open: controlledOpen, onOpenChange }: LogsWindowPro
 
   const isOpen = controlledOpen !== undefined ? controlledOpen : hookOpen;
   const setIsOpen = onOpenChange || setHookOpen;
+  useModalEscape(isOpen, setIsOpen);
 
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [expandedLogIds, setExpandedLogIds] = React.useState<Set<string>>(new Set());

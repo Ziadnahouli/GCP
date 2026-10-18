@@ -17,6 +17,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { NotificationItem } from '@/hooks/use-notifications';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -79,16 +80,13 @@ export function NotificationsPopover({
   const [filter, setFilter] = React.useState<'all' | 'unread'>('all');
   const popoverRef = React.useRef<HTMLDivElement>(null);
 
-  // Close on Escape or click outside
+  useModalEscape(open, (isOpen) => {
+    if (!isOpen) onClose();
+  });
+
+  // Close on click outside
   React.useEffect(() => {
     if (!open) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
 
     const handleClickOutside = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
@@ -96,10 +94,8 @@ export function NotificationsPopover({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [open, onClose]);

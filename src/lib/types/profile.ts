@@ -29,6 +29,8 @@ export interface UserSettings {
   push_to_talk_key: string | null;
   input_volume: number;
   output_volume: number;
+  input_device_id?: string | null;
+  output_device_id?: string | null;
   allow_direct_messages: 'everyone' | 'friends' | 'none';
   allow_friend_requests: 'everyone' | 'friends_of_friends' | 'none';
   email_notifications: boolean;

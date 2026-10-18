@@ -210,8 +210,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Media toggles
   const [isMicMuted, setIsMicMuted] = React.useState(false);
   const [isDeafened, setIsDeafened] = React.useState(false);
-  const [incomingVolume, setIncomingVolumeState] = React.useState(100);
-  const incomingVolumeRef = React.useRef(100);
+  const [incomingVolume, setIncomingVolumeState] = React.useState(() => {
+    return settings?.output_volume ?? 100;
+  });
+  const incomingVolumeRef = React.useRef(settings?.output_volume ?? 100);
+
+  React.useEffect(() => {
+    if (settings?.output_volume !== undefined && settings?.output_volume !== null) {
+      incomingVolumeRef.current = settings.output_volume;
+      setIncomingVolumeState(settings.output_volume);
+    }
+  }, [settings?.output_volume]);
   const disconnectGateRef = React.useRef(false);
   const [isCameraOn, setIsCameraOn] = React.useState(false);
   const [isScreenSharing, setIsScreenSharing] = React.useState(false);
@@ -1162,7 +1171,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const savedMicId = typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null;
+      const savedMicId = (typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null) || settings?.input_device_id || null;
       let rawStream: MediaStream;
       try {
         rawStream = await navigator.mediaDevices.getUserMedia({

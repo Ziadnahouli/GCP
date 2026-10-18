@@ -32,6 +32,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 import { AccentTheme, UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -97,6 +98,7 @@ const PRESENCE_OPTIONS: { status: UserStatus; label: string; desc: string; color
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { profile, settings, updateProfile, updateSettings, signOut } = useAuth();
   const { toast } = useToast();
+  useModalEscape(open, onOpenChange);
 
   const [activeTab, setActiveTab] = React.useState<'profile' | 'appearance' | 'studio' | 'audio' | 'shortcuts' | 'notifs' | 'diagnostics'>('profile');
   const [isSaving, setIsSaving] = React.useState(false);

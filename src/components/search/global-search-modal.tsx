@@ -24,6 +24,7 @@ import { useSocial } from '@/hooks/use-social';
 import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
+import { useModalEscape } from '@/hooks/use-modal-escape';
 import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 
@@ -58,6 +59,7 @@ export function GlobalSearchModal({
   const { conversations, getOrCreateDirectConversation } = useConversations();
   const { friends } = useSocial();
   const supabase = React.useMemo(() => getBrowserClient(), []);
+  useModalEscape(open, onOpenChange);
 
   const [query, setQuery] = React.useState('');
   const [selectedIndex, setSelectedIndex] = React.useState(0);

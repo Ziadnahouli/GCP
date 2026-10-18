@@ -91,6 +91,8 @@ export function useNotifications() {
 
   // Load notifications
   const loadNotifications = React.useCallback(async () => {
+    seenIdsRef.current.clear();
+
     if (!user) {
       setNotifications([]);
       setIsLoading(false);
@@ -135,10 +137,13 @@ export function useNotifications() {
     }
   }, [user, isConfigured, supabase]);
 
-  // Initial load
+  // Account switching and initial load
   React.useEffect(() => {
+    seenIdsRef.current.clear();
+    setNotifications([]);
+    setIsLoading(true);
     loadNotifications();
-  }, [loadNotifications]);
+  }, [user?.id, loadNotifications]);
 
   // Realtime subscription for incoming notifications
   React.useEffect(() => {
@@ -191,6 +196,7 @@ export function useNotifications() {
         },
         (payload: any) => {
           if (payload.old?.id) {
+            seenIdsRef.current.delete(payload.old.id);
             setNotifications((prev) => prev.filter((item) => item.id !== payload.old.id));
           }
         }
@@ -205,84 +211,97 @@ export function useNotifications() {
   // Mark single notification as read
   const markAsRead = React.useCallback(
     async (id: string) => {
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
-      );
-
-      if (!isConfigured || !user) {
-        if (user) {
+      setNotifications((prev) => {
+        const next = prev.map((n) => (n.id === id ? { ...n, is_read: true } : n));
+        if (!isConfigured && user) {
           try {
-            const updated = notifications.map((n) => (n.id === id ? { ...n, is_read: true } : n));
-            localStorage.setItem(`${LOCAL_NOTIFS_KEY}_${user.id}`, JSON.stringify(updated));
+            localStorage.setItem(`${LOCAL_NOTIFS_KEY}_${user.id}`, JSON.stringify(next));
           } catch {}
         }
-        return;
-      }
+        return next;
+      });
+
+      if (!isConfigured || !user) return;
 
       try {
-        await supabase
+        const { error } = await supabase
           .from('notifications')
           .update({ is_read: true })
           .eq('id', id)
           .eq('user_id', user.id);
+        if (error) {
+          console.warn('[Notifications] Failed to mark as read:', error.message);
+        }
       } catch (err) {
         console.warn('[Notifications] Failed to mark as read:', err);
       }
     },
-    [isConfigured, user, supabase, notifications]
+    [isConfigured, user, supabase]
   );
 
   // Mark all notifications as read
   const markAllAsRead = React.useCallback(async () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-
-    if (!isConfigured || !user) {
-      if (user) {
+    setNotifications((prev) => {
+      const next = prev.map((n) => ({ ...n, is_read: true }));
+      if (!isConfigured && user) {
         try {
-          const updated = notifications.map((n) => ({ ...n, is_read: true }));
-          localStorage.setItem(`${LOCAL_NOTIFS_KEY}_${user.id}`, JSON.stringify(updated));
+          localStorage.setItem(`${LOCAL_NOTIFS_KEY}_${user.id}`, JSON.stringify(next));
         } catch {}
       }
-      return;
-    }
+      return next;
+    });
+
+    if (!isConfigured || !user) return;
 
     try {
-      await supabase
+      const { error } = await supabase
         .from('notifications')
         .update({ is_read: true })
         .eq('user_id', user.id)
         .eq('is_read', false);
+      if (error) {
+        console.warn('[Notifications] Failed to mark all as read:', error.message);
+      }
     } catch (err) {
       console.warn('[Notifications] Failed to mark all as read:', err);
     }
-  }, [isConfigured, user, supabase, notifications]);
+  }, [isConfigured, user, supabase]);
 
   // Delete notification
   const deleteNotification = React.useCallback(
     async (id: string) => {
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-
-      if (!isConfigured || !user) {
-        if (user) {
+      seenIdsRef.current.delete(id);
+      setNotifications((prev) => {
+        const next = prev.filter((n) => n.id !== id);
+        if (!isConfigured && user) {
           try {
-            const updated = notifications.filter((n) => n.id !== id);
-            localStorage.setItem(`${LOCAL_NOTIFS_KEY}_${user.id}`, JSON.stringify(updated));
+            localStorage.setItem(`${LOCAL_NOTIFS_KEY}_${user.id}`, JSON.stringify(next));
           } catch {}
         }
-        return;
-      }
+        return next;
+      });
+
+      if (!isConfigured || !user) return;
 
       try {
-        await supabase.from('notifications').delete().eq('id', id).eq('user_id', user.id);
+        const { error } = await supabase
+          .from('notifications')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user.id);
+        if (error) {
+          console.warn('[Notifications] Failed to delete notification:', error.message);
+        }
       } catch (err) {
         console.warn('[Notifications] Failed to delete notification:', err);
       }
     },
-    [isConfigured, user, supabase, notifications]
+    [isConfigured, user, supabase]
   );
 
   // Clear all notifications
   const clearAll = React.useCallback(async () => {
+    seenIdsRef.current.clear();
     setNotifications([]);
 
     if (!isConfigured || !user) {
@@ -295,18 +314,24 @@ export function useNotifications() {
     }
 
     try {
-      await supabase.from('notifications').delete().eq('user_id', user.id);
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('user_id', user.id);
+      if (error) {
+        console.warn('[Notifications] Failed to clear notifications:', error.message);
+      }
     } catch (err) {
       console.warn('[Notifications] Failed to clear notifications:', err);
     }
   }, [isConfigured, user, supabase]);
 
-  // Create notification helper (useful for local actions or testing)
+  // Create notification helper
   const createNotification = React.useCallback(
     async (item: Omit<NotificationItem, 'id' | 'is_read' | 'created_at'>) => {
       if (!user) return;
       const newItem: NotificationItem = {
-        id: crypto.randomUUID(),
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `notif_${Date.now()}`,
         user_id: user.id,
         title: item.title,
         message: item.message,
@@ -317,20 +342,23 @@ export function useNotifications() {
       };
 
       seenIdsRef.current.add(newItem.id);
-      setNotifications((prev) => [newItem, ...prev]);
+      setNotifications((prev) => {
+        const next = [newItem, ...prev.filter((p) => p.id !== newItem.id)];
+        if (!isConfigured) {
+          try {
+            localStorage.setItem(`${LOCAL_NOTIFS_KEY}_${user.id}`, JSON.stringify(next));
+          } catch {}
+        }
+        return next;
+      });
+
       playNotificationChime();
       displayDesktopNotification(newItem);
 
-      if (!isConfigured) {
-        try {
-          const updated = [newItem, ...notifications];
-          localStorage.setItem(`${LOCAL_NOTIFS_KEY}_${user.id}`, JSON.stringify(updated));
-        } catch {}
-        return;
-      }
+      if (!isConfigured) return;
 
       try {
-        await supabase.from('notifications').insert({
+        const { error } = await supabase.from('notifications').insert({
           id: newItem.id,
           user_id: user.id,
           title: item.title,
@@ -339,11 +367,14 @@ export function useNotifications() {
           data: item.data || {},
           is_read: false,
         });
+        if (error) {
+          console.warn('[Notifications] Failed to create notification:', error.message);
+        }
       } catch (err) {
         console.warn('[Notifications] Failed to create notification:', err);
       }
     },
-    [user, isConfigured, supabase, notifications, playNotificationChime, displayDesktopNotification]
+    [user, isConfigured, supabase, playNotificationChime, displayDesktopNotification]
   );
 
   const unreadCount = React.useMemo(() => {

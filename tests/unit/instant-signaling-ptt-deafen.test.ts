@@ -114,6 +114,7 @@ describe('Instant Signaling, PTT Hotkeys & Deafen Audio Controls', () => {
     it('2. Unmutes private call when Spacebar PTT key is held, and re-mutes on release', () => {
       mockCallState.callStatus = 'in_call';
       mockCallState.isMicMuted = true;
+      mockAuthState.settings.push_to_talk_key = 'Space';
 
       renderHook(() => useGlobalShortcuts());
 

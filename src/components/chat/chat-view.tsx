@@ -60,7 +60,7 @@ const COMMON_EMOJIS = ['🔥', '🎯', '👍', '💀', '😂', '❤️', '🚀',
 
 export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const { user, profile } = useAuth();
-  const { conversations, markConversationAsRead } = useConversations();
+  const { conversations, markConversationAsRead, setActiveConversationId } = useConversations();
   const {
     messages,
     rawMessages,
@@ -80,9 +80,24 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     togglePinMessage,
   } = useMessages(conversationId);
 
-  // Automatically mark conversation as read when viewing
+  // Synchronize active conversation lifecycle
   React.useEffect(() => {
-    if (conversationId && markConversationAsRead) {
+    if (setActiveConversationId && conversationId) {
+      setActiveConversationId(conversationId);
+    }
+    return () => {
+      if (setActiveConversationId) {
+        setActiveConversationId(null);
+      }
+    };
+  }, [conversationId, setActiveConversationId]);
+
+  // Automatically mark conversation as read when viewing and when new messages arrive
+  const lastMarkedCountRef = React.useRef<number>(-1);
+  React.useEffect(() => {
+    if (!conversationId || !markConversationAsRead) return;
+    if (lastMarkedCountRef.current !== messages.length) {
+      lastMarkedCountRef.current = messages.length;
       markConversationAsRead(conversationId);
     }
   }, [conversationId, markConversationAsRead, messages.length]);

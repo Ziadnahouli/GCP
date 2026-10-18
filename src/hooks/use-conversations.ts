@@ -18,6 +18,18 @@ const getCachedConversations = (uId?: string): Conversation[] => {
   return [];
 };
 
+const getCachedReadTimestamps = (uId?: string): Record<string, number> => {
+  if (!uId || typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(`nexus_read_timestamps_${uId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+  return {};
+};
+
 export function useConversationsInternal() {
   const { user, isConfigured } = useAuth();
   const supabase = React.useMemo(() => getBrowserClient(), []);
@@ -30,6 +42,16 @@ export function useConversationsInternal() {
   );
   const isFetchingRef = React.useRef(false);
   const conversationsCountRef = React.useRef(conversations.length);
+  const readTimestampsRef = React.useRef<Record<string, number>>({});
+  const activeConversationIdRef = React.useRef<string | null>(null);
+
+  // Sync cached read timestamps
+  React.useEffect(() => {
+    if (user?.id) {
+      readTimestampsRef.current = getCachedReadTimestamps(user.id);
+    }
+  }, [user?.id]);
+
   React.useEffect(() => {
     conversationsCountRef.current = conversations.length;
   }, [conversations.length]);
@@ -104,14 +126,21 @@ export function useConversationsInternal() {
         const lastMsg = (lastMsgs || []).find((m) => m && m.conversation_id === conv.id) || null;
 
         // Calculate actual unread count:
+        const isCurrentActive = activeConversationIdRef.current === conv.id;
         const myMembership = (allMembers || []).find(
           (m) => m && m.conversation_id === conv.id && m.user_id === user.id
         );
-        const myLastRead = myMembership?.last_read_at ? new Date(myMembership.last_read_at).getTime() : 0;
+        const dbLastRead = myMembership?.last_read_at ? new Date(myMembership.last_read_at).getTime() : 0;
+        const localLastRead = readTimestampsRef.current[conv.id] || 0;
+        const effectiveLastRead = Math.max(dbLastRead, localLastRead);
+
         const convMsgs = (lastMsgs || []).filter((m) => m && m.conversation_id === conv.id);
-        const unreadCount = convMsgs.filter(
-          (m) => m.sender_id !== user.id && new Date(m.created_at).getTime() > myLastRead
-        ).length;
+        let unreadCount = 0;
+        if (!isCurrentActive) {
+          unreadCount = convMsgs.filter(
+            (m) => m.sender_id !== user.id && new Date(m.created_at).getTime() > effectiveLastRead
+          ).length;
+        }
 
         return {
           ...conv,
@@ -147,45 +176,53 @@ export function useConversationsInternal() {
 
     if (!isConfigured || !user) return;
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchConversations(true);
+      }, 500);
+    };
+
     const channel = supabase
       .channel('conversations-realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'conversations' },
-        () => fetchConversations()
+        () => debouncedFetch()
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'conversation_members' },
-        () => fetchConversations()
+        () => debouncedFetch()
       )
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
-        () => fetchConversations()
+        () => debouncedFetch()
       )
       .on('broadcast', { event: 'conv_update' }, () => {
-        fetchConversations();
+        debouncedFetch();
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          fetchConversations();
+          fetchConversations(true);
         }
       });
 
     // Fallback sync poll (25s when visible)
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      fetchConversations();
+      fetchConversations(true);
     }, 25000);
 
     // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {
-      fetchConversations();
+      fetchConversations(true);
     };
     const handleVisibility = () => {
       if (typeof document !== 'undefined' && !document.hidden) {
-        fetchConversations();
+        fetchConversations(true);
       }
     };
     if (typeof window !== 'undefined') {
@@ -194,6 +231,7 @@ export function useConversationsInternal() {
     }
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       clearInterval(autoSyncTimer);
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', handleFocus);
@@ -385,23 +423,53 @@ export function useConversationsInternal() {
     async (convId: string) => {
       if (!user?.id || !convId) return;
 
+      const now = Date.now();
+      const nowIso = new Date(now).toISOString();
+
+      // Record local timestamp to prevent stale fetch bounce
+      readTimestampsRef.current[convId] = now;
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(
+            `nexus_read_timestamps_${user.id}`,
+            JSON.stringify(readTimestampsRef.current)
+          );
+        }
+      } catch {}
+
       // Optimistically clear unread count in local state immediately
       setConversations((prev) =>
         prev.map((c) => (c.id === convId ? { ...c, unread_count: 0 } : c))
       );
 
+      // Persist to database (try atomic RPC first, fallback to table update)
       try {
-        const now = new Date().toISOString();
-        await supabase
-          .from('conversation_members')
-          .update({ last_read_at: now })
-          .eq('conversation_id', convId)
-          .eq('user_id', user.id);
+        const { error: rpcErr } = await supabase.rpc('mark_conversation_as_read', {
+          p_conversation_id: convId,
+        });
+
+        if (rpcErr) {
+          await supabase
+            .from('conversation_members')
+            .update({ last_read_at: nowIso })
+            .eq('conversation_id', convId)
+            .eq('user_id', user.id);
+        }
       } catch (err) {
         console.error('Failed to update last_read_at:', err);
       }
     },
     [user, supabase]
+  );
+
+  const setActiveConversationId = React.useCallback(
+    (id: string | null) => {
+      activeConversationIdRef.current = id;
+      if (id) {
+        markConversationAsRead(id);
+      }
+    },
+    [markConversationAsRead]
   );
 
   return {
@@ -414,6 +482,7 @@ export function useConversationsInternal() {
     leaveGroup,
     updateGroupMetadata,
     markConversationAsRead,
+    setActiveConversationId,
     refetch: fetchConversations,
   };
 }

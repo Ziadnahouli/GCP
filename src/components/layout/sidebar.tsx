@@ -172,7 +172,7 @@ export function Sidebar({
                 const isSelected = selectedConversationId === conv.id;
                 const title = isGroup ? (conv.name || 'Squad Group') : (otherMember?.display_name || 'Chat');
 
-                const hasUnread = Boolean(conv.unread_count && conv.unread_count > 0);
+                const hasUnread = Boolean(conv.unread_count && conv.unread_count > 0 && !isSelected);
 
                 return (
                   <div

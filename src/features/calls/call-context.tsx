@@ -3578,16 +3578,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         isGroup,
       });
 
-      if (!isGroup) {
-        try {
-          supabase
-            .from('call_sessions')
-            .update({ status: 'ended', ended_at: new Date().toISOString() })
-            .eq('conversation_id', convId)
-            .in('status', ['ringing', 'active', 'in_call'])
-            .then(() => {}, () => {});
-        } catch {}
-      } else {
+      try {
+        supabase
+          .from('call_sessions')
+          .update({ status: 'ended', ended_at: new Date().toISOString() })
+          .eq('conversation_id', convId)
+          .in('status', ['ringing', 'active', 'in_call'])
+          .then(() => {}, () => {});
+      } catch {}
+
+      if (isGroup) {
         try {
           const roomBroadcastChannel = supabase.channel(`call-room-${convId}`);
           roomBroadcastChannel.subscribe((subStatus) => {

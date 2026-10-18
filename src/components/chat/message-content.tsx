@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { ExternalLink, Check, Users, Shield, ArrowRight, Loader2, Sparkles, Phone, Radio, Volume2 } from 'lucide-react';
+import { ExternalLink, Check, Users, Shield, ArrowRight, Loader2, Sparkles, Phone, PhoneOff, Radio, Volume2 } from 'lucide-react';
 import { useServers } from '@/hooks/use-servers';
 import { useCallContext } from '@/features/calls/call-context';
 import { useToast } from '@/components/ui/toast';
@@ -14,6 +14,7 @@ import { LinkPreviewCard } from '@/components/chat/link-preview';
 interface MessageContentProps {
   content: string;
   isMe?: boolean;
+  isCallActive?: boolean;
 }
 
 // UUID regex for matching server invites
@@ -22,11 +23,12 @@ const SQUAD_CALL_REGEX = /\[(?:join-squad-call|join-call):([0-9a-f-]{36})\]/i;
 const GENERAL_URL_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
 const MENTION_TOKEN_REGEX = /(@[a-zA-Z0-9_.-]+)/g;
 
-export function MessageContent({ content, isMe = false }: MessageContentProps) {
+export function MessageContent({ content, isMe = false, isCallActive }: MessageContentProps) {
   const router = useRouter();
   const { servers, joinServer } = useServers();
   const call = useCallContext();
   const { toast } = useToast();
+  const supabase = React.useMemo(() => getBrowserClient(), []);
 
   const [isJoining, setIsJoining] = React.useState(false);
   const [serverMeta, setServerMeta] = React.useState<{ name?: string; icon_url?: string | null; memberCount?: number } | null>(null);
@@ -37,6 +39,56 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
   }, [content]);
 
   const squadCallConvId = squadCallMatch ? squadCallMatch[1] : null;
+
+  // Local fallback check if isCallActive prop is not explicitly passed
+  const [sessionActive, setSessionActive] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    if (!squadCallConvId || isCallActive !== undefined) return;
+
+    let mounted = true;
+    const checkSession = async () => {
+      try {
+        const { data } = await supabase
+          .from('call_sessions')
+          .select('id, status')
+          .eq('conversation_id', squadCallConvId)
+          .in('status', ['active', 'ringing', 'in_call'])
+          .limit(1)
+          .maybeSingle();
+
+        if (mounted) {
+          setSessionActive(Boolean(data));
+        }
+      } catch {}
+    };
+
+    checkSession();
+
+    const ch = supabase
+      .channel(`msg_call_session_${squadCallConvId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'call_sessions', filter: `conversation_id=eq.${squadCallConvId}` },
+        () => checkSession()
+      )
+      .on('broadcast', { event: 'squad_call_active' }, () => {
+        if (mounted) setSessionActive(true);
+      })
+      .on('broadcast', { event: 'squad_call_ended' }, () => {
+        if (mounted) setSessionActive(false);
+      })
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(ch);
+    };
+  }, [squadCallConvId, isCallActive, supabase]);
+
+  const isLive = isCallActive !== undefined
+    ? isCallActive
+    : (sessionActive || (call.activeConversationId === squadCallConvId && (call.callStatus === 'in_call' || call.callStatus === 'incoming_ringing')));
 
   // Check if content contains a server invite
   const inviteMatch = React.useMemo(() => {
@@ -151,6 +203,11 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
     if (squadCallMatch && squadCallMatch[0]) {
       cleanText = cleanText.replace(squadCallMatch[0], '').trim();
     }
+    if (squadCallMatch && !isLive) {
+      cleanText = cleanText
+        .replace(/click Join Voice to connect!?/gi, 'Call ended.')
+        .replace(/Click Join Voice to connect!?/gi, 'Call ended.');
+    }
 
     if (!cleanText) return null;
 
@@ -225,51 +282,80 @@ export function MessageContent({ content, isMe = false }: MessageContentProps) {
       {/* Text message content with link and mention detection */}
       <div>{renderTextWithLinks(content)}</div>
 
-      {/* Interactive Squad Voice Call Announcement Card with Join Voice button */}
+      {/* Interactive Squad Voice Call Announcement Card */}
       {squadCallConvId && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="mt-2.5 w-full max-w-sm rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-[#0d1411]/90 to-[#0e1713]/95 backdrop-blur-md p-3.5 shadow-xl select-none text-left flex items-center justify-between gap-3 animate-in fade-in"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 shadow-inner">
-              <Phone className="w-5 h-5 animate-pulse" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="text-xs font-bold text-white tracking-tight">Squad Voice Call</span>
+        isLive ? (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2.5 w-full max-w-sm rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-[#0d1411]/90 to-[#0e1713]/95 backdrop-blur-md p-3.5 shadow-xl select-none text-left flex items-center justify-between gap-3 animate-in fade-in"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 shadow-inner">
+                <Phone className="w-5 h-5 animate-pulse" />
               </div>
-              <p className="text-[10px] text-emerald-300/80 truncate mt-0.5">
-                Squad call is live. Tap to join!
-              </p>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="text-xs font-bold text-white tracking-tight">Squad Voice Call</span>
+                </div>
+                <p className="text-[10px] text-emerald-300/80 truncate mt-0.5">
+                  Squad call is live. Tap to join!
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="shrink-0">
-            {call.activeConversationId === squadCallConvId && call.callStatus === 'in_call' ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>Connected</span>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  if (call.callStatus === 'incoming_ringing') {
-                    call.acceptCall();
-                  } else {
-                    call.startCall(squadCallConvId, squadCallConvId, false);
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-900/40 transition-all hover:scale-[1.02]"
-              >
-                <Phone className="w-3.5 h-3.5" />
-                <span>Join Voice</span>
-              </button>
-            )}
+            <div className="shrink-0">
+              {call.activeConversationId === squadCallConvId && call.callStatus === 'in_call' ? (
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>Connected</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (call.callStatus === 'incoming_ringing') {
+                      call.acceptCall();
+                    } else {
+                      call.startCall(squadCallConvId, squadCallConvId, false);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-900/40 transition-all hover:scale-[1.02]"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>Join Voice</span>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2.5 w-full max-w-sm rounded-xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-md p-3.5 shadow-md select-none text-left flex items-center justify-between gap-3 animate-in fade-in"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-muted-foreground shrink-0">
+                <PhoneOff className="w-5 h-5 text-muted-foreground/70" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
+                  <span className="text-xs font-bold text-foreground/80 tracking-tight">Squad Voice Call</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
+                  Call ended
+                </p>
+              </div>
+            </div>
+
+            <div className="shrink-0">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] text-muted-foreground text-xs font-semibold select-none">
+                <PhoneOff className="w-3.5 h-3.5 text-muted-foreground/60" />
+                <span>Call Ended</span>
+              </div>
+            </div>
+          </div>
+        )
       )}
 
       {/* Interactive App-Style Server Invite Card */}

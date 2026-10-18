@@ -287,8 +287,21 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const isSquadCallActive = Boolean(
     activeCallSession ||
     (call.incomingCall?.isGroup && call.incomingCall?.conversationId === conversationId) ||
-    (call.callStatus === 'incoming_ringing' && call.activeConversationId === conversationId && isGroup)
+    (call.callStatus === 'incoming_ringing' && call.activeConversationId === conversationId && isGroup) ||
+    (call.callStatus === 'in_call' && call.activeConversationId === conversationId && isGroup)
   );
+
+  const latestSquadCallMsgId = React.useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (
+        messages[i].content?.includes('join-squad-call') ||
+        messages[i].content?.includes('join-call')
+      ) {
+        return messages[i].id;
+      }
+    }
+    return null;
+  }, [messages]);
 
   const otherMember = React.useMemo(() => {
     if (!effectiveConversation) return null;
@@ -1057,7 +1070,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                             : 'bg-surface-elevated/80 border border-subtle text-foreground rounded-tl-sm'
                         )}
                       >
-                        <MessageContent content={msg.content} isMe={isMe} />
+                        <MessageContent
+                          content={msg.content}
+                          isMe={isMe}
+                          isCallActive={Boolean(isSquadCallActive && msg.id === latestSquadCallMsgId)}
+                        />
                         {msg.is_edited && (
                           <span className="text-[10px] opacity-60 ml-1.5 italic">(edited)</span>
                         )}

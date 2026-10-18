@@ -77,21 +77,19 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Applies optimal constraints for GCP Neural Speech Enhancement.
- * When GCP DSP is active, browser-native noiseSuppression and autoGainControl
- * are explicitly disabled (false) to prevent phase conflicts and AGC pumping,
- * while keeping echoCancellation: true for acoustic speaker isolation.
+ * Applies optimal standard constraints for WebRTC audio tracks.
+ * Uses native browser echoCancellation, noiseSuppression, and autoGainControl.
  */
 export async function applyGcpOptimalConstraints(
   track: MediaStreamTrack | undefined,
-  gcpDspActive: boolean
+  noiseSuppressionActive = true
 ): Promise<void> {
   if (!track || track.kind !== 'audio') return;
   try {
     await track.applyConstraints({
       echoCancellation: true,
-      noiseSuppression: !gcpDspActive,
-      autoGainControl: !gcpDspActive,
+      noiseSuppression: noiseSuppressionActive,
+      autoGainControl: true,
     });
   } catch (err) {
     console.warn('[WebRTC SafeConstraints] applyGcpOptimalConstraints relaxed:', err);
@@ -99,12 +97,11 @@ export async function applyGcpOptimalConstraints(
 }
 
 /**
- * Force-disables browser native noiseSuppression and autoGainControl on an input track,
- * preventing microphone AGC pumping and phase artifacts from corrupting VAD thresholds.
+ * Disables browser native noiseSuppression on an input track for raw microphone pass-through.
  */
 export async function killNativeAudioProcessing(
   track: MediaStreamTrack | undefined
 ): Promise<void> {
-  return applyGcpOptimalConstraints(track, true);
+  return applyGcpOptimalConstraints(track, false);
 }
 

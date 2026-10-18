@@ -599,8 +599,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         try {
           await track.applyConstraints({
             echoCancellation: true,
-            noiseSuppression: false, // GCP Neural DSP handles suppression; avoid browser double-suppression
-            autoGainControl: false,  // GCP Neural DSP handles dynamic leveling; avoid browser AGC pumping
+            noiseSuppression: mode !== 'off',
+            autoGainControl: true,
           });
         } catch (err) {
           console.warn('[CallContext] applyConstraints for noise suppression notice:', err);
@@ -1432,8 +1432,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         rawStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
-            noiseSuppression: false,
-            autoGainControl: false,
+            noiseSuppression: true,
+            autoGainControl: true,
             ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
           },
           video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
@@ -1443,8 +1443,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         rawStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
-            noiseSuppression: false,
-            autoGainControl: false,
+            noiseSuppression: true,
+            autoGainControl: true,
           },
           video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
         });

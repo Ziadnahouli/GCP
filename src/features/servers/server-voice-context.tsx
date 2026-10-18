@@ -1239,8 +1239,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     rawStream = await navigator.mediaDevices.getUserMedia({
                       audio: {
                         echoCancellation: true,
-                        noiseSuppression: false,
-                        autoGainControl: false,
+                        noiseSuppression: true,
+                        autoGainControl: true,
                         ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
                       },
                       video: false,
@@ -1250,8 +1250,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     rawStream = await navigator.mediaDevices.getUserMedia({
                       audio: {
                         echoCancellation: true,
-                        noiseSuppression: false,
-                        autoGainControl: false,
+                        noiseSuppression: true,
+                        autoGainControl: true,
                       },
                       video: false,
                     });
@@ -1400,16 +1400,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 rawStream = await navigator.mediaDevices.getUserMedia({
                   audio: {
                     echoCancellation: true,
-                    noiseSuppression: false,
-                    autoGainControl: false,
+                    noiseSuppression: true,
+                    autoGainControl: true,
                     ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
                   },
                 });
               } else {
                 const fallbackTrack = await createLocalAudioTrack({
                   echoCancellation: true,
-                  noiseSuppression: false,
-                  autoGainControl: false,
+                  noiseSuppression: true,
+                  autoGainControl: true,
                 });
                 rawStream = new MediaStream([fallbackTrack.mediaStreamTrack]);
               }

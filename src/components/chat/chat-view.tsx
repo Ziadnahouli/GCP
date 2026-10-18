@@ -27,6 +27,7 @@ import {
   Forward,
   Flag,
   ArrowDown,
+  Volume2,
 } from 'lucide-react';
 import { GroupSettingsModal } from '@/components/chat/group-settings-modal';
 import { ForwardModal } from '@/components/chat/forward-modal';
@@ -138,6 +139,51 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const currentConversation = React.useMemo(() => {
     return conversations.find((c) => c.id === conversationId) || null;
   }, [conversations, conversationId]);
+
+  const [activeCallSession, setActiveCallSession] = React.useState<any>(null);
+
+  React.useEffect(() => {
+    if (!conversationId || currentConversation?.type !== 'group' || !supabase) {
+      setActiveCallSession(null);
+      return;
+    }
+
+    const checkCallSession = async () => {
+      try {
+        const { data } = await supabase
+          .from('call_sessions')
+          .select('id, caller_id, status, started_at')
+          .eq('conversation_id', conversationId)
+          .in('status', ['active', 'ringing', 'in_call'])
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        setActiveCallSession(data);
+      } catch {}
+    };
+
+    checkCallSession();
+
+    const channel = supabase
+      .channel(`active_call_session_${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'call_sessions',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        () => {
+          checkCallSession();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId, currentConversation?.type, supabase]);
 
   const otherMember = React.useMemo(() => {
     if (!currentConversation) return null;
@@ -460,30 +506,63 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             </button>
           )}
 
-          {/* Voice & Video Call */}
-          <button
-            onClick={() => {
-              const peerId = targetUserId || conversationId;
-              call.startCall(peerId, conversationId, false);
-            }}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
-            title="Start Voice Call"
-            aria-label="Start Voice Call"
-          >
-            <Phone className="w-4 h-4" />
-          </button>
+          {/* Voice & Video Call Controls */}
+          {call.activeConversationId === conversationId && call.callStatus === 'in_call' ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-medium text-[11px]">In Voice</span>
+              <button
+                onClick={() => call.endCall()}
+                className="ml-1 px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10px] font-semibold transition-colors"
+                title="Disconnect from Squad Call"
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  const peerId = targetUserId || conversationId;
+                  call.startCall(peerId, conversationId, false);
+                }}
+                className={cn(
+                  'p-1.5 rounded-lg transition-colors',
+                  currentConversation?.type === 'group' && activeCallSession
+                    ? 'text-emerald-400 hover:text-emerald-300 bg-emerald-500/10'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
+                )}
+                title={
+                  currentConversation?.type === 'group'
+                    ? activeCallSession
+                      ? 'Join Ongoing Squad Voice Call'
+                      : 'Start Squad Voice Call'
+                    : 'Start Voice Call'
+                }
+                aria-label={
+                  currentConversation?.type === 'group'
+                    ? activeCallSession
+                      ? 'Join Ongoing Squad Voice Call'
+                      : 'Start Squad Voice Call'
+                    : 'Start Voice Call'
+                }
+              >
+                <Phone className="w-4 h-4" />
+              </button>
 
-          <button
-            onClick={() => {
-              const peerId = targetUserId || conversationId;
-              call.startCall(peerId, conversationId, true);
-            }}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
-            title="Start Video Call"
-            aria-label="Start Video Call"
-          >
-            <Video className="w-4 h-4" />
-          </button>
+              <button
+                onClick={() => {
+                  const peerId = targetUserId || conversationId;
+                  call.startCall(peerId, conversationId, true);
+                }}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
+                title="Start Video Call"
+                aria-label="Start Video Call"
+              >
+                <Video className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -510,6 +589,29 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           )}
         </div>
       )}
+
+      {/* Active Squad Voice Call Banner */}
+      {currentConversation?.type === 'group' &&
+        activeCallSession &&
+        (call.activeConversationId !== conversationId || call.callStatus !== 'in_call') && (
+          <div className="mx-4 my-2 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between text-xs animate-in fade-in">
+            <div className="flex items-center gap-2 text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <Volume2 className="w-4 h-4 text-emerald-400" />
+              <span className="font-semibold">Active Squad Voice Call</span>
+              <span className="text-muted-foreground hidden sm:inline">
+                — squadmates are in voice room
+              </span>
+            </div>
+            <button
+              onClick={() => call.startCall(conversationId, conversationId, false)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm transition-all"
+            >
+              <Phone className="w-3.5 h-3.5" />
+              <span>Join Voice</span>
+            </button>
+          </div>
+        )}
 
       {/* Pinned Filter Notice Banner */}
       {showPinnedOnly && (

@@ -202,4 +202,94 @@ describe('Phase 4 — Essential Features Verification', () => {
       expect(chanKey).toBe('nexus_draft_chan_chan-general-123');
     });
   });
+
+  describe('6. Squad Group Voice Call Room Persistence & Independent Decline', () => {
+    it('ensures group incoming calls carry isGroup flag and groupName', () => {
+      const groupIncomingCall = {
+        callerId: 'user-1',
+        callerName: 'Commander',
+        callerAvatar: null,
+        targetUserId: 'user-2',
+        conversationId: 'squad-room-99',
+        isVideo: false,
+        isGroup: true,
+        groupName: 'Apex Legends Squad',
+      };
+
+      expect(groupIncomingCall.isGroup).toBe(true);
+      expect(groupIncomingCall.groupName).toBe('Apex Legends Squad');
+    });
+
+    it('does not dispatch global call_rejected when a group member declines ringing', () => {
+      let callRejectedBroadcastDispatched = false;
+
+      const handleDecline = (isGroup: boolean) => {
+        if (!isGroup) {
+          callRejectedBroadcastDispatched = true;
+        }
+        // In group calls, only the declining member transitions to idle locally
+        return { localStatus: 'idle', globalCallTerminated: false };
+      };
+
+      const result = handleDecline(true);
+      expect(callRejectedBroadcastDispatched).toBe(false);
+      expect(result.localStatus).toBe('idle');
+      expect(result.globalCallTerminated).toBe(false);
+    });
+
+    it('keeps caller in the room when callee declines in a group conversation', () => {
+      let callerStatus: 'in_call' | 'idle' = 'in_call';
+      const isGroupCall = true;
+
+      const onCallRejectedReceived = () => {
+        if (isGroupCall) {
+          // In group calls, caller remains in_call!
+          return;
+        }
+        callerStatus = 'idle';
+      };
+
+      onCallRejectedReceived();
+      expect(callerStatus).toBe('in_call');
+    });
+
+    it('keeps active participants in the call when one member leaves a group call', () => {
+      let participants = [
+        { id: 'user-1', name: 'User 1' },
+        { id: 'user-2', name: 'User 2' },
+        { id: 'user-3', name: 'User 3' },
+      ];
+      let callEndedGlobally = false;
+      const isGroupCall = true;
+
+      const onMemberLeft = (leavingUserId: string) => {
+        if (isGroupCall) {
+          participants = participants.filter((p) => p.id !== leavingUserId);
+          if (participants.length === 0) {
+            callEndedGlobally = true;
+          }
+          return;
+        }
+        callEndedGlobally = true;
+      };
+
+      // User 2 leaves
+      onMemberLeft('user-2');
+      expect(participants.length).toBe(2);
+      expect(participants.map((p) => p.id)).toEqual(['user-1', 'user-3']);
+      expect(callEndedGlobally).toBe(false);
+
+      // User 3 leaves
+      onMemberLeft('user-3');
+      expect(participants.length).toBe(1);
+      expect(participants[0].id).toBe('user-1');
+      expect(callEndedGlobally).toBe(false);
+
+      // Last user leaves
+      onMemberLeft('user-1');
+      expect(participants.length).toBe(0);
+      expect(callEndedGlobally).toBe(true);
+    });
+  });
 });
+

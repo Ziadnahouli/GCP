@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Phone, PhoneOff, Video, Gamepad2 } from 'lucide-react';
+import { Phone, PhoneOff, Video, Gamepad2, Users } from 'lucide-react';
 import { useCallContext } from '@/features/calls/call-context';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,8 @@ export function IncomingCallModal() {
   if (callStatus !== 'incoming_ringing' || !incomingCall) {
     return null;
   }
+
+  const isGroup = Boolean(incomingCall.isGroup);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-in fade-in duration-200">
@@ -30,7 +32,12 @@ export function IncomingCallModal() {
 
         <div>
           <div className="flex items-center justify-center gap-1.5 text-primary text-xs font-semibold uppercase tracking-wider mb-1">
-            {incomingCall.isVideo ? (
+            {isGroup ? (
+              <>
+                <Users className="w-4 h-4 animate-pulse" />
+                <span>Squad Voice Call</span>
+              </>
+            ) : incomingCall.isVideo ? (
               <>
                 <Video className="w-4 h-4 animate-pulse" />
                 <span>Incoming Video Call</span>
@@ -44,10 +51,12 @@ export function IncomingCallModal() {
           </div>
 
           <h3 className="text-lg font-semibold text-foreground tracking-tight">
-            {incomingCall.callerName}
+            {isGroup && incomingCall.groupName ? incomingCall.groupName : incomingCall.callerName}
           </h3>
           <p className="text-xs text-muted-foreground/60 mt-1">
-            Calling you on GCP...
+            {isGroup
+              ? `${incomingCall.callerName} started a call in this squad`
+              : 'Calling you on GCP...'}
           </p>
         </div>
 
@@ -59,7 +68,7 @@ export function IncomingCallModal() {
             className="flex-1 flex items-center justify-center gap-2 h-10 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-medium text-xs transition-colors"
           >
             <PhoneOff className="w-4 h-4" />
-            <span>Decline</span>
+            <span>{isGroup ? 'Dismiss' : 'Decline'}</span>
           </button>
 
           {/* Accept Button */}

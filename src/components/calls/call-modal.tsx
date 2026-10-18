@@ -800,7 +800,7 @@ export function CallModal({
           </span>
           {isNoiseSuppressionEnabled ? (
             <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono ml-1 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-              • Direct P2P • GCP Studio Filter
+              • Direct P2P • RNNoise AI
             </span>
           ) : (
             <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-zinc-400 font-mono ml-1">
@@ -1171,10 +1171,10 @@ export function CallModal({
               )}
               title={
                 isNoiseSuppressionEnabled
-                  ? 'GCP Studio Noise Cancellation ON (AudioWorklet)'
-                  : 'GCP Studio Noise Cancellation OFF'
+                  ? 'GCP Studio AI Suppression ON (RNNoise WASM - Click to cycle mode)'
+                  : 'GCP Studio AI Suppression OFF'
               }
-              aria-label={isNoiseSuppressionEnabled ? 'Disable GCP noise filter' : 'Enable GCP noise filter'}
+              aria-label={isNoiseSuppressionEnabled ? 'Disable GCP AI noise filter' : 'Enable GCP AI noise filter'}
             >
               <ShieldCheck className="w-4 h-4" />
             </button>

@@ -343,8 +343,8 @@ export function generateSanitizedReport(stats: DiagnosticsStats, extra?: { platf
     `- Echo Cancellation: ${stats.audioDevice?.echoCancellation ? 'Enabled' : 'Disabled'}`,
     `- Auto Gain Control: ${stats.audioDevice?.autoGainControl ? 'Enabled' : 'Disabled'}`,
     `- Hardware Noise Suppression: ${stats.audioDevice?.noiseSuppression ? 'Enabled' : 'Disabled'}`,
-    `- GCP Studio AudioWorklet Engine: ${stats.isNoiseSuppressionEnabled ? 'Active (Real-time AudioWorklet, 80Hz Cut, 2.8kHz Boost, 7.5kHz Tamer, Dynamics Comp)' : 'Bypassed'}`,
-    `- Voice Processing Mode: ${stats.isNoiseSuppressionEnabled ? 'GCP Studio Noise Cancellation (0ms Server Latency)' : 'Raw Pass-Through'}`,
+    `- GCP Neural Speech Enhancement: ${stats.isNoiseSuppressionEnabled ? 'Active (RNNoise WebAssembly, 10ms frame delay, 80Hz rumble cut, transparent compressor)' : 'Bypassed'}`,
+    `- Voice Processing Engine: ${stats.isNoiseSuppressionEnabled ? 'RNNoise WebAssembly (Client-side WASM, 0ms Cloud Latency)' : 'Raw Pass-Through'}`,
     `- Krisp AI Noise Filtering: ${stats.isKrispActive ? 'Active' : 'Inactive'}`,
     `- Microphone Input Level: ${stats.isMicMuted ? 'Muted (0%)' : `${stats.micLevel ?? 0}%`}`,
     '',
@@ -881,9 +881,9 @@ export function NetworkDiagnostics({
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
-                <span className="text-muted-foreground">GCP Noise Filter</span>
+                <span className="text-muted-foreground">Speech Enhancement</span>
                 <Badge variant={currentStats.isNoiseSuppressionEnabled ? 'success' : 'outline'} className="text-[9px] px-1.5 py-0">
-                  {currentStats.isNoiseSuppressionEnabled ? 'Studio Grade' : 'Off'}
+                  {currentStats.isNoiseSuppressionEnabled ? 'RNNoise WASM' : 'Off'}
                 </Badge>
               </div>
               <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
@@ -899,9 +899,9 @@ export function NetworkDiagnostics({
                 </Badge>
               </div>
               <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
-                <span className="text-muted-foreground">AudioWorklet VAD</span>
+                <span className="text-muted-foreground">Algorithmic Latency</span>
                 <Badge variant={currentStats.isNoiseSuppressionEnabled ? 'success' : 'outline'} className="text-[9px] px-1.5 py-0">
-                  {currentStats.isNoiseSuppressionEnabled ? 'Real-Time (0ms)' : 'Off'}
+                  {currentStats.isNoiseSuppressionEnabled ? '10 ms (480 smp)' : '0 ms'}
                 </Badge>
               </div>
             </div>

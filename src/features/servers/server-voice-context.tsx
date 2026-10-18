@@ -6,7 +6,8 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { SoundboardClip, soundboardEngine } from '@/lib/soundboard/audio-engine';
 import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
-import { createGcpNoisePipeline, GcpNoisePipeline } from '@/lib/webrtc/gcp-noise-cancellation';
+import { createGcpNoisePipeline, GcpNoisePipeline, NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
+import { applyGcpOptimalConstraints } from '@/lib/webrtc/safe-constraints';
 import {
   Room,
   RoomEvent,
@@ -44,6 +45,7 @@ export interface ServerVoiceContextType {
   isCameraOn: boolean;
   isScreenSharing: boolean;
   isNoiseSuppressionEnabled: boolean;
+  noiseSuppressionMode: NoiseCancellationMode;
   isSpeaking: boolean;
   audioLevel: number;
   localStream: MediaStream | null;
@@ -65,6 +67,7 @@ export interface ServerVoiceContextType {
   toggleCamera: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
   toggleNoiseSuppression: () => void;
+  setNoiseSuppressionMode: (mode: NoiseCancellationMode) => void;
   broadcastSoundboard: (clip: SoundboardClip) => void;
   incomingVolume: number;
   setIncomingVolume: (volume: number) => Promise<void>;
@@ -119,7 +122,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const disconnectGateRef = React.useRef(false);
   const [isCameraOn, setIsCameraOn] = React.useState(false);
   const [isScreenSharing, setIsScreenSharing] = React.useState(false);
-  const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = React.useState(true);
+  const [noiseSuppressionMode, setNoiseSuppressionModeState] = React.useState<NoiseCancellationMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('nexus_noise_suppression_mode');
+      if (saved === 'off' || saved === 'balanced' || saved === 'strong') return saved;
+      const legacy = localStorage.getItem('nexus_noise_suppression');
+      if (legacy === 'false') return 'off';
+    }
+    return 'balanced';
+  });
+  const isNoiseSuppressionEnabled = noiseSuppressionMode !== 'off';
   const [isSpeaking, setIsSpeaking] = React.useState(false);
   const [audioLevel, setAudioLevel] = React.useState(0);
 
@@ -1227,8 +1239,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     rawStream = await navigator.mediaDevices.getUserMedia({
                       audio: {
                         echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
+                        noiseSuppression: false,
+                        autoGainControl: false,
                         ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
                       },
                       video: false,
@@ -1238,18 +1250,31 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     rawStream = await navigator.mediaDevices.getUserMedia({
                       audio: {
                         echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
+                        noiseSuppression: false,
+                        autoGainControl: false,
                       },
                       video: false,
                     });
                   }
 
-                  // Directly publish the raw hardware microphone stream to LiveKit Cloud SFU
-                  // LiveKit's Opus codec and Krisp AI filter process the clean hardware audio directly
-                  setLocalStream(rawStream);
-                  localStreamRef.current = rawStream;
-                  stream = rawStream;
+                  let streamToUse = rawStream;
+                  try {
+                    if (dspPipelineRef.current) {
+                      try { dspPipelineRef.current.cleanup(); } catch {}
+                      dspPipelineRef.current = null;
+                    }
+                    const pipeline = await createGcpNoisePipeline(rawStream, noiseSuppressionMode);
+                    if (pipeline) {
+                      dspPipelineRef.current = pipeline;
+                      streamToUse = pipeline.outputStream;
+                    }
+                  } catch (dspErr) {
+                    console.warn('[ServerVoice] Error initializing GCP noise pipeline for lounge:', dspErr);
+                  }
+
+                  setLocalStream(streamToUse);
+                  localStreamRef.current = streamToUse;
+                  stream = streamToUse;
 
                   const pttActive = isPushToTalkEnabled(settingsRef.current);
                   if (pttActive || disconnectGateRef.current || isMicMutedRef.current) {
@@ -1375,16 +1400,16 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 rawStream = await navigator.mediaDevices.getUserMedia({
                   audio: {
                     echoCancellation: true,
-                    noiseSuppression: isNoiseSuppressionEnabled,
-                    autoGainControl: isNoiseSuppressionEnabled,
+                    noiseSuppression: false,
+                    autoGainControl: false,
                     ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
                   },
                 });
               } else {
                 const fallbackTrack = await createLocalAudioTrack({
                   echoCancellation: true,
-                  noiseSuppression: true,
-                  autoGainControl: true,
+                  noiseSuppression: false,
+                  autoGainControl: false,
                 });
                 rawStream = new MediaStream([fallbackTrack.mediaStreamTrack]);
               }
@@ -1762,6 +1787,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       broadcastMyVoiceState,
       attachLiveKitAudioTrack,
       settings?.input_device_id,
+      isNoiseSuppressionEnabled,
+      noiseSuppressionMode,
     ]
   );
 
@@ -2336,36 +2363,69 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     }
   }, [isScreenSharing, broadcastMyVoiceState]);
 
-  // Toggle AI Noise Suppression
-  const toggleNoiseSuppression = React.useCallback(() => {
-    const next = !isNoiseSuppressionEnabled;
-    setIsNoiseSuppressionEnabled(next);
+  // Update AI Noise Suppression Mode
+  const setNoiseSuppressionMode = React.useCallback((mode: NoiseCancellationMode) => {
+    setNoiseSuppressionModeState(mode);
+    try {
+      localStorage.setItem('nexus_noise_suppression_mode', mode);
+      localStorage.setItem('nexus_noise_suppression', String(mode !== 'off'));
+    } catch {}
 
     if (krispProcessorRef.current) {
       try {
-        krispProcessorRef.current.setEnabled(next);
+        krispProcessorRef.current.setEnabled(mode !== 'off');
       } catch (krispErr) {
         console.warn('[Krisp] Error toggling filter state:', krispErr);
       }
     }
 
     if (dspPipelineRef.current) {
-      dspPipelineRef.current.setNoiseSuppression(next);
+      dspPipelineRef.current.setMode(mode);
     }
 
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track) => {
-        try {
-          track
-            .applyConstraints({
-              noiseSuppression: next,
-              echoCancellation: true,
-            })
-            .catch(() => {});
-        } catch {}
+        applyGcpOptimalConstraints(track, mode !== 'off');
       });
     }
-  }, [isNoiseSuppressionEnabled]);
+  }, []);
+
+  // Toggle AI Noise Suppression
+  const toggleNoiseSuppression = React.useCallback(() => {
+    const nextMode: NoiseCancellationMode =
+      noiseSuppressionMode === 'balanced' ? 'strong' :
+      noiseSuppressionMode === 'strong' ? 'off' : 'balanced';
+    setNoiseSuppressionMode(nextMode);
+  }, [noiseSuppressionMode, setNoiseSuppressionMode]);
+
+  // Synchronize with external settings modal mode updates in real-time
+  React.useEffect(() => {
+    const handleModeEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ mode: NoiseCancellationMode }>;
+      if (customEvent.detail?.mode) {
+        setNoiseSuppressionMode(customEvent.detail.mode);
+      }
+    };
+    const handleDesktopDspEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ active: boolean; engine?: string }>;
+      if (customEvent.detail?.active) {
+        if (dspPipelineRef.current) {
+          dspPipelineRef.current.setMode('off');
+        }
+      } else {
+        if (dspPipelineRef.current) {
+          dspPipelineRef.current.setMode(noiseSuppressionMode);
+        }
+      }
+    };
+
+    window.addEventListener('gcp_noise_mode_changed', handleModeEvent);
+    window.addEventListener('gcp_desktop_dsp_active', handleDesktopDspEvent);
+    return () => {
+      window.removeEventListener('gcp_noise_mode_changed', handleModeEvent);
+      window.removeEventListener('gcp_desktop_dsp_active', handleDesktopDspEvent);
+    };
+  }, [setNoiseSuppressionMode, noiseSuppressionMode]);
 
   // Broadcast soundboard clip
   const broadcastSoundboard = React.useCallback(
@@ -2398,6 +2458,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     isCameraOn,
     isScreenSharing,
     isNoiseSuppressionEnabled,
+    noiseSuppressionMode,
     isSpeaking,
     audioLevel,
     localStream,
@@ -2414,6 +2475,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     toggleCamera,
     toggleScreenShare,
     toggleNoiseSuppression,
+    setNoiseSuppressionMode,
     broadcastSoundboard,
     incomingVolume,
     setIncomingVolume,

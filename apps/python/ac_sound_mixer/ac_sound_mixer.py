@@ -142,6 +142,8 @@ class AudioState(object):
         self.ui_dirty = True
         self.last_status_message = "Ready (Standalone)"
         self.last_file_sync_time = 0.0
+        self.desktop_dsp_active = True
+        self.dsp_engine = "deepfilternet3-spectral-transient" 
 
     def load_from_config(self):
         config = configparser.ConfigParser()
@@ -208,6 +210,8 @@ class AudioState(object):
                 "sfx_muted": bool(self.sfx_muted),
                 "voice_volume": int(self.voice_volume),
                 "voice_muted": bool(self.voice_muted),
+                "desktop_dsp_active": bool(self.desktop_dsp_active),
+                "dsp_engine": str(self.dsp_engine),
                 "timestamp": time.time(),
                 "source": "assetto_corsa"
             }
@@ -230,7 +234,9 @@ class AudioState(object):
                 data = json.load(fp)
             if isinstance(data, dict):
                 bridge_active = data.get("bridge_online", False)
+                dsp_active = data.get("desktop_dsp_active", False)
                 with self.lock:
+                    self.desktop_dsp_active = dsp_active
                     if self.bridge_online != bridge_active:
                         self.bridge_online = bridge_active
                         if bridge_active:

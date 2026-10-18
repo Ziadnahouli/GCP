@@ -965,7 +965,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                           </Badge>
                           {voice.isNoiseSuppressionEnabled && (
                             <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
-                              Studio DSP Noise Filter
+                              RNNoise AI ({(voice.noiseSuppressionMode || 'balanced').toUpperCase()})
                             </Badge>
                           )}
                         </div>
@@ -1252,27 +1252,26 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     type="button"
                     onClick={() => {
                       voice.toggleNoiseSuppression();
-                      toast({
-                        title: voice.isNoiseSuppressionEnabled
-                          ? 'GCP Noise Filter Disabled'
-                          : 'GCP Studio Noise Filter Enabled',
-                        description: voice.isNoiseSuppressionEnabled
-                          ? 'Raw microphone audio'
-                          : '5-Stage Acoustic DSP & AudioWorklet Voice Gate',
-                        type: 'info',
-                      });
                     }}
                     className={cn(
                       'p-3 rounded-2xl flex items-center gap-2 transition-all shadow-subtle',
                       voice.isNoiseSuppressionEnabled
-                        ? 'bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30'
+                        ? voice.noiseSuppressionMode === 'strong'
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30'
+                          : 'bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30'
                         : 'bg-white/[0.04] text-muted-foreground border border-white/[0.08] hover:bg-white/[0.08] hover:text-foreground'
                     )}
-                    title={voice.isNoiseSuppressionEnabled ? "GCP Studio Noise Filter Active" : "GCP Noise Filter Disabled"}
+                    title={
+                      voice.isNoiseSuppressionEnabled
+                        ? `GCP AI Suppression: ${(voice.noiseSuppressionMode || 'balanced').toUpperCase()} (Click to cycle)`
+                        : 'GCP AI Suppression: OFF (Click to enable)'
+                    }
                   >
                     <Sparkles className="w-5 h-5" />
                     <span className="text-xs font-semibold hidden sm:inline">
-                      {voice.isNoiseSuppressionEnabled ? 'GCP Studio Filter' : 'Filter Off'}
+                      {voice.isNoiseSuppressionEnabled
+                        ? `AI: ${(voice.noiseSuppressionMode || 'balanced').toUpperCase()}`
+                        : 'AI Filter Off'}
                     </span>
                   </button>
 

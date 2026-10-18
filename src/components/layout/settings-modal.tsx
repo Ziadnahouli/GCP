@@ -1,3 +1,4 @@
+import { NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
 'use client';
 
 import * as React from 'react';
@@ -148,6 +149,15 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [inputVol, setInputVol] = React.useState(85);
   const [outputVol, setOutputVol] = React.useState(100);
   const [desktopNotifs, setDesktopNotifs] = React.useState(true);
+  const [noiseMode, setNoiseMode] = React.useState<NoiseCancellationMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('nexus_noise_suppression_mode') as NoiseCancellationMode | null;
+      if (saved === 'off' || saved === 'balanced' || saved === 'strong') return saved;
+      const legacy = localStorage.getItem('nexus_noise_suppression');
+      if (legacy === 'false') return 'off';
+    }
+    return 'balanced';
+  });
   const [noiseSuppression, setNoiseSuppression] = React.useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('nexus_noise_suppression');
@@ -476,12 +486,34 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     toast({ title: 'Theme Applied', description: `Theme set to ${theme.toUpperCase()}.`, type: 'info' });
   };
 
+  const handleSelectNoiseMode = (newMode: NoiseCancellationMode) => {
+    setNoiseMode(newMode);
+    setNoiseSuppression(newMode !== 'off');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('nexus_noise_suppression_mode', newMode);
+      localStorage.setItem('nexus_noise_suppression', String(newMode !== 'off'));
+      window.dispatchEvent(new CustomEvent('gcp_noise_mode_changed', { detail: { mode: newMode } }));
+    }
+    toast({
+      title: newMode === 'off' ? 'Noise Suppression Disabled' : `GCP AI Suppression: ${newMode.toUpperCase()}`,
+      description:
+        newMode === 'off'
+          ? 'Raw microphone pass-through active.'
+          : newMode === 'strong'
+          ? 'Strong neural suppression active: keyboard clicks and loud fans eliminated.'
+          : 'Balanced neural enhancement active: background noise suppressed, natural voice preserved.',
+      type: newMode === 'off' ? 'info' : 'success',
+      duration: 2500,
+    });
+  };
+
   // Save audio & voice preferences
   const handleSaveAudio = async () => {
     setIsSaving(true);
     try {
       if (typeof window !== 'undefined') {
-        localStorage.setItem('nexus_noise_suppression', String(noiseSuppression));
+        localStorage.setItem('nexus_noise_suppression_mode', noiseMode);
+        localStorage.setItem('nexus_noise_suppression', String(noiseMode !== 'off'));
         localStorage.setItem(
           'nexus_audio_prefs',
           JSON.stringify({
@@ -498,7 +530,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       });
       toast({
         title: 'Voice & Audio Saved',
-        description: `Krisp AI Noise Suppression ${noiseSuppression ? 'active' : 'disabled'}. Preferences updated.`,
+        description: `GCP Studio AI Noise Suppression (${noiseMode.toUpperCase()}) saved. Preferences updated.`,
         type: 'success',
       });
     } finally {
@@ -1454,51 +1486,91 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 </p>
               </div>
 
-              {/* Krisp AI Noise Suppression Switch */}
-              <div
-                onClick={() => {
-                  const nextNs = !noiseSuppression;
-                  setNoiseSuppression(nextNs);
-                  if (typeof window !== 'undefined') {
-                    localStorage.setItem('nexus_noise_suppression', String(nextNs));
-                  }
-                  toast({
-                    title: nextNs ? 'Krisp AI Enabled' : 'Krisp AI Disabled',
-                    description: nextNs ? 'Background noise filter is active.' : 'Raw microphone feed.',
-                    type: 'info',
-                    duration: 2000,
-                  });
-                }}
-                className={cn(
-                  'flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all',
-                  noiseSuppression
-                    ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/30'
-                    : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
-                )}
-              >
-                <div className="space-y-0.5">
-                  <div className="text-xs font-bold text-foreground flex items-center gap-2">
-                    <span>Krisp AI Acoustic Noise Suppression</span>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-bold">
-                      SMART FILTER
-                    </span>
+              {/* GCP Studio AI Neural Noise Suppression Selector */}
+              <div className="rounded-2xl border border-white/[0.08] bg-[#10121a] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+                      <span>GCP Studio Neural Noise Suppression</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+                        RNNoise WASM
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Client-side WebAssembly neural network. Removes computer fans, mechanical typing, and room noise in real-time.
+                    </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Removes mechanical keyboard clicks, gaming fan noise, and background chatter.
+                  <div className="text-[10px] font-mono text-muted-foreground bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/[0.06]">
+                    0ms Cloud Latency • 100% Private
                   </div>
                 </div>
-                <div
-                  className={cn(
-                    'w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5',
-                    noiseSuppression ? 'bg-primary' : 'bg-white/20'
-                  )}
-                >
+
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  {/* Off Mode */}
                   <div
+                    onClick={() => handleSelectNoiseMode('off')}
                     className={cn(
-                      'w-5 h-5 rounded-full bg-white shadow-md transition-transform',
-                      noiseSuppression ? 'translate-x-5' : 'translate-x-0'
+                      'p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
+                      noiseMode === 'off'
+                        ? 'bg-rose-500/10 border-rose-500/40 ring-1 ring-rose-500/30'
+                        : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
                     )}
-                  />
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-foreground">Off</span>
+                        <span className={cn('w-2 h-2 rounded-full', noiseMode === 'off' ? 'bg-rose-400' : 'bg-white/20')} />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-tight">
+                        Raw microphone pass-through. Zero DSP processing.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Balanced Mode */}
+                  <div
+                    onClick={() => handleSelectNoiseMode('balanced')}
+                    className={cn(
+                      'p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
+                      noiseMode === 'balanced'
+                        ? 'bg-primary/15 border-primary/50 ring-1 ring-primary/40'
+                        : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                    )}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-foreground">Balanced</span>
+                        <span className={cn('w-2 h-2 rounded-full', noiseMode === 'balanced' ? 'bg-primary' : 'bg-white/20')} />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-tight">
+                        Moderate noise removal. Preserves natural vocal warmth and breathing.
+                      </p>
+                    </div>
+                    <span className="text-[9px] text-primary font-bold mt-2">Recommended</span>
+                  </div>
+
+                  {/* Strong Mode */}
+                  <div
+                    onClick={() => handleSelectNoiseMode('strong')}
+                    className={cn(
+                      'p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
+                      noiseMode === 'strong'
+                        ? 'bg-emerald-500/15 border-emerald-500/50 ring-1 ring-emerald-500/40'
+                        : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                    )}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-foreground">Strong</span>
+                        <span className={cn('w-2 h-2 rounded-full', noiseMode === 'strong' ? 'bg-emerald-400' : 'bg-white/20')} />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-tight">
+                        Intense suppression. Eliminates clicky keyboards and loud fans.
+                      </p>
+                    </div>
+                    <span className="text-[9px] text-emerald-400 font-bold mt-2">Max Noise Cut</span>
+                  </div>
                 </div>
               </div>
 

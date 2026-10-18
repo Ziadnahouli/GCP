@@ -8,7 +8,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
 import { soundboardEngine, SoundboardClip } from '@/lib/soundboard/audio-engine';
-import { createGcpNoisePipeline, GcpNoisePipeline } from '@/lib/webrtc/gcp-noise-cancellation';
+import { createGcpNoisePipeline, GcpNoisePipeline, NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
 import {
   DEFAULT_RTC_CONFIG,
   cleanIceCandidate,
@@ -73,7 +73,9 @@ interface CallContextType {
   toggleScreenShare: () => Promise<void>;
   broadcastSoundboardClip: (clip: SoundboardClip) => void;
   isNoiseSuppressionEnabled: boolean;
+  noiseSuppressionMode: NoiseCancellationMode;
   toggleNoiseSuppression: () => void;
+  setNoiseSuppressionMode: (mode: NoiseCancellationMode) => void;
   peerZeroTierIp: string | null;
   setPeerZeroTierDirectIp: (ip: string) => void;
   incomingVolume: number;
@@ -278,13 +280,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const disconnectGateRef = React.useRef(false);
   const [isCameraOn, setIsCameraOn] = React.useState(false);
   const [isScreenSharing, setIsScreenSharing] = React.useState(false);
-  const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = React.useState<boolean>(() => {
+  const [noiseSuppressionMode, setNoiseSuppressionModeState] = React.useState<NoiseCancellationMode>(() => {
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('nexus_noise_suppression');
-      return stored !== null ? stored === 'true' : true;
+      const saved = localStorage.getItem('nexus_noise_suppression_mode');
+      if (saved === 'off' || saved === 'balanced' || saved === 'strong') return saved;
+      const legacy = localStorage.getItem('nexus_noise_suppression');
+      if (legacy === 'false') return 'off';
     }
-    return true;
+    return 'balanced';
   });
+  const isNoiseSuppressionEnabled = noiseSuppressionMode !== 'off';
 
   const [isLiveKitActive, setIsLiveKitActive] = React.useState(false);
   const [isKrispActive, setIsKrispActive] = React.useState(false);
@@ -572,18 +577,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     [user, profile, peerUserId, sendSignalToRoom, sendSignalToUser]
   );
 
-  // Toggle noise suppression for microphone dynamically in active call
-  const toggleNoiseSuppression = React.useCallback(async () => {
-    const nextState = !isNoiseSuppressionEnabled;
-    setIsNoiseSuppressionEnabled(nextState);
+    // Set noise suppression mode dynamically in active call
+  const setNoiseSuppressionMode = React.useCallback(async (mode: NoiseCancellationMode) => {
+    setNoiseSuppressionModeState(mode);
     try {
-      localStorage.setItem('nexus_noise_suppression', String(nextState));
+      localStorage.setItem('nexus_noise_suppression_mode', mode);
+      localStorage.setItem('nexus_noise_suppression', String(mode !== 'off'));
     } catch {}
 
-    // 1. Update GCP Studio AudioWorklet Noise Pipeline immediately
+    // 1. Update GCP Studio AudioWorklet RNNoise Pipeline immediately
     if (gcpNoisePipelineRef.current) {
       try {
-        gcpNoisePipelineRef.current.setNoiseSuppression(nextState);
+        gcpNoisePipelineRef.current.setMode(mode);
       } catch {}
     }
 
@@ -594,8 +599,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         try {
           await track.applyConstraints({
             echoCancellation: true,
-            noiseSuppression: nextState,
-            autoGainControl: nextState,
+            noiseSuppression: false, // GCP Neural DSP handles suppression; avoid browser double-suppression
+            autoGainControl: false,  // GCP Neural DSP handles dynamic leveling; avoid browser AGC pumping
           });
         } catch (err) {
           console.warn('[CallContext] applyConstraints for noise suppression notice:', err);
@@ -606,21 +611,61 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // 3. Toggle Krisp AI neural noise filter if active (for LiveKit multi-party rooms)
     if (krispProcessorRef.current) {
       try {
-        krispProcessorRef.current.setEnabled(nextState);
+        krispProcessorRef.current.setEnabled(mode !== 'off');
       } catch (krispErr) {
         console.warn('[CallContext] Error toggling Krisp filter:', krispErr);
       }
     }
 
     toast({
-      title: nextState ? 'GCP Studio Noise Cancellation Active' : 'Noise Suppression Off',
-      description: nextState
-        ? 'Real-time AudioWorklet noise gate active: keyboard clicks, fan hum, and breathing eliminated.'
-        : 'Raw microphone pass-through active.',
-      type: nextState ? 'success' : 'info',
+      title: mode === 'off' ? 'Noise Suppression Off' : `GCP AI Suppression: ${mode.toUpperCase()}`,
+      description:
+        mode === 'off'
+          ? 'Raw microphone pass-through active (0ms DSP).'
+          : mode === 'strong'
+          ? 'Strong neural suppression active: mechanical keyboards and loud fans eradicated.'
+          : 'Balanced neural enhancement active: background noise suppressed, natural vocal warmth preserved.',
+      type: mode === 'off' ? 'info' : 'success',
       duration: 2500,
     });
-  }, [isNoiseSuppressionEnabled, isLiveKitActive, toast]);
+  }, [toast]);
+
+  // Toggle noise suppression for microphone dynamically in active call
+  const toggleNoiseSuppression = React.useCallback(async () => {
+    const nextMode: NoiseCancellationMode =
+      noiseSuppressionMode === 'balanced' ? 'strong' :
+      noiseSuppressionMode === 'strong' ? 'off' : 'balanced';
+    await setNoiseSuppressionMode(nextMode);
+  }, [noiseSuppressionMode, setNoiseSuppressionMode]);
+
+  // Synchronize with external settings modal mode updates in real-time
+  React.useEffect(() => {
+    const handleModeEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ mode: NoiseCancellationMode }>;
+      if (customEvent.detail?.mode) {
+        setNoiseSuppressionMode(customEvent.detail.mode);
+      }
+    };
+    const handleDesktopDspEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ active: boolean; engine?: string }>;
+      if (customEvent.detail?.active) {
+        if (gcpNoisePipelineRef.current) {
+          gcpNoisePipelineRef.current.setMode('off');
+        }
+      } else {
+        if (gcpNoisePipelineRef.current) {
+          gcpNoisePipelineRef.current.setMode(noiseSuppressionMode);
+        }
+      }
+    };
+
+    window.addEventListener('gcp_noise_mode_changed', handleModeEvent);
+    window.addEventListener('gcp_desktop_dsp_active', handleDesktopDspEvent);
+    return () => {
+      window.removeEventListener('gcp_noise_mode_changed', handleModeEvent);
+      window.removeEventListener('gcp_desktop_dsp_active', handleDesktopDspEvent);
+    };
+  }, [setNoiseSuppressionMode, noiseSuppressionMode]);
 
   // Helper to cleanly merge/update tracks into remoteStreamRef without dropping audio or video
   const attachRemoteTrack = React.useCallback((track: MediaStreamTrack) => {
@@ -1387,8 +1432,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         rawStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
-            noiseSuppression: isNoiseSuppressionEnabled,
-            autoGainControl: isNoiseSuppressionEnabled,
+            noiseSuppression: false,
+            autoGainControl: false,
             ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
           },
           video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
@@ -1398,8 +1443,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         rawStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
-            noiseSuppression: isNoiseSuppressionEnabled,
-            autoGainControl: isNoiseSuppressionEnabled,
+            noiseSuppression: false,
+            autoGainControl: false,
           },
           video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
         });
@@ -1417,7 +1462,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             try { gcpNoisePipelineRef.current.cleanup(); } catch {}
             gcpNoisePipelineRef.current = null;
           }
-          const pipeline = await createGcpNoisePipeline(rawStream, isNoiseSuppressionEnabled);
+          const pipeline = await createGcpNoisePipeline(rawStream, noiseSuppressionMode);
           if (pipeline) {
             gcpNoisePipelineRef.current = pipeline;
             const procTrack = pipeline.outputStream.getAudioTracks()[0];
@@ -4189,7 +4234,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       toggleScreenShare: stableToggleScreenShare,
       broadcastSoundboardClip,
       isNoiseSuppressionEnabled,
+      noiseSuppressionMode,
       toggleNoiseSuppression,
+      setNoiseSuppressionMode,
       peerZeroTierIp,
       setPeerZeroTierDirectIp,
       incomingVolume,
@@ -4231,7 +4278,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       stableToggleScreenShare,
       broadcastSoundboardClip,
       isNoiseSuppressionEnabled,
+      noiseSuppressionMode,
       toggleNoiseSuppression,
+      setNoiseSuppressionMode,
       peerZeroTierIp,
       setPeerZeroTierDirectIp,
       incomingVolume,

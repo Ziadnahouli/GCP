@@ -118,6 +118,58 @@ export function MixerAdapterBridge() {
     call.forceMute,
   ]);
 
+  // Desktop companion DSP coordination: Poll companion bridge to prevent double suppression
+  const previousModeRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !activeCallId) return;
+
+    let isPolling = true;
+    const checkDesktopDsp = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:48123/api/audio/dsp', {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(600),
+        });
+        if (!isPolling) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.desktop_dsp_active && data.bypass_browser_dsp) {
+            // Signal browser WebRTC pipeline not to double-process
+            window.dispatchEvent(
+              new CustomEvent('gcp_desktop_dsp_active', {
+                detail: { active: true, engine: data.engine },
+              })
+            );
+            return;
+          }
+        }
+      } catch {
+        // Desktop bridge offline or unreachable; browser WebRTC DSP should run normally
+      }
+      if (isPolling) {
+        window.dispatchEvent(
+          new CustomEvent('gcp_desktop_dsp_active', {
+            detail: { active: false },
+          })
+        );
+      }
+    };
+
+    const interval = window.setInterval(checkDesktopDsp, 2500);
+    checkDesktopDsp();
+
+    return () => {
+      isPolling = false;
+      window.clearInterval(interval);
+      window.dispatchEvent(
+        new CustomEvent('gcp_desktop_dsp_active', {
+          detail: { active: false },
+        })
+      );
+    };
+  }, [activeCallId]);
+
   // Install adapter only after joining a call, and cleanup when leaving
   React.useEffect(() => {
     if (typeof window === 'undefined') return;

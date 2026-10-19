@@ -13,7 +13,7 @@ import {
 import createRNNWasmModule from '@jitsi/rnnoise-wasm/dist/rnnoise';
 
 describe('RNNoise Continuous Ring Buffer & 6-Stage Architecture Verification', () => {
-  it('verifies 128-quantum to 480-frame ring buffer retains exact continuity without pops', async () => {
+  it('verifies 128-quantum to 480-frame ring buffer retains exact continuity without pops or underruns', async () => {
     const wasmBinary = await loadRnnoiseWasmBinary();
     const rnnModule = await createRNNWasmModule({ wasmBinary });
 
@@ -24,23 +24,26 @@ describe('RNNoise Continuous Ring Buffer & 6-Stage Architecture Verification', (
     const inOffset = inPtr / 4;
     const outOffset = outPtr / 4;
 
-    const MAX_RING = 4096;
+    const MAX_RING = 8192;
     const inRing = new Float32Array(MAX_RING);
     const outRing = new Float32Array(MAX_RING);
     let inWrite = 0, inRead = 0, inCount = 0;
     let outWrite = 0, outRead = 0, outCount = 0;
+    let isPrimed = false;
+    const PRIME_THRESHOLD = 512;
 
     const QUANTUM = 128;
-    const NUM_QUANTUMS = 60; // 7,680 samples (~160ms)
+    const NUM_QUANTUMS = 100; // 12,800 samples (~266ms)
     const inQuantum = new Float32Array(QUANTUM);
     const outQuantum = new Float32Array(QUANTUM);
     const collectedOutput: number[] = [];
+    let underrunCount = 0;
 
     // Continuous 440 Hz sine wave
     for (let q = 0; q < NUM_QUANTUMS; q++) {
       for (let i = 0; i < QUANTUM; i++) {
         const sampleIndex = q * QUANTUM + i;
-        inQuantum[i] = Math.sin(2 * Math.PI * 440 * sampleIndex / 48000) * 0.2;
+        inQuantum[i] = Math.sin((2 * Math.PI * 440 * sampleIndex) / 48000) * 0.2;
       }
 
       // Push into input ring
@@ -67,29 +70,35 @@ describe('RNNoise Continuous Ring Buffer & 6-Stage Architecture Verification', (
         outCount += FRAME_SIZE;
       }
 
+      if (!isPrimed && outCount >= PRIME_THRESHOLD) {
+        isPrimed = true;
+      }
+
       // Pop 128 samples into Web Audio quantum
-      if (outCount >= QUANTUM) {
+      if (isPrimed) {
+        if (outCount < QUANTUM) {
+          underrunCount++;
+        }
         for (let i = 0; i < QUANTUM; i++) {
           outQuantum[i] = outRing[outRead];
           outRead = (outRead + 1) % MAX_RING;
           collectedOutput.push(outQuantum[i]);
         }
         outCount -= QUANTUM;
-      } else {
-        for (let i = 0; i < QUANTUM; i++) {
-          collectedOutput.push(0);
-        }
       }
     }
 
+    // Steady state must have 0 underruns
+    expect(underrunCount).toBe(0);
+
     // Check for discontinuities: maximum difference between adjacent samples after warmup
     let maxDelta = 0;
-    // Skip first 480 warmup samples
-    for (let i = 481; i < collectedOutput.length; i++) {
+    for (let i = 1; i < collectedOutput.length; i++) {
       const delta = Math.abs(collectedOutput[i] - collectedOutput[i - 1]);
       if (delta > maxDelta) maxDelta = delta;
     }
 
+    // Must be smooth continuous waveform with no sudden leaps
     expect(maxDelta).toBeLessThan(0.08);
 
     rnnModule._free(inPtr);
@@ -135,12 +144,15 @@ describe('RNNoise Continuous Ring Buffer & 6-Stage Architecture Verification', (
     }
     expect(offDiff).toBe(0); // Bit-exact
 
-    // Helper simulating mode processing
+    // Helper simulating actual production mode processing
     function runMode(mode: 'balanced' | 'strong') {
       const state = rnnModule._rnnoise_create();
       const out = new Float32Array(SAMPLES);
       let vadSmooth = 0.0;
-      let residualGain = 1.0;
+      let gateGain = 1.0;
+      const gateFloor = mode === 'strong' ? 0.0125 : 0.063;
+      const attack = 1.0 - Math.exp(-1.0 / (48000 * 0.005));
+      const release = 1.0 - Math.exp(-1.0 / (48000 * 0.120));
 
       for (let f = 0; f < NUM_FRAMES; f++) {
         const off = f * FRAME;
@@ -148,14 +160,16 @@ describe('RNNoise Continuous Ring Buffer & 6-Stage Architecture Verification', (
           rnnModule.HEAPF32[inOffset + i] = noise[off + i] * 32767.0;
         }
         const vad = rnnModule._rnnoise_process_frame(state, outPtr, inPtr);
-        vadSmooth = vadSmooth * 0.75 + vad * 0.25;
-
-        const isStrong = mode === 'strong';
-        const targetResidual = vadSmooth > 0.35 ? 1.0 : (isStrong ? 0.35 : 0.65);
+        vadSmooth = vadSmooth * 0.70 + vad * 0.30;
+        const isSpeech = vadSmooth > 0.40;
 
         for (let i = 0; i < FRAME; i++) {
-          residualGain += (targetResidual - residualGain) * 0.02;
-          out[off + i] = (rnnModule.HEAPF32[outOffset + i] / 32767.0) * residualGain;
+          if (isSpeech) {
+            gateGain += attack * (1.0 - gateGain);
+          } else {
+            gateGain += release * (gateFloor - gateGain);
+          }
+          out[off + i] = (rnnModule.HEAPF32[outOffset + i] / 32767.0) * gateGain;
         }
       }
       rnnModule._rnnoise_destroy(state);
@@ -190,10 +204,9 @@ describe('RNNoise Continuous Ring Buffer & 6-Stage Architecture Verification', (
     const outBuffer = new Float32Array(quantumSize);
 
     // Benchmark 10,000 quanta (1.28M samples, ~26.7s real-time stream)
-    const startMemory = process.memoryUsage().heapUsed;
     for (let q = 0; q < 10000; q++) {
       for (let i = 0; i < quantumSize; i++) {
-        inBuffer[i] = Math.sin(2 * Math.PI * 440 * (q * quantumSize + i) / 48000) * 0.1;
+        inBuffer[i] = Math.sin((2 * Math.PI * 440 * (q * quantumSize + i)) / 48000) * 0.1;
       }
       for (let i = 0; i < quantumSize; i++) {
         const s = inBuffer[i];
@@ -204,8 +217,6 @@ describe('RNNoise Continuous Ring Buffer & 6-Stage Architecture Verification', (
         outBuffer[i] = pipeline.limiter.processSample(presence, 0.7);
       }
     }
-    const endMemory = process.memoryUsage().heapUsed;
-    // Memory change should be minimal (no leaking structures in process loop)
     expect(outBuffer[quantumSize - 1]).toBeDefined();
     expect(Number.isFinite(outBuffer[quantumSize - 1])).toBe(true);
   });

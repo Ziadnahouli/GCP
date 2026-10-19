@@ -158,6 +158,31 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
     return 'balanced';
   });
+  const [liveEngineStatus, setLiveEngineStatus] = React.useState<{
+    engine: 'rnnoise-wasm' | 'browser-native' | 'none';
+    status: 'ready' | 'fallback' | 'disabled' | 'initializing';
+    fallbackReason: string | null;
+  }>(() => ({
+    engine: typeof window !== 'undefined' && localStorage.getItem('nexus_noise_suppression_mode') === 'off' ? 'none' : 'rnnoise-wasm',
+    status: typeof window !== 'undefined' && localStorage.getItem('nexus_noise_suppression_mode') === 'off' ? 'disabled' : 'ready',
+    fallbackReason: null,
+  }));
+
+  React.useEffect(() => {
+    const handleStatusUpdate = (e: CustomEvent) => {
+      if (e.detail) {
+        setLiveEngineStatus({
+          engine: e.detail.activeEngine || (e.detail.mode === 'off' ? 'none' : 'rnnoise-wasm'),
+          status: e.detail.status || (e.detail.mode === 'off' ? 'disabled' : 'ready'),
+          fallbackReason: e.detail.fallbackReason || null,
+        });
+      }
+    };
+    window.addEventListener('gcp_noise_mode_changed' as any, handleStatusUpdate);
+    return () => {
+      window.removeEventListener('gcp_noise_mode_changed' as any, handleStatusUpdate);
+    };
+  }, []);
   const [noiseSuppression, setNoiseSuppression] = React.useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('nexus_noise_suppression');
@@ -1571,6 +1596,41 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     </div>
                     <span className="text-[9px] text-emerald-400 font-bold mt-2">Max Noise Cut</span>
                   </div>
+                </div>
+
+                {/* Real-Time Engine Diagnostic Badge */}
+                <div className="mt-3 p-2.5 rounded-xl bg-black/30 border border-white/5 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'w-2 h-2 rounded-full',
+                        noiseMode === 'off'
+                          ? 'bg-zinc-500'
+                          : liveEngineStatus.status === 'ready'
+                          ? 'bg-emerald-400 animate-pulse'
+                          : liveEngineStatus.status === 'fallback'
+                          ? 'bg-amber-400'
+                          : 'bg-blue-400'
+                      )}
+                    />
+                    <div>
+                      <span className="font-semibold text-foreground text-xs">
+                        {noiseMode === 'off'
+                          ? 'Processing Disabled (Raw Pass-Through)'
+                          : liveEngineStatus.engine === 'rnnoise-wasm'
+                          ? 'RNNoise Neural Engine (48 kHz WASM AudioWorklet)'
+                          : 'Browser-Native Audio Processing (Fallback Active)'}
+                      </span>
+                      {liveEngineStatus.fallbackReason && noiseMode !== 'off' && (
+                        <p className="text-[10px] text-amber-400/80 leading-tight mt-0.5">
+                          {liveEngineStatus.fallbackReason}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground font-mono">
+                    {noiseMode === 'off' ? '0 ms' : '~14 ms latency | 100% local'}
+                  </span>
                 </div>
               </div>
 

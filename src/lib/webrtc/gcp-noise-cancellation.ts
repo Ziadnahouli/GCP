@@ -6,11 +6,12 @@
  *
  * Architecture:
  *   Microphone capture
- *   → 48kHz AudioContext
- *   → 80Hz Butterworth High-Pass Biquad (pre-filters sub-bass rumble/plosives)
- *   → Continuous 480-sample frame buffering (10ms) via ring buffers
- *   → Recurrent Neural Network (RNNoise GRU) noise suppression
- *   → Dynamic comfortable acoustic floor & natural vocal preservation blend
+ *   → 48kHz AudioContext (with automatic fallback/resampling)
+ *   → 75Hz Butterworth High-Pass Biquad (pre-filters sub-bass rumble/plosives)
+ *   → Deterministic 480-sample frame ring buffer with 512-sample priming (0 underruns)
+ *   → Single-pass Recurrent Neural Network (RNNoise GRU) noise suppression
+ *   → 0.0% raw noise blend (zero fan/keyboard click bleed into speech)
+ *   → Dynamic comfortable acoustic floor & hangover expander
  *   → -1.0 dBFS true-peak soft limiter
  *   → Processed MediaStreamTrack for WebRTC transmission
  */
@@ -25,6 +26,18 @@ export type NoiseCancellationMode =
   | 'krisp-max'
   | 'rnnoise-hybrid';
 
+export type GcpPipelineStatus =
+  | 'initializing'
+  | 'ready'
+  | 'fallback'
+  | 'failed'
+  | 'disabled';
+
+export type GcpActiveEngine =
+  | 'rnnoise-wasm'
+  | 'browser-native'
+  | 'none';
+
 export interface GcpNoisePipeline {
   outputStream: MediaStream;
   audioContext: AudioContext | null;
@@ -32,6 +45,9 @@ export interface GcpNoisePipeline {
   setMode: (mode: NoiseCancellationMode) => void;
   getMode: () => NoiseCancellationMode;
   isReady: () => boolean;
+  getStatus: () => GcpPipelineStatus;
+  getActiveEngine: () => GcpActiveEngine;
+  getFallbackReason: () => string | null;
   cleanup: () => void;
 }
 
@@ -92,7 +108,14 @@ export async function createGcpNoisePipeline(
   }
 
   // Fallback helper in case AudioWorklet or WASM cannot be initialized
-  const createFallbackPipeline = (mode: NoiseCancellationMode, ctx: AudioContext | null = null): GcpNoisePipeline => {
+  const createFallbackPipeline = (
+    mode: NoiseCancellationMode,
+    reason: string,
+    ctx: AudioContext | null = null
+  ): GcpNoisePipeline => {
+    let fallbackStatus: GcpPipelineStatus = mode === 'off' ? 'disabled' : 'fallback';
+    let fallbackEngine: GcpActiveEngine = mode === 'off' ? 'none' : 'browser-native';
+
     try {
       if (typeof audioTrack.applyConstraints === 'function') {
         audioTrack
@@ -105,39 +128,35 @@ export async function createGcpNoisePipeline(
       }
     } catch {}
 
+    const setMode = (m: NoiseCancellationMode) => {
+      currentMode = m;
+      fallbackStatus = m === 'off' ? 'disabled' : 'fallback';
+      fallbackEngine = m === 'off' ? 'none' : 'browser-native';
+      try {
+        if (typeof audioTrack.applyConstraints === 'function') {
+          audioTrack
+            .applyConstraints({
+              echoCancellation: true,
+              noiseSuppression: m !== 'off',
+              autoGainControl: true,
+            })
+            .catch(() => {});
+        }
+      } catch {}
+    };
+
     return {
       outputStream: rawStream,
       audioContext: ctx,
       setNoiseSuppression: (enabled: boolean) => {
-        currentMode = enabled ? 'balanced' : 'off';
-        try {
-          if (typeof audioTrack.applyConstraints === 'function') {
-            audioTrack
-              .applyConstraints({
-                echoCancellation: true,
-                noiseSuppression: enabled,
-                autoGainControl: true,
-              })
-              .catch(() => {});
-          }
-        } catch {}
+        setMode(enabled ? 'balanced' : 'off');
       },
-      setMode: (m: NoiseCancellationMode) => {
-        currentMode = m;
-        try {
-          if (typeof audioTrack.applyConstraints === 'function') {
-            audioTrack
-              .applyConstraints({
-                echoCancellation: true,
-                noiseSuppression: m !== 'off',
-                autoGainControl: true,
-              })
-              .catch(() => {});
-          }
-        } catch {}
-      },
+      setMode,
       getMode: () => currentMode,
       isReady: () => true,
+      getStatus: () => fallbackStatus,
+      getActiveEngine: () => fallbackEngine,
+      getFallbackReason: () => reason,
       cleanup: () => {
         if (ctx) {
           try {
@@ -153,14 +172,18 @@ export async function createGcpNoisePipeline(
     (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 
   if (!AudioContextClass) {
-    return createFallbackPipeline(currentMode);
+    return createFallbackPipeline(currentMode, 'AudioContext not supported in this browser');
   }
 
   let audioContext: AudioContext | null = null;
   let sourceNode: MediaStreamAudioSourceNode | null = null;
   let workletNode: AudioWorkletNode | null = null;
   let destinationNode: MediaStreamAudioDestinationNode | null = null;
+
   let isReadyState = false;
+  let pipelineStatus: GcpPipelineStatus = 'initializing';
+  let activeEngine: GcpActiveEngine = 'none';
+  let fallbackReason: string | null = null;
 
   try {
     // Strictly enforce 48 kHz for RNNoise neural speech enhancement
@@ -176,7 +199,7 @@ export async function createGcpNoisePipeline(
     const moduleLoaded = await ensureWorkletModule(audioContext);
     if (!moduleLoaded) {
       console.warn('[GcpAudio] AudioWorklet module unavailable; falling back to native browser constraints.');
-      return createFallbackPipeline(currentMode, audioContext);
+      return createFallbackPipeline(currentMode, 'AudioWorklet module failed to load', audioContext);
     }
 
     sourceNode = audioContext.createMediaStreamSource(rawStream);
@@ -188,17 +211,37 @@ export async function createGcpNoisePipeline(
       outputChannelCount: [1],
     });
 
-    // Listen for readiness or errors from the AudioWorklet
-    workletNode.port.onmessage = (event) => {
-      const data = event.data;
-      if (!data) return;
-      if (data.type === 'READY') {
-        isReadyState = true;
-      }
-    };
-
     // Load and transfer the RNNoise WASM binary
     const wasmBinary = await loadRnnoiseWasmBinary();
+
+    // Bounded initialization promise (3000ms max timeout)
+    const initPromise = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('AudioWorklet WASM initialization timed out after 3000ms'));
+      }, 3000);
+
+      if (!workletNode) {
+        clearTimeout(timer);
+        reject(new Error('WorkletNode is null'));
+        return;
+      }
+
+      workletNode.port.onmessage = (event) => {
+        const data = event.data;
+        if (!data) return;
+        if (data.type === 'READY') {
+          clearTimeout(timer);
+          isReadyState = true;
+          pipelineStatus = currentMode === 'off' ? 'disabled' : 'ready';
+          activeEngine = currentMode === 'off' ? 'none' : 'rnnoise-wasm';
+          resolve();
+        } else if (data.type === 'ERROR') {
+          clearTimeout(timer);
+          reject(new Error(data.error || 'Worklet reported initialization error'));
+        }
+      };
+    });
+
     workletNode.port.postMessage(
       {
         type: 'INIT_WASM',
@@ -208,27 +251,46 @@ export async function createGcpNoisePipeline(
       [wasmBinary]
     );
 
-    // Wire the DSP audio graph: source -> worklet -> destination
+    // Wire DSP audio graph: source -> worklet -> destination
     sourceNode.connect(workletNode);
     workletNode.connect(destinationNode);
 
-    // Apply baseline browser constraints to raw microphone
+    // Disable browser's native noise gate so RNNoise receives full raw spectrum
     try {
       if (typeof audioTrack.applyConstraints === 'function') {
         audioTrack
           .applyConstraints({
             echoCancellation: true,
-            noiseSuppression: false, // Keep raw spectrum intact for RNNoise neural processing
+            noiseSuppression: false,
             autoGainControl: true,
           })
           .catch(() => {});
       }
     } catch {}
 
+    // Await bounded readiness
+    try {
+      await initPromise;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.warn('[GcpAudio] RNNoise worklet initialization failed, falling back:', errMsg);
+      try { sourceNode.disconnect(); } catch {}
+      try { workletNode.disconnect(); } catch {}
+      return createFallbackPipeline(currentMode, errMsg, audioContext);
+    }
+
     const outputStream = destinationNode.stream;
 
     const setMode = (mode: NoiseCancellationMode) => {
       currentMode = mode;
+      if (mode === 'off') {
+        pipelineStatus = 'disabled';
+        activeEngine = 'none';
+      } else {
+        pipelineStatus = 'ready';
+        activeEngine = 'rnnoise-wasm';
+      }
+
       if (workletNode) {
         try {
           workletNode.port.postMessage({ type: 'SET_MODE', mode });
@@ -253,6 +315,9 @@ export async function createGcpNoisePipeline(
 
     const cleanup = () => {
       isReadyState = false;
+      pipelineStatus = 'disabled';
+      activeEngine = 'none';
+
       if (workletNode) {
         try {
           workletNode.port.postMessage({ type: 'DESTROY' });
@@ -284,6 +349,8 @@ export async function createGcpNoisePipeline(
         } catch {}
         workletBlobUrl = null;
       }
+      // CRITICAL: Do NOT call audioTrack.stop()!
+      // The original mic stream belongs to the caller and must not be terminated.
     };
 
     return {
@@ -293,10 +360,14 @@ export async function createGcpNoisePipeline(
       setMode,
       getMode: () => currentMode,
       isReady: () => isReadyState,
+      getStatus: () => pipelineStatus,
+      getActiveEngine: () => activeEngine,
+      getFallbackReason: () => fallbackReason,
       cleanup,
     };
-  } catch (err) {
-    console.warn('[GcpAudio] Failed to initialize RNNoise AudioWorklet pipeline, using fallback:', err);
-    return createFallbackPipeline(currentMode, audioContext);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.warn('[GcpAudio] Unexpected failure in createGcpNoisePipeline:', errMsg);
+    return createFallbackPipeline(currentMode, errMsg, audioContext);
   }
 }

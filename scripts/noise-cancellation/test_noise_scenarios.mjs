@@ -1,7 +1,13 @@
-import createRNNWasmModule from 'file:///c:/Users/nahou/Desktop/GCP/node_modules/@jitsi/rnnoise-wasm/dist/rnnoise.js';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 
-const wasmBinary = fs.readFileSync('public/worklets/rnnoise.wasm');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rnnoiseJsPath = path.resolve(__dirname, '../../node_modules/@jitsi/rnnoise-wasm/dist/rnnoise.js');
+const wasmPath = path.resolve(__dirname, '../../public/worklets/rnnoise.wasm');
+const { default: createRNNWasmModule } = await import(pathToFileURL(rnnoiseJsPath).href);
+
+const wasmBinary = fs.readFileSync(wasmPath);
 const mod = await createRNNWasmModule({ wasmBinary });
 
 const FRAME = 480;

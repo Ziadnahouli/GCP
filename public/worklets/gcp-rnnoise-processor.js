@@ -497,19 +497,21 @@ run();
  *
  * Production Architecture & Mathematical Guarantees:
  *   1. Pre-Processing: 75Hz Butterworth High-Pass Biquad (2nd-order, Q=0.7071)
- *      - Strips DC offset, sub-audible desk vibration, and plosive wind blasts.
+ *      - Strips DC offset, sub-audible desk vibration, boom arm handling, and plosive wind blasts.
  *      - Completely preserves lowest male vocal fundamentals (lowest human bass ~85Hz).
- *   2. Sample Rate Handling & Transparent Resampling:
- *      - Native 48 kHz fast-path with zero resampling overhead.
- *      - Fractional linear interpolator for non-48kHz environments (e.g. 44.1 kHz, 16 kHz, 96 kHz).
+ *   2. Dual-Stage Fast Transient Click Suppressor (dual EMA crest-factor detector)
+ *      - Fast EMA (0.5ms) vs slow EMA (20ms) envelope tracking.
+ *      - Smooth tanh slope clamping on mechanical keyboard keycaps & mouse click shocks.
+ *      - Clamps transient spikes before RNNoise feature extraction, preventing false VAD triggers.
  *   3. Single-Pass High-Fidelity RNNoise GRU Neural Speech Enhancement (48kHz, 480 samples / 10ms frame)
  *      - Recurrent GRU hidden state preserved continuously across frames.
  *      - Zero dry-noise bleed (dryBlend = 0.0) so raw fan/keyboard noise never leaks into speech.
- *   4. Mode-Tailored Natural Acoustic Floor Expander:
+ *   4. Mode-Tailored Natural Acoustic Floor Expander with Hysteresis VAD Gating:
  *      - 'off': Bit-exact passthrough of input stream.
- *      - 'balanced': 100% neural denoised speech; gentle -24 dB downward expansion during pauses with 200ms hangover.
+ *      - 'balanced': 100% neural denoised speech; -36 dB downward expansion during pauses with 200ms hangover.
  *                    Full whisper, consonant, and syllable ending preservation.
- *      - 'strong': 100% neural denoised speech; -38 dB stationary pause attenuation with 180ms hangover.
+ *      - 'strong' / 'krisp-max': 100% neural denoised speech; -50 dB pause attenuation (digital black) with 180ms hangover.
+ *                    Heavy keyboard and mouse click suppression.
  *   5. True-Peak Soft Limiter (-1.0 dBFS)
  *      - Smooth analog-style tanh saturation headroom preventing digital overs without pumping.
  *   6. Deterministic Ring Buffer & Zero-Periodic-Underrun Conversion
@@ -565,8 +567,8 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
     this.lastSampleOut = 0.0;
 
     // Stage 1: Conservative 75 Hz Butterworth High-Pass Biquad (2nd-order, Q = 0.7071)
-    const targetHpfRate = this.needsResample ? 48000 : this.sampleRate;
-    const omegaHpf = (2 * Math.PI * 75.0) / targetHpfRate;
+    const targetRate = this.needsResample ? 48000 : this.sampleRate;
+    const omegaHpf = (2 * Math.PI * 75.0) / targetRate;
     const cosOmegaHpf = Math.cos(omegaHpf);
     const sinOmegaHpf = Math.sin(omegaHpf);
     const alphaHpf = sinOmegaHpf / (2 * 0.7071067811865476);
@@ -582,14 +584,27 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
     this.hpf_d1 = 0.0;
     this.hpf_d2 = 0.0;
 
-    // Stage 3: Smooth VAD tracker & Comfort Floor Expander
+    // Stage 1b: Fast Transient Click Suppressor (Keyboard & Mouse click rejection)
+    this.clickFastAlpha = 1.0 - Math.exp(-1.0 / (targetRate * 0.0005)); // 0.5ms fast EMA
+    this.clickSlowAlpha = 1.0 - Math.exp(-1.0 / (targetRate * 0.020));  // 20ms slow EMA
+    this.clickThresholdRatio = Math.pow(10, 12.0 / 20.0);
+    this.clickFastEnv = 0.0;
+    this.clickSlowEnv = 0.0;
+    this.clickPrevIn = 0.0;
+    this.clickPrevSample = 0.0;
+    this.clickHold = 0.0;
+
+    // Stage 3: Smooth VAD tracker & Comfort Floor Expander with Hysteresis
     this.vadProb = 0.0;
     this.vadSmooth = 0.0;
-    this.gateAttackAlpha = 1.0 - Math.exp(-1.0 / (48000 * 0.005));   // 5ms smooth attack
-    this.gateReleaseAlpha = 1.0 - Math.exp(-1.0 / (48000 * 0.120));  // 120ms gentle release
+    this.isSpeaking = false;
+    this.speechThreshold = 0.48;
+    this.speechHysteresis = 0.38;
+    this.gateAttackAlpha = 1.0 - Math.exp(-1.0 / (48000 * 0.003));   // 3ms crisp attack
+    this.gateReleaseAlpha = 1.0 - Math.exp(-1.0 / (48000 * 0.150));  // 150ms gentle release
     this.hangoverMaxSamples = Math.floor(48000 * 0.200);             // 200ms hangover
     this.hangoverRemaining = 0;
-    this.gateFloorGain = 0.063; // -24 dB comfortable natural floor for Balanced mode
+    this.gateFloorGain = 0.0158; // -36 dB comfortable natural floor for Balanced mode
     this.currentGateGain = 1.0;
 
     // Stage 4: -1.0 dBFS Soft-Brickwall Limiter
@@ -635,16 +650,52 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
     }
 
     if (mode === 'strong' || mode === 'krisp-max') {
-      this.gateFloorGain = 0.0125; // -38 dB stationary pause floor
+      this.gateFloorGain = 0.00316; // -50 dB pause floor (digital black)
+      this.speechThreshold = 0.52;
+      this.speechHysteresis = 0.42;
       this.hangoverMaxSamples = Math.floor(48000 * 0.180);
+      this.clickThresholdRatio = Math.pow(10, 10.0 / 20.0); // 10 dB aggressive click suppression
     } else if (mode === 'light') {
-      this.gateFloorGain = 0.100;  // -20 dB light pause floor
+      this.gateFloorGain = 0.050;   // -26 dB gentle pause floor
+      this.speechThreshold = 0.42;
+      this.speechHysteresis = 0.35;
       this.hangoverMaxSamples = Math.floor(48000 * 0.250);
+      this.clickThresholdRatio = Math.pow(10, 14.0 / 20.0);
     } else {
       // balanced & rnnoise-hybrid
-      this.gateFloorGain = 0.063;  // -24 dB balanced natural floor
+      this.gateFloorGain = 0.0158;  // -36 dB balanced natural floor (~20 dB quieter than raw)
+      this.speechThreshold = 0.48;
+      this.speechHysteresis = 0.38;
       this.hangoverMaxSamples = Math.floor(48000 * 0.200);
+      this.clickThresholdRatio = Math.pow(10, 12.0 / 20.0);
     }
+  }
+
+  _declick(sample, vad) {
+    const diff = Math.abs(sample - this.clickPrevIn);
+    this.clickPrevIn = sample;
+    this.clickFastEnv += this.clickFastAlpha * (diff - this.clickFastEnv);
+    this.clickSlowEnv += this.clickSlowAlpha * (diff - this.clickSlowEnv);
+
+    const safeSlow = Math.max(this.clickSlowEnv, 0.001);
+    const crest = this.clickFastEnv / safeSlow;
+    if (crest > this.clickThresholdRatio && vad < 0.70) {
+      this.clickHold = 1.0;
+    }
+    this.clickHold *= 0.95;
+
+    const maxSlope = 0.025 + 0.045 * Math.min(1.0, vad);
+    const delta = sample - this.clickPrevSample;
+    const absDelta = Math.abs(delta);
+
+    let filtered = sample;
+    if ((this.clickHold > 0.05 || absDelta > maxSlope) && vad < 0.70) {
+      const effectiveSlope = maxSlope * (1.0 - 0.75 * this.clickHold);
+      const excess = Math.max(0.0, absDelta - effectiveSlope);
+      filtered = this.clickPrevSample + Math.sign(delta) * (effectiveSlope + 0.008 * Math.tanh(excess / 0.008));
+    }
+    this.clickPrevSample = filtered;
+    return filtered;
   }
 
   async _initModule(wasmBinary) {
@@ -700,6 +751,11 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
     this.inRead = 0;
     this.outWrite = 0;
     this.outRead = 0;
+    this.clickFastEnv = 0.0;
+    this.clickSlowEnv = 0.0;
+    this.clickPrevIn = 0.0;
+    this.clickPrevSample = 0.0;
+    this.clickHold = 0.0;
   }
 
   process(inputs, outputs) {
@@ -731,7 +787,7 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Step 1: Ingest input samples, Downmix to mono, Apply Stage 1 75Hz HPF
+    // Step 1: Ingest input samples, Downmix to mono, Apply Stage 1 75Hz HPF & Stage 1b Declicker
     if (!this.needsResample) {
       // 48 kHz Fast-Path
       for (let i = 0; i < len; i++) {
@@ -751,7 +807,10 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
         this.hpf_d1 = this.hpf_b1 * rawMono - this.hpf_a1 * hpfOut + this.hpf_d2;
         this.hpf_d2 = this.hpf_b2 * rawMono - this.hpf_a2 * hpfOut;
 
-        this.inRing[this.inWrite] = hpfOut;
+        // STAGE 1b: Transient Click Suppressor (keyboard clicks & desk knocks)
+        const declicked = this._declick(hpfOut, this.vadSmooth);
+
+        this.inRing[this.inWrite] = declicked;
         this.inWrite = (this.inWrite + 1) % this.MAX_RING;
       }
       this.inCount += len;
@@ -775,7 +834,9 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
           this.hpf_d1 = this.hpf_b1 * interp - this.hpf_a1 * hpfOut + this.hpf_d2;
           this.hpf_d2 = this.hpf_b2 * interp - this.hpf_a2 * hpfOut;
 
-          this.inRing[this.inWrite] = hpfOut;
+          const declicked = this._declick(hpfOut, this.vadSmooth);
+
+          this.inRing[this.inWrite] = declicked;
           this.inWrite = (this.inWrite + 1) % this.MAX_RING;
           this.inCount++;
           this.resamplePhaseIn += this.resampleRatioIn;
@@ -804,19 +865,21 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
       this.vadProb = vadProb;
       this.vadSmooth = this.vadSmooth * 0.70 + vadProb * 0.30;
 
-      const isSpeech = (this.vadSmooth > 0.40);
-      if (isSpeech) {
+      // Hysteresis speech gate: requires speechThreshold to start, stays open down to speechHysteresis
+      const activeThreshold = this.isSpeaking ? this.speechHysteresis : this.speechThreshold;
+      this.isSpeaking = (this.vadSmooth > activeThreshold);
+      if (this.isSpeaking) {
         this.hangoverRemaining = this.hangoverMaxSamples;
       }
 
       // Process 480 samples into outRing
       for (let i = 0; i < this.FRAME_SIZE; i++) {
-        // Pure neural speech output (dryBlend = 0.0 ensures zero raw noise leakage)
+        // Pure neural speech output
         const wet = heap[outOff + i] / 32767.0;
 
         // Comfort downward expander during non-speech pauses
-        if (isSpeech || this.hangoverRemaining > 0) {
-          if (!isSpeech) this.hangoverRemaining--;
+        if (this.isSpeaking || this.hangoverRemaining > 0) {
+          if (!this.isSpeaking) this.hangoverRemaining--;
           this.currentGateGain += this.gateAttackAlpha * (1.0 - this.currentGateGain);
         } else {
           this.currentGateGain += this.gateReleaseAlpha * (this.gateFloorGain - this.currentGateGain);

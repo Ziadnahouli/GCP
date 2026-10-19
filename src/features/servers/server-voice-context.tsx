@@ -1420,7 +1420,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                   try { dspPipelineRef.current.cleanup(); } catch {}
                   dspPipelineRef.current = null;
                 }
-                const pipeline = await createGcpNoisePipeline(rawStream, isNoiseSuppressionEnabled);
+                const pipeline = await createGcpNoisePipeline(rawStream, noiseSuppressionMode);
                 if (pipeline) {
                   dspPipelineRef.current = pipeline;
                   const procTrack = pipeline.outputStream.getAudioTracks()[0];

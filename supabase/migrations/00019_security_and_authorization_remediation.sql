@@ -347,9 +347,11 @@ BEGIN
         RAISE EXCEPTION 'Not authenticated';
     END IF;
 
+    -- Row lock using FOR UPDATE to prevent race condition across concurrent joins
     SELECT * INTO inv
     FROM public.server_invites
-    WHERE code = trim(p_code);
+    WHERE code = trim(p_code)
+    FOR UPDATE;
 
     IF inv.id IS NULL THEN
         RAISE EXCEPTION 'Invalid invite code';
@@ -380,12 +382,17 @@ BEGIN
         SELECT 1 FROM public.server_members
         WHERE server_id = v_server_id AND user_id = caller_id
     ) THEN
-        INSERT INTO public.server_members (server_id, user_id, role)
-        VALUES (v_server_id, caller_id, 'member');
-
+        -- Atomic increment with conditional guard
         UPDATE public.server_invites
         SET uses = uses + 1
-        WHERE id = inv.id;
+        WHERE id = inv.id AND (max_uses = 0 OR uses < max_uses);
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Invite code has reached its maximum uses';
+        END IF;
+
+        INSERT INTO public.server_members (server_id, user_id, role)
+        VALUES (v_server_id, caller_id, 'member');
     END IF;
 
     RETURN jsonb_build_object(

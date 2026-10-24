@@ -452,8 +452,8 @@ BEGIN
         RAISE EXCEPTION 'Insufficient permissions to create server invites';
     END IF;
 
-    -- Generate a clean 8-character invite code
-    v_code := LOWER(SUBSTRING(MD5(RANDOM()::TEXT || CLOCK_TIMESTAMP()::TEXT) FROM 1 FOR 8));
+    -- Generate a cryptographically secure 16-hex character invite code (64 bits CSPRNG entropy)
+    v_code := SUBSTRING(REPLACE(gen_random_uuid()::TEXT, '-', '') FROM 1 FOR 16);
 
     IF p_expires_in_hours > 0 THEN
         v_expires_at := NOW() + (p_expires_in_hours * INTERVAL '1 hour');

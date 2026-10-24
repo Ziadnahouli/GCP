@@ -12,7 +12,20 @@ const tokenRequestSchema = z.object({
   userName: z.string().optional().nullable(),
 });
 
-// High-performance bounded in-memory sliding-window rate limiter
+/**
+ * High-performance bounded in-memory sliding-window rate limiter.
+ * 
+ * NOTE / ARCHITECTURAL LIMITATION:
+ * In serverless environments (e.g. Vercel / AWS Lambda) or multi-instance container
+ * deployments, this in-memory Map is local to the active lambda / worker process and
+ * is NOT shared across instances. It serves as a best-effort defense-in-depth limiter
+ * against local burst loops.
+ * 
+ * Production deployments requiring strict distributed rate limiting across horizontal
+ * instances should use a shared distributed store such as:
+ *   - Upstash Redis (@upstash/ratelimit) via HTTP/REST
+ *   - A persistent Supabase rate_limits table with atomic counter updates
+ */
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS_PER_WINDOW = 30;
 const MAX_RATE_LIMIT_ENTRIES = 1000;

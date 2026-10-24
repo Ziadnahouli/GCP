@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import {
   Settings,
   Shield,
@@ -105,6 +106,12 @@ export function ServerSettingsModal({
     dismissReport,
   } = useServers();
   const { toast } = useToast();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [activeTab, setActiveTab] = React.useState<
     'overview' | 'channels' | 'roles' | 'members' | 'invites' | 'bans' | 'audit' | 'reports' | 'danger'
   >('overview');
@@ -321,7 +328,9 @@ export function ServerSettingsModal({
 
   const PRESET_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#06b6d4'];
 
-  return (
+  if (!open || !mounted || typeof document === 'undefined') return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 select-none animate-in fade-in duration-200">
       {/* Backdrop */}
       <div
@@ -366,7 +375,7 @@ export function ServerSettingsModal({
               <Hash className="w-3.5 h-3.5" />
               <span>Channels</span>
               <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 border-white/[0.1]">
-                {server.channels.length}
+                {server.channels?.length || 0}
               </Badge>
             </button>
 
@@ -485,7 +494,7 @@ export function ServerSettingsModal({
         </aside>
 
         {/* Right Content View */}
-        <main className="flex-1 flex flex-col min-w-0 bg-surface-default overflow-hidden relative">
+        <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-surface-default overflow-hidden relative">
           {/* Top Title Bar with Close Button */}
           <div className="h-14 border-b border-white/[0.06] px-6 flex items-center justify-between shrink-0">
             <div>
@@ -1606,6 +1615,7 @@ export function ServerSettingsModal({
           </div>
         </main>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

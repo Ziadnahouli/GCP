@@ -1,5 +1,6 @@
-import { NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
 'use client';
+
+import { NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
 
 import * as React from 'react';
 import {
@@ -848,7 +849,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         onClose={() => onOpenChange(false)}
       >
         {/* Modern Gaming Navigation Sidebar */}
-        <div className="w-full md:w-64 bg-[#0d0e15] p-3 md:p-4 border-b md:border-b-0 md:border-r border-white/[0.06] shrink-0 flex flex-row md:flex-col justify-between overflow-x-auto md:overflow-x-visible gap-2 no-scrollbar select-none">
+        <div className="w-full md:w-64 md:h-full bg-[#0d0e15] p-3 md:p-4 border-b md:border-b-0 md:border-r border-white/[0.06] shrink-0 flex flex-row md:flex-col justify-between overflow-x-auto md:overflow-x-visible gap-2 no-scrollbar select-none">
           <div className="space-y-4 w-full">
             {/* Header & Logo badge */}
             <div className="hidden md:flex items-center gap-2.5 px-2.5 py-1 text-xs font-bold text-foreground">
@@ -1006,7 +1007,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </div>
 
         {/* Settings Body Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-[#090a0f] relative custom-scrollbar">
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto p-4 md:p-6 bg-[#090a0f] relative custom-scrollbar">
           {/* TAB 1: GAMER PROFILE */}
           {activeTab === 'profile' && (
             <div className="space-y-6 max-w-3xl w-full pb-16">

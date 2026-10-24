@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import {
   Volume2,
   VolumeX,
@@ -58,8 +59,13 @@ export function SoundboardModal({
   const [uploadDuration, setUploadDuration] = React.useState<number>(0);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [mounted, setMounted] = React.useState(false);
 
-  if (!open) return null;
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!open || !mounted || typeof document === 'undefined') return null;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -131,7 +137,9 @@ export function SoundboardModal({
     { id: 'custom', label: 'My Uploads' },
   ];
 
-  return (
+  if (!open || !mounted || typeof document === 'undefined') return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
@@ -474,6 +482,7 @@ export function SoundboardModal({
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

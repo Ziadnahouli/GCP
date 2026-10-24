@@ -337,8 +337,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     // 2. Attach track to a dedicated DOM audio element
     const el = track.attach();
     el.id = `remote-livekit-audio-${peerId}`;
+    const vol = isDeafenedRef.current ? 0 : Math.max(0, Math.min(1, (incomingVolumeRef.current ?? 100) / 100));
     el.muted = isDeafenedRef.current;
-    el.volume = isDeafenedRef.current ? 0 : incomingVolumeRef.current / 100;
+    el.volume = vol;
     el.autoplay = true;
     el.setAttribute('playsinline', 'true');
 
@@ -352,18 +353,29 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       }
     } catch {}
 
-    el.style.position = 'fixed';
-    el.style.top = '-9999px';
-    el.style.left = '-9999px';
-    el.style.width = '1px';
-    el.style.height = '1px';
-    el.style.opacity = '0';
-    el.style.pointerEvents = 'none';
-
-    if (!document.body.contains(el)) {
+    let container = document.getElementById('nexus-voice-audio-container');
+    if (!container && typeof document !== 'undefined') {
+      container = document.createElement('div');
+      container.id = 'nexus-voice-audio-container';
+      container.setAttribute('aria-hidden', 'true');
+      container.style.position = 'fixed';
+      container.style.bottom = '0';
+      container.style.right = '0';
+      container.style.width = '0';
+      container.style.height = '0';
+      container.style.overflow = 'hidden';
+      document.body.appendChild(container);
+    }
+    if (container && !container.contains(el)) {
+      container.appendChild(el);
+    } else if (!document.body.contains(el)) {
       document.body.appendChild(el);
     }
     audioElementsRef.current.set(peerId, el);
+
+    if (livekitRoomRef.current) {
+      livekitRoomRef.current.startAudio().catch(() => {});
+    }
 
     const playPromise = el.play();
     if (playPromise !== undefined) {
@@ -1266,13 +1278,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
             // Publish local audio track to LiveKit Cloud SFU
             try {
-              let localAudioTrack: any;
-              const existingAudioTrack = stream?.getAudioTracks()[0] || localStreamRef.current?.getAudioTracks()[0];
+              let localAudioTrack: InstanceType<typeof LocalAudioTrack> | null = null;
+              const activeAudioTrack = stream?.getAudioTracks()[0] || localStreamRef.current?.getAudioTracks()[0];
               const { LocalAudioTrack, createLocalAudioTrack } = await import('livekit-client');
 
-              // Obtain an active AudioContext strictly for LocalAudioTrack processor / Web Audio DSP support
-              // Note: Never assign audioContext to lkRoom, as that forces connectWebAudio on remote tracks which mutes them
-              const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+              const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
               const audioCtx =
                 audioContextRef.current ||
                 (AudioCtx ? new AudioCtx({ latencyHint: 'interactive' }) : undefined);
@@ -1280,59 +1290,31 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 audioCtx.resume().catch(() => {});
               }
 
-              // Route audio through GCP Studio AudioWorklet Noise Cancellation Pipeline
-              let rawStream: MediaStream;
-              if (existingAudioTrack && existingAudioTrack.readyState === 'live') {
-                rawStream = new MediaStream([existingAudioTrack]);
-              } else if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-                const savedMicId = (typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null);
-                const policy = noiseSuppressionMode === 'off' ? 'off' : 'rnnoise';
-                rawStream = await navigator.mediaDevices.getUserMedia({
-                  audio: getUserMediaAudioConstraints(policy, savedMicId),
-                });
+              if (activeAudioTrack && activeAudioTrack.readyState === 'live') {
+                localAudioTrack = new LocalAudioTrack(activeAudioTrack, undefined, true, audioCtx);
               } else {
-                const fallbackTrack = await createLocalAudioTrack({
+                localAudioTrack = await createLocalAudioTrack({
                   echoCancellation: true,
                   noiseSuppression: true,
                   autoGainControl: true,
                 });
-                rawStream = new MediaStream([fallbackTrack.mediaStreamTrack]);
               }
 
-              let finalAudioTrack = rawStream.getAudioTracks()[0];
-              try {
-                if (dspPipelineRef.current) {
-                  try { dspPipelineRef.current.cleanup(); } catch {}
-                  dspPipelineRef.current = null;
-                }
-                const pipeline = await createGcpNoisePipeline(rawStream, noiseSuppressionMode);
-                if (pipeline) {
-                  dspPipelineRef.current = pipeline;
-                  const procTrack = pipeline.outputStream.getAudioTracks()[0];
-                  if (procTrack) {
-                    finalAudioTrack = procTrack;
-                  }
-                }
-              } catch (dspErr) {
-                console.warn('[LiveKit Voice] GCP Noise Pipeline initialization notice:', dspErr);
-              }
-
-              if (finalAudioTrack) {
-                const filteredStream = new MediaStream([finalAudioTrack]);
-                setLocalStream(filteredStream);
-                localStreamRef.current = filteredStream;
-                localAudioTrack = new LocalAudioTrack(finalAudioTrack, undefined, true, audioCtx);
-              } else {
-                localAudioTrack = await createLocalAudioTrack();
-              }
-
-              if (audioCtx) {
+              if (audioCtx && localAudioTrack) {
                 try {
                   localAudioTrack.setAudioContext(audioCtx);
                 } catch {}
-                try {
-                  (localAudioTrack as any).audioContext = audioCtx;
-                } catch {}
+              }
+
+              if (localAudioTrack) {
+                await lkRoom.localParticipant.publishTrack(localAudioTrack, {
+                  source: Track.Source.Microphone,
+                });
+                if (isMicMutedRef.current) {
+                  try {
+                    await localAudioTrack.mute();
+                  } catch {}
+                }
               }
 
               await lkRoom.localParticipant.publishTrack(localAudioTrack, {

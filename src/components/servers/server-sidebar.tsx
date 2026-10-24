@@ -277,20 +277,26 @@ export function ServerSidebar({
   const memberCount = (server.members?.length || 0) + 1;
 
   return (
-    <aside className="w-60 h-full bg-surface-sidebar border-r border-white/[0.06] flex flex-col justify-between select-none shrink-0 z-20">
+    <aside className="w-full h-full bg-surface-sidebar flex flex-col justify-between select-none shrink-0 z-20 border-r-0">
       <div className="overflow-y-auto flex-1 no-scrollbar">
         {/* Server Top Header / Dropdown Trigger */}
         <div className="relative">
           <button
             onClick={() => setShowMenu((prev) => !prev)}
-            className="w-full h-12 border-b border-white/[0.06] px-3.5 flex items-center justify-between hover:bg-white/[0.03] transition-colors group text-left"
+            className="w-full h-14 border-b border-white/[0.06] px-3.5 flex items-center justify-between hover:bg-white/[0.03] transition-colors group text-left bg-gradient-to-b from-white/[0.04] to-transparent"
           >
-            <div className="min-w-0 flex-1 pr-2">
-              <h2 className="font-bold text-xs text-foreground truncate group-hover:text-primary transition-colors flex items-center gap-1.5">
-                <span className="truncate">{server.name}</span>
-              </h2>
-              <div className="text-[10px] text-muted-foreground/60 truncate font-mono">
-                {memberCount} {memberCount === 1 ? 'member' : 'members'} online
+            <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+              <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center font-bold text-xs text-primary shadow-sm shrink-0">
+                {server.name ? server.name.charAt(0).toUpperCase() : 'S'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-bold text-xs text-foreground truncate group-hover:text-primary transition-colors flex items-center gap-1.5 leading-snug">
+                  <span className="truncate">{server.name}</span>
+                </h2>
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60 font-mono mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50 animate-pulse" />
+                  <span>{memberCount} {memberCount === 1 ? 'member' : 'members'} online</span>
+                </div>
               </div>
             </div>
 
@@ -304,7 +310,7 @@ export function ServerSidebar({
 
           {/* Server Action Dropdown */}
           {showMenu && (
-            <div className="absolute top-13 left-2 right-2 z-40 bg-card border border-white/[0.08] rounded-xl shadow-panel p-1 space-y-0.5 animate-in fade-in duration-100">
+            <div className="absolute top-14 left-2 right-2 z-40 bg-card border border-white/[0.08] rounded-xl shadow-panel p-1.5 space-y-0.5 animate-in fade-in duration-100 backdrop-blur-md">
               {canManageServer && (
                 <button
                   onClick={() => {
@@ -346,13 +352,15 @@ export function ServerSidebar({
         </div>
 
         {/* Quick Switch to Direct Messages & Friends */}
-        <div className="p-2 border-b border-white/[0.06]">
+        <div className="p-2.5 border-b border-white/[0.06]">
           <button
             onClick={() => router.push('/')}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] text-muted-foreground hover:text-foreground font-medium text-xs transition-colors border border-white/[0.06] text-left"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-gradient-to-r from-primary/10 via-white/[0.03] to-transparent hover:from-primary/20 hover:via-white/[0.06] border border-primary/25 hover:border-primary/40 text-foreground text-xs font-semibold shadow-sm transition-all text-left group"
             title="Switch to Direct Messages & Friends Hub"
           >
-            <MessageSquare className="w-3.5 h-3.5 shrink-0 text-primary" />
+            <div className="w-6 h-6 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shrink-0 group-hover:scale-105 transition-transform">
+              <MessageSquare className="w-3.5 h-3.5" />
+            </div>
             <div className="min-w-0 flex-1">
               <div className="truncate font-semibold text-foreground text-xs">Direct Messages</div>
               <div className="text-[10px] text-muted-foreground/60 font-normal truncate">
@@ -363,10 +371,13 @@ export function ServerSidebar({
         </div>
 
         {/* Text Channels Category */}
-        <div className="p-2 mt-0.5">
-          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 px-2 py-1">
-            <span className="flex items-center gap-1">
+        <div className="p-2.5 mt-0.5">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 px-2 py-1.5">
+            <span className="flex items-center gap-1.5">
               <span>Text Channels</span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-white/[0.04] text-muted-foreground/60 font-mono font-normal">
+                {textChannels.length}
+              </span>
             </span>
             {canManageChannels && (
               <button
@@ -383,7 +394,7 @@ export function ServerSidebar({
             )}
           </div>
 
-          <div className="space-y-0.5 mt-0.5">
+          <div className="space-y-0.5 mt-1">
             {textChannels.map((channel) => {
               const isActive = activeChannelId === channel.id;
 
@@ -392,10 +403,10 @@ export function ServerSidebar({
                   key={channel.id}
                   onClick={() => onSelectChannel(channel)}
                   className={cn(
-                    'group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors relative',
+                    'group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all relative',
                     isActive
-                      ? 'bg-white/[0.06] text-foreground font-semibold'
-                      : 'text-muted-foreground hover:bg-white/[0.03] hover:text-foreground'
+                      ? 'bg-primary/10 text-primary font-semibold border border-primary/20 shadow-sm'
+                      : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground border border-transparent'
                   )}
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -427,7 +438,7 @@ export function ServerSidebar({
                   </div>
 
                   {isActive && (
-                    <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-primary rounded-r" />
+                    <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-primary rounded-r-full shadow-[0_0_8px_rgba(var(--primary-rgb),0.8)]" />
                   )}
                 </div>
               );
@@ -436,10 +447,13 @@ export function ServerSidebar({
         </div>
 
         {/* Voice Channels Category */}
-        <div className="p-2 pt-1">
-          <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 px-2 py-1">
-            <span className="flex items-center gap-1">
+        <div className="p-2.5 pt-1">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 px-2 py-1.5">
+            <span className="flex items-center gap-1.5">
               <span>Voice Lounges</span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-400/80 font-mono font-normal">
+                {voiceChannels.length}
+              </span>
             </span>
             {canManageChannels && (
               <button
@@ -456,7 +470,7 @@ export function ServerSidebar({
             )}
           </div>
 
-          <div className="space-y-1 mt-0.5">
+          <div className="space-y-1 mt-1">
             {voiceChannels.map((channel) => {
               const isSelected = activeChannelId === channel.id;
               const isVoiceConnectedToThis =
@@ -464,7 +478,7 @@ export function ServerSidebar({
                 serverVoice.activeChannelId?.toLowerCase().trim() === channel.id.toLowerCase().trim();
 
               return (
-                <div key={channel.id} className="space-y-0.5">
+                <div key={channel.id} className="space-y-1">
                   <div
                     onClick={() => {
                       onSelectChannel(channel);
@@ -473,9 +487,9 @@ export function ServerSidebar({
                       }
                     }}
                     className={cn(
-                      'group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all border',
+                      'group flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all border',
                       isVoiceConnectedToThis
-                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35 shadow-sm shadow-emerald-500/10'
                         : isSelected
                         ? 'bg-white/[0.06] text-foreground border-white/[0.1]'
                         : 'hover:bg-emerald-500/10 hover:text-emerald-400 text-muted-foreground border-transparent hover:border-emerald-500/20'
@@ -484,26 +498,26 @@ export function ServerSidebar({
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <Volume2
                         className={cn(
-                          'w-3.5 h-3.5 shrink-0 transition-colors',
+                          'w-4 h-4 shrink-0 transition-colors',
                           isVoiceConnectedToThis ? 'text-emerald-400 animate-pulse' : 'text-emerald-400/80'
                         )}
                       />
                       <span className="truncate">{channel.name}</span>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       {isVoiceConnectedToThis ? (
                         <Badge
                           variant="outline"
-                          className="text-[9px] px-1.5 py-0 border-emerald-500/50 text-emerald-300 bg-emerald-500/20 font-mono flex items-center gap-1"
+                          className="text-[9px] px-2 py-0.5 border-emerald-500/50 text-emerald-300 bg-emerald-500/20 font-mono flex items-center gap-1.5 shadow-sm"
                         >
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/60 animate-ping" />
                           <span>Connected</span>
                         </Badge>
                       ) : (
                         <Badge
                           variant="outline"
-                          className="text-[9px] px-1.5 py-0 border-white/[0.08] text-muted-foreground group-hover:border-emerald-500/30 group-hover:text-emerald-400 font-mono"
+                          className="text-[9px] px-2 py-0.5 border-white/[0.08] text-muted-foreground/80 group-hover:border-emerald-500/30 group-hover:text-emerald-400 font-mono transition-colors"
                         >
                           Join
                         </Badge>
@@ -532,7 +546,7 @@ export function ServerSidebar({
                     const occupants = getChannelOccupants(channel.id);
                     if (occupants.length === 0) {
                       return isVoiceConnectedToThis ? (
-                        <div className="pl-6 py-0.5 flex items-center gap-1.5 text-[10px] text-emerald-400/90 font-mono">
+                        <div className="pl-7 py-0.5 flex items-center gap-1.5 text-[10px] text-emerald-400/90 font-mono">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                           <span>Voice Lounge Connected</span>
                         </div>
@@ -540,7 +554,7 @@ export function ServerSidebar({
                     }
 
                     return (
-                      <div className="space-y-0.5 pl-3 pr-1 py-0.5 animate-in fade-in duration-150">
+                      <div className="border-l-2 border-emerald-500/20 ml-4 pl-3 my-1 space-y-1 animate-in fade-in duration-150">
                         {occupants.map((occ) => {
                           const isCurrentUser = user?.id === occ.user_id;
 

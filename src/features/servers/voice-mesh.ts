@@ -160,8 +160,20 @@ export function setupRemoteAudioElement(
       audioEl.id = `remote-voice-audio-${remoteUserId}`;
       audioEl.autoplay = true;
       audioEl.setAttribute('playsinline', 'true');
-      audioEl.style.display = 'none';
-      document.body.appendChild(audioEl);
+      let container = document.getElementById('nexus-voice-audio-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'nexus-voice-audio-container';
+        container.setAttribute('aria-hidden', 'true');
+        container.style.position = 'fixed';
+        container.style.bottom = '0';
+        container.style.right = '0';
+        container.style.width = '0';
+        container.style.height = '0';
+        container.style.overflow = 'hidden';
+        document.body.appendChild(container);
+      }
+      container.appendChild(audioEl);
     }
   }
 

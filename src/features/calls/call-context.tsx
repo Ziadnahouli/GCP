@@ -1882,7 +1882,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!user?.id || !supabase) return;
 
     const personalChannelName = `user-signals-${user.id}`;
-    const myChannel = realtimeHub.acquire(personalChannelName, undefined, supabase);
+    const myChannel = realtimeHub.acquire(personalChannelName, { config: { private: true } }, supabase);
 
     myChannel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
@@ -2136,6 +2136,74 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         stopMediaTracksRef.current();
         toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
       })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'call_sessions',
+        },
+        async (changePayload: { new?: { id?: string; status?: string; caller_id?: string; conversation_id?: string; is_video?: boolean } }) => {
+          const row = changePayload?.new;
+          if (!row || row.status !== 'ringing' || row.caller_id === user.id) return;
+          if (callStatusRef.current !== 'idle' || activeConversationIdRef.current) return;
+
+          // Check if current user is a member of this conversation
+          try {
+            const { data: member } = await supabase
+              .from('conversation_members')
+              .select('conversation_id')
+              .eq('conversation_id', row.conversation_id)
+              .eq('user_id', user.id)
+              .maybeSingle();
+
+            if (member && row.caller_id && row.conversation_id) {
+              const { data: callerProf } = await supabase
+                .from('profiles')
+                .select('id, display_name, username, avatar_url')
+                .eq('id', row.caller_id)
+                .maybeSingle();
+
+              const { data: conv } = await supabase
+                .from('conversations')
+                .select('name, is_group, type')
+                .eq('id', row.conversation_id)
+                .maybeSingle();
+
+              const isGroup = conv?.type === 'group' || (conv as any)?.is_group;
+
+              const payload: IncomingCallData = {
+                id: row.id,
+                callerId: row.caller_id,
+                callerName: callerProf?.display_name || callerProf?.username || 'Squadmate',
+                callerAvatar: callerProf?.avatar_url || null,
+                targetUserId: user.id,
+                conversationId: row.conversation_id,
+                isVideo: Boolean(row.is_video),
+                isGroup: Boolean(isGroup),
+                groupName: conv?.name || 'Squad',
+              };
+
+              callStatusRef.current = 'incoming_ringing';
+              activeConversationIdRef.current = payload.conversationId;
+              peerUserIdRef.current = payload.callerId;
+              incomingCallRef.current = payload;
+              setIncomingCall(payload);
+              setCallStatus('incoming_ringing');
+              setActiveConversationId(payload.conversationId);
+              setPeerUserId(payload.callerId);
+
+              if (!ringtoneRef.current && !RingtonePlayer.isPlaying()) {
+                const player = new RingtonePlayer();
+                player.start();
+                ringtoneRef.current = player;
+              }
+            }
+          } catch (err) {
+            console.warn('[CallSignaling] Error checking postgres call_session notification:', err);
+          }
+        }
+      )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           // If newly connecting / opening the app, query recent ringing calls for late joiners

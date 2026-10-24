@@ -46,8 +46,8 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        'h-full bg-surface-sidebar border-r border-white/[0.06] flex flex-col justify-between transition-all duration-150 select-none shrink-0 z-20',
-        collapsed ? 'w-16' : 'w-56'
+        'w-full h-full bg-surface-sidebar flex flex-col justify-between transition-all duration-150 select-none shrink-0 z-20 border-r-0',
+        collapsed ? 'w-16 items-center' : 'w-full'
       )}
     >
       {/* Top Header / App Brand */}

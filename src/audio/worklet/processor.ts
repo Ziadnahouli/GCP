@@ -32,7 +32,7 @@ declare const createRNNWasmModule: any;
 export class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
   FRAME_SIZE = 480;
   MAX_RING = 8192;
-  PRIME_THRESHOLD = 512;
+  PRIME_THRESHOLD = 256;
   sampleRate: number;
 
   // Ring buffers
@@ -352,13 +352,15 @@ export class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
       }
       this.outCount -= len;
     } else {
-      // Underrun or priming
+      // Underrun or priming: gracefully output dry input to prevent audio dropouts/stutters
       if (this.isPrimed) {
         this.underruns++;
       }
       for (let i = 0; i < len; i++) {
+        const dryVal = inputChannel0[i] || 0.0;
+        this.outputRmsAccum += dryVal * dryVal;
         for (let ch = 0; ch < numOutputChannels; ch++) {
-          output[ch][i] = 0.0;
+          output[ch][i] = input[ch] ? input[ch][i] : dryVal;
         }
       }
     }

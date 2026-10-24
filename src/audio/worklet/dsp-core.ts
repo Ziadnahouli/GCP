@@ -27,27 +27,27 @@ export const MODE_CONFIGS: Record<NoiseCancellationMode, GateModeConfig> = {
   },
   light: {
     floorGain: 0.0501, // -26 dB gentle acoustic floor (preserves whispers and quiet breathing)
-    speechThreshold: 0.40,
-    speechHysteresis: 0.32,
-    hangoverSamples: Math.floor(48000 * 0.250), // 250 ms
+    speechThreshold: 0.28,
+    speechHysteresis: 0.20,
+    hangoverSamples: Math.floor(48000 * 0.450), // 450 ms generous hangover
     attackAlpha: 1.0 - Math.exp(-1.0 / (48000 * 0.003)),
-    releaseAlpha: 1.0 - Math.exp(-1.0 / (48000 * 0.200)),
+    releaseAlpha: 1.0 - Math.exp(-1.0 / (48000 * 0.250)),
   },
   balanced: {
     floorGain: 0.0158, // -36 dB balanced natural floor (~20 dB quieter than raw mic)
-    speechThreshold: 0.45,
-    speechHysteresis: 0.35,
-    hangoverSamples: Math.floor(48000 * 0.220), // 220 ms
+    speechThreshold: 0.35,
+    speechHysteresis: 0.25,
+    hangoverSamples: Math.floor(48000 * 0.250), // 250 ms
     attackAlpha: 1.0 - Math.exp(-1.0 / (48000 * 0.003)),
     releaseAlpha: 1.0 - Math.exp(-1.0 / (48000 * 0.180)),
   },
   strong: {
-    floorGain: 0.0100, // -40 dB robust floor (replaces harsh -50 dB digital black to avoid codec cutting)
-    speechThreshold: 0.50,
-    speechHysteresis: 0.38,
-    hangoverSamples: Math.floor(48000 * 0.200), // 200 ms
+    floorGain: 0.0158, // -36 dB robust floor (avoids harsh digital black and codec cutting)
+    speechThreshold: 0.38,
+    speechHysteresis: 0.26,
+    hangoverSamples: Math.floor(48000 * 0.400), // 400 ms
     attackAlpha: 1.0 - Math.exp(-1.0 / (48000 * 0.003)),
-    releaseAlpha: 1.0 - Math.exp(-1.0 / (48000 * 0.150)),
+    releaseAlpha: 1.0 - Math.exp(-1.0 / (48000 * 0.180)),
   },
 };
 

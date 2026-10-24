@@ -12,7 +12,7 @@ Nexus is a production-minded gaming communication platform designed for squads a
   * Dynamic accent themes: **Violet Neon** (default), **Cyber Cyan**, **Vanguard Emerald**, **Crimson Fury**, and **Solar Amber**.
   * Custom slim gaming scrollbars and subtle glow accents (`glow-primary`).
 * **Persistent Bottom User Panel**:
-  * User avatar with live presence indicator (**Online**, **Idle**, **Do Not Disturb**, **Invisible**).
+  * User avatar with live presence indicator (**Online**, **Idle**, **Do Not Disturb**).
   * Presence Status dropdown menu.
   * Instant Microphone Mute & Headset Deafen controls with toast alerts.
   * User Settings trigger.
@@ -125,14 +125,8 @@ npm install
 ```
 
 ### 2. Run Database Migrations in Supabase
-In your [Supabase Dashboard SQL Editor](https://supabase.com/dashboard/project/osdxqhclhconrehnjxtl/sql):
-1. Execute `00001_initial_schema.sql` (if not already done).
-2. Execute `00002_social_and_messaging_rls.sql` (if not already done).
-3. Execute `00003_attachments_and_reactions.sql` (for attachments and reactions).
-4. Execute `00004_servers_and_channels.sql` (for servers, channels, and roles).
-5. Execute `00005_fix_rls_recursion.sql` (resolves recursive RLS subquery locks).
-6. Execute `00006_realtime_replica_identity.sql` (configures replica identity for Realtime events).
-7. Execute `00007_storage_buckets_and_call_sessions_rls.sql` (creates storage buckets and call sessions RLS).
+In your Supabase Dashboard SQL Editor:
+Execute migrations in numerical order from `00001_initial_schema.sql` through `00019_security_and_authorization_remediation.sql`.
 
 ### 3. Run Development Server
 ```bash
@@ -180,4 +174,4 @@ npm run build
 * **Phase 6 [COMPLETED]**: Gaming Soundboard engine, procedural audio synthesizers, call media stream mixing, global hotkeys (`1-9`), and custom uploads.
 * **Phase 7 [COMPLETED]**: Servers, text/voice channels, role hierarchy (Owner, Officer, Member), and squad members lists.
 * **Phase 8 [COMPLETED]**: ZeroTier & LAN direct networking control center, virtual IP manager, direct P2P ping benchmark, and Tauri Windows desktop companion.
-* **Phase 9 [COMPLETED]**: Production build compilation, security hardening, and test automation (45/45 tests passing).
+* **Phase 9 [COMPLETED]**: Production build compilation, security hardening, and test automation (227+ tests passing).

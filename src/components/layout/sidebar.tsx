@@ -280,7 +280,9 @@ export function Sidebar({
                   key={server.id}
                   onClick={() =>
                     router.push(
-                      `/?s=${server.id}&ch=${server.channels?.[0]?.id || `default-chan-${server.id}`}`
+                      server.channels?.[0]?.id
+                        ? `/?s=${server.id}&ch=${server.channels[0].id}`
+                        : `/?s=${server.id}`
                     )
                   }
                   className={cn(

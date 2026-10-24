@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Mic, MicOff, Headphones, Settings, ChevronUp, Sparkles, LogOut, Terminal } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
-import { useCallContext } from '@/features/calls/call-context';
+import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { useServerVoiceContext } from '@/features/servers/server-voice-context';
 import { Avatar } from '@/components/ui/avatar';
 import { StatusSelector } from './status-selector';
@@ -18,7 +18,8 @@ import { debugLogger } from '@/lib/logger/debug-logger';
 export function UserBar() {
   const { profile, updateProfile, signOut } = useAuth();
   const { toast } = useToast();
-  const call = useCallContext();
+  const callState = useCallState();
+  const callActions = useCallActions();
   const serverVoice = useServerVoiceContext();
 
   const [localMuted, setLocalMuted] = React.useState(false);
@@ -28,17 +29,17 @@ export function UserBar() {
   const [showSoundboard, setShowSoundboard] = React.useState(false);
   const [hasErrors, setHasErrors] = React.useState(false);
 
-  const isInPrivateCall = call.callStatus !== 'idle';
+  const isInPrivateCall = callState.callStatus !== 'idle';
   const isInServerVoice = Boolean(serverVoice.isVoiceConnected);
 
   const isMuted = isInPrivateCall
-    ? call.isMicMuted
+    ? callState.isMicMuted
     : isInServerVoice
     ? serverVoice.isMicMuted
     : localMuted;
 
   const isDeafened = isInPrivateCall
-    ? call.isDeafened
+    ? callState.isDeafened
     : isInServerVoice
     ? serverVoice.isDeafened
     : localDeafened;
@@ -53,7 +54,7 @@ export function UserBar() {
 
   const handleToggleMic = () => {
     if (isInPrivateCall) {
-      call.toggleMic();
+      callActions.toggleMic();
       return;
     }
     if (isInServerVoice) {
@@ -72,7 +73,7 @@ export function UserBar() {
 
   const handleToggleDeafen = () => {
     if (isInPrivateCall) {
-      call.toggleDeafen();
+      callActions.toggleDeafen();
       return;
     }
     if (isInServerVoice) {

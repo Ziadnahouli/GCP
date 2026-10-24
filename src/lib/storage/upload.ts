@@ -17,6 +17,22 @@ export const ALLOWED_MIME_TYPES = [
   'application/zip',
 ];
 
+export const ALLOWED_EXTENSIONS = [
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.mp4',
+  '.webm',
+  '.mp3',
+  '.ogg',
+  '.wav',
+  '.pdf',
+  '.txt',
+  '.zip',
+];
+
 const DISALLOWED_EXTENSIONS = [
   '.exe',
   '.bat',
@@ -34,6 +50,15 @@ const DISALLOWED_EXTENSIONS = [
   '.js',
   '.mjs',
   '.php',
+  '.ps1',
+  '.apk',
+  '.dmg',
+  '.lnk',
+  '.hta',
+  '.com',
+  '.msix',
+  '.app',
+  '.appimage',
 ];
 
 export function validateFile(file: File): { valid: boolean; error?: string } {
@@ -67,7 +92,7 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
     };
   }
 
-  // Primary extension check
+  // Primary extension check against disallowed list
   for (const ext of DISALLOWED_EXTENSIONS) {
     if (name.endsWith(ext)) {
       return {
@@ -89,6 +114,15 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
         };
       }
     }
+  }
+
+  // Extension allowlist check
+  const fileExt = name.includes('.') ? `.${name.split('.').pop()}` : '';
+  if (!fileExt || !ALLOWED_EXTENSIONS.includes(fileExt)) {
+    return {
+      valid: false,
+      error: `File extension (${fileExt || 'none'}) is not permitted. Allowed extensions: ${ALLOWED_EXTENSIONS.join(', ')}`,
+    };
   }
 
   // Explicitly block SVG MIME type
@@ -124,9 +158,12 @@ export function formatFileSize(bytes: number): string {
 }
 
 export function sanitizeFileName(originalName: string): string {
-  const extension = originalName.includes('.')
-    ? `.${originalName.split('.').pop()?.toLowerCase()}`
+  const rawExt = originalName.includes('.')
+    ? originalName.split('.').pop()?.toLowerCase() || ''
     : '';
+  const sanitizedExt = rawExt.replace(/[^a-z0-9]/g, '').slice(0, 10);
+  const extension = sanitizedExt ? `.${sanitizedExt}` : '';
+
   const baseName = originalName
     .replace(/\.[^/.]+$/, '')
     .replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -147,10 +184,7 @@ export async function resolveAttachmentSignedUrl(
     if (!signErr && signData?.signedUrl) {
       return signData.signedUrl;
     }
-
-    // Fallback to public URL if signed URL creation is unavailable
-    const { data: pubData } = supabase.storage.from('attachments').getPublicUrl(storagePath);
-    return pubData?.publicUrl || null;
+    return null;
   } catch {
     return null;
   }
@@ -186,20 +220,19 @@ export async function uploadAttachmentFile({
       return { storagePath: null, publicUrl: null, error: uploadErr.message };
     }
 
-    // Attempt to acquire a secure signed URL for private attachments
+    // Acquire a secure signed URL for private attachments
     let resolvedUrl: string | null = null;
     try {
-      const { data: signData } = await supabase.storage
+      const { data: signData, error: signErr } = await supabase.storage
         .from('attachments')
         .createSignedUrl(path, 86400); // 24 hours
-      if (signData?.signedUrl) {
+      if (signErr) {
+        console.warn('Failed to generate signed URL for attachment:', signErr.message);
+      } else if (signData?.signedUrl) {
         resolvedUrl = signData.signedUrl;
       }
-    } catch {}
-
-    if (!resolvedUrl) {
-      const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
-      resolvedUrl = urlData?.publicUrl || null;
+    } catch (signEx) {
+      console.warn('Exception generating signed URL for attachment:', signEx);
     }
 
     return {

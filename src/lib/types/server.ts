@@ -222,4 +222,5 @@ export interface ChannelMessage {
   profile?: Profile;
   status?: 'sending' | 'sent' | 'failed';
   error?: string;
+  client_nonce?: string;
 }

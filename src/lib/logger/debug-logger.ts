@@ -214,6 +214,7 @@ class DebugLoggerService {
   }
 
   public debug(category: LogCategory, message: string, details?: any) {
+    if (process.env.NODE_ENV === 'production') return;
     this.logEntry({ level: 'debug', category, message, details });
   }
 

@@ -5,6 +5,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { Conversation } from '@/lib/types/messaging';
 import { UserProfile } from '@/lib/types/profile';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 
 const getCachedConversations = (uId?: string): Conversation[] => {
   if (!uId || typeof window === 'undefined') return [];
@@ -184,8 +185,7 @@ export function useConversationsInternal() {
       }, 500);
     };
 
-    const channel = supabase
-      .channel('conversations-realtime')
+    const channel = realtimeHub.acquire('conversations-realtime', undefined, supabase)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'conversations' },
@@ -237,9 +237,9 @@ export function useConversationsInternal() {
         window.removeEventListener('focus', handleFocus);
         document.removeEventListener('visibilitychange', handleVisibility);
       }
-      supabase.removeChannel(channel);
+      realtimeHub.release('conversations-realtime', 1000);
     };
-  }, [fetchConversations, isConfigured, user, supabase]);
+  }, [fetchConversations, isConfigured, user?.id, supabase]);
 
   // Create or retrieve 1-to-1 direct conversation with a friend
   const getOrCreateDirectConversation = async (

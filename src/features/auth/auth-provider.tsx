@@ -7,6 +7,8 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { getSupabaseConfig } from '@/lib/supabase/config';
 import { AuthContextType } from '@/lib/types/auth';
 import { UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { audioSessionCoordinator } from '@/lib/webrtc/audio-session-coordinator';
 
 const AuthContext = React.createContext<AuthContextType | null>(null);
 
@@ -26,8 +28,8 @@ const DEFAULT_PROFILE: UserProfile = {
 };
 
 const DEFAULT_SETTINGS: UserSettings = {
-  id: 'local-settings-id',
-  user_id: 'local-user-id',
+  id: 'default-settings',
+  user_id: '',
   theme: 'dark',
   accent_color: 'violet',
   sound_effects_enabled: true,
@@ -46,6 +48,36 @@ const DEFAULT_SETTINGS: UserSettings = {
   notif_missed_calls: true,
   updated_at: new Date().toISOString(),
 };
+
+/**
+ * A3: Comprehensive client state reset on sign-out and remote logout.
+ * Cleans all application caches, localStorage tokens, realtime channels, and audio sessions.
+ */
+export function resetClientState(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (
+          key &&
+          (key.startsWith('nexus_') ||
+            key.startsWith('sb-') ||
+            key.includes('supabase'))
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch {}
+  }
+  try {
+    realtimeHub.clear();
+  } catch {}
+  try {
+    audioSessionCoordinator.reset();
+  } catch {}
+}
 
 export function getLocalDeviceId(): string {
   if (typeof window === 'undefined') return 'server';
@@ -82,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const config = React.useMemo(() => getSupabaseConfig(), []);
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
-  // Fetch or sync profile & settings
+  // A1: Fetch or sync profile & settings without overwriting on transient read error
   const fetchProfileAndSettings = React.useCallback(
     async (userId: string, currentUser?: User) => {
       try {
@@ -91,34 +123,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           supabase.from('user_settings').select('*').eq('user_id', userId).maybeSingle(),
         ]);
 
-        if (profileRes.data) {
+        if (profileRes.error) {
+          // A1: If transient read error occurred, DO NOT assume profile is missing and DO NOT clobber!
+          console.error('[AuthProvider] Transient error fetching profile; skipping overwrite:', profileRes.error);
+        } else if (profileRes.data) {
           setProfile(profileRes.data as UserProfile);
         } else {
-          // If profile row doesn't exist yet, automatically create from auth metadata or email
+          // Profile genuinely does not exist: call ensure_profile RPC to assign unique username with suffix
           const meta = currentUser?.user_metadata || {};
-          const fallbackUsername = meta.username || currentUser?.email?.split('@')[0]?.replace(/[^a-zA-Z0-9_-]/g, '_') || `gamer_${userId.slice(0, 6)}`;
-          const fallbackDisplayName = meta.display_name || meta.username || fallbackUsername;
+          const candidateUsername = meta.username || currentUser?.email?.split('@')[0] || `gamer_${userId.slice(0, 6)}`;
+          const candidateDisplayName = meta.display_name || meta.username || candidateUsername;
 
-          const { data: createdProfile } = await supabase
-            .from('profiles')
-            .upsert({
-              id: userId,
-              username: fallbackUsername,
-              display_name: fallbackDisplayName,
-              status: 'online',
-              banner_color: '#7c3aed',
-            })
-            .select()
-            .maybeSingle();
+          const { data: ensuredProfile, error: ensureErr } = await supabase.rpc('ensure_profile', {
+            p_user_id: userId,
+            p_email: currentUser?.email || null,
+            p_username: candidateUsername,
+            p_display_name: candidateDisplayName,
+          });
 
-          if (createdProfile) {
-            setProfile(createdProfile as UserProfile);
+          if (!ensureErr && ensuredProfile) {
+            setProfile(ensuredProfile as UserProfile);
+          } else {
+            // Fallback to single insert with ON CONFLICT ignore if RPC not yet deployed
+            const { data: fallbackProfile } = await supabase
+              .from('profiles')
+              .upsert(
+                {
+                  id: userId,
+                  username: candidateUsername,
+                  display_name: candidateDisplayName,
+                  status: 'online',
+                  banner_color: '#7c3aed',
+                },
+                { onConflict: 'id' }
+              )
+              .select()
+              .maybeSingle();
+
+            if (fallbackProfile) {
+              setProfile(fallbackProfile as UserProfile);
+            }
           }
         }
 
-        if (settingsRes.data) {
+        if (settingsRes.error) {
+          console.warn('[AuthProvider] Notice fetching user_settings:', settingsRes.error);
+        } else if (settingsRes.data) {
           setSettings(settingsRes.data as UserSettings);
           document.documentElement.setAttribute('data-theme', settingsRes.data.accent_color);
+        } else {
+          const userDefaultSettings = { ...DEFAULT_SETTINGS, user_id: userId, id: `settings_${userId}` };
+          setSettings(userDefaultSettings);
+          supabase
+            .from('user_settings')
+            .upsert({ user_id: userId, theme: 'dark', accent_color: 'violet' }, { onConflict: 'user_id' })
+            .then(() => {}, () => {});
         }
       } catch (err: unknown) {
         console.error('Error fetching profile/settings:', err);
@@ -199,6 +258,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             window.location.href = '/reset-password';
             return;
           }
+        }
+
+        if (_event === 'SIGNED_OUT') {
+          // A3: Reset client state on signed out event from this or other tabs
+          resetClientState();
+          setUser(null);
+          setProfile(null);
+          setSettings(null);
+          setIsLoading(false);
+          return;
         }
 
         if (session?.user) {
@@ -294,12 +363,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [user?.id, supabase, config.isConfigured]);
 
-  // Sign in with password
+  // Sign in with password (A2: Fail loudly in production if unconfigured)
   const signInWithPassword = React.useCallback(
     async (email: string, password: string) => {
       setError(null);
       if (!config.isConfigured) {
-        // Local simulation mode
+        const isProduction = process.env.NODE_ENV === 'production';
+        const isExplicitDemo = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+        if (isProduction && !isExplicitDemo) {
+          const err = 'Authentication service is unconfigured in this production deployment.';
+          setError(err);
+          return { error: err };
+        }
+        // Local simulation demo mode
         const mockUser = {
           id: 'local-user-id',
           email,
@@ -328,7 +404,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [config.isConfigured, supabase, profile]
   );
 
-  // Sign up with password
+  // Sign up with password (A2: Fail loudly in production if unconfigured)
   const signUpWithPassword = React.useCallback(
     async ({
       email,
@@ -343,7 +419,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }) => {
       setError(null);
       if (!config.isConfigured) {
-        // Local simulation mode
+        const isProduction = process.env.NODE_ENV === 'production';
+        const isExplicitDemo = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+        if (isProduction && !isExplicitDemo) {
+          const err = 'Registration service is unconfigured in this production deployment.';
+          setError(err);
+          return { error: err, emailConfirmationRequired: false };
+        }
+        // Local simulation demo mode
         const newProfile: UserProfile = {
           ...DEFAULT_PROFILE,
           username,
@@ -376,32 +459,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [config.isConfigured, supabase]
   );
 
-  // Sign out
+  // Sign out (A3: Complete cleanup of caches, tokens, channels, and sessions)
   const signOut = React.useCallback(async () => {
     try {
       await supabase.auth.signOut();
     } catch (e) {
       console.warn('Sign out error:', e);
     }
+    resetClientState();
     setUser(null);
     setProfile(null);
-    try {
-      localStorage.removeItem('nexus_local_profile');
-      localStorage.removeItem('nexus_local_settings');
-    } catch {}
+    setSettings(null);
   }, [supabase]);
 
-  // Update profile
+  // Update profile (A4: Optimistic update with reliable error rollback)
   const updateProfile = React.useCallback(
     async (updates: Partial<UserProfile>) => {
-      // Optimistically update local state for zero-latency instant feedback
+      const prevProfile = profile;
       const nextProfile = { ...(profile || DEFAULT_PROFILE), ...updates, updated_at: new Date().toISOString() };
       setProfile(nextProfile);
-      try {
-        localStorage.setItem('nexus_local_profile', JSON.stringify(nextProfile));
-      } catch {}
 
       if (!config.isConfigured || !user) {
+        try {
+          localStorage.setItem('nexus_local_profile', JSON.stringify(nextProfile));
+        } catch {}
         return { error: null };
       }
 
@@ -418,6 +499,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (updateErr) {
           console.warn('Profile database update warning:', updateErr);
+          // A4: Roll back optimistic state on failure
+          setProfile(prevProfile);
           return { error: updateErr.message };
         }
 
@@ -450,16 +533,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         return { error: null };
       } catch (err: unknown) {
+        setProfile(prevProfile);
         return { error: err instanceof Error ? err.message : 'Failed to update profile' };
       }
     },
     [config.isConfigured, profile, supabase, user]
   );
 
-  // Update settings
+  // Update settings (A4: Upsert on missing row, with DOM theme and state rollback on failure)
   const updateSettings = React.useCallback(
     async (updates: Partial<UserSettings>) => {
-      if (updates.accent_color) {
+      const prevSettings = settings;
+      const prevTheme = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') : null;
+
+      if (updates.accent_color && typeof document !== 'undefined') {
         document.documentElement.setAttribute('data-theme', updates.accent_color);
       }
 
@@ -474,19 +561,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!user) return { error: 'Not authenticated' };
 
-      const { error: updateErr } = await supabase
+      const { data: upsertedSettings, error: updateErr } = await supabase
         .from('user_settings')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
+        .upsert(
+          {
+            user_id: user.id,
+            ...updates,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' }
+        )
+        .select()
+        .maybeSingle();
 
       if (updateErr) {
+        // A4: Revert DOM theme and state on failure
+        if (prevTheme && typeof document !== 'undefined') {
+          document.documentElement.setAttribute('data-theme', prevTheme);
+        }
+        setSettings(prevSettings);
         return { error: updateErr.message };
       }
 
-      setSettings((prev) => (prev ? { ...prev, ...updates } : null));
+      setSettings((prev) => (upsertedSettings ? (upsertedSettings as UserSettings) : prev ? { ...prev, ...updates } : null));
       return { error: null };
     },
     [config.isConfigured, settings, supabase, user]

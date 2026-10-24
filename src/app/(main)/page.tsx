@@ -79,24 +79,11 @@ function HomePageContent() {
 
   const activeChannel = React.useMemo(() => {
     if (!activeServer) return null;
-    const channels =
-      activeServer.channels && activeServer.channels.length > 0
-        ? activeServer.channels
-        : [
-            {
-              id: `default-chan-${activeServer.id}`,
-              server_id: activeServer.id,
-              name: 'general',
-              type: 'text' as const,
-              topic: 'General squad discussion & announcements',
-              position: 0,
-              created_at: activeServer.created_at || new Date().toISOString(),
-            },
-          ];
+    const channels = activeServer.channels || [];
     if (channelId) {
-      return channels.find((c) => c.id === channelId) || channels[0];
+      return channels.find((c) => c.id === channelId) || channels[0] || null;
     }
-    return channels[0];
+    return channels[0] || null;
   }, [activeServer, channelId]);
 
   // 1. Direct message conversation takes priority so private chats are ALWAYS accessible

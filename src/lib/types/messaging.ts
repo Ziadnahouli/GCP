@@ -37,6 +37,7 @@ export interface Message {
   reactions?: MessageReaction[];
   status?: MessageDeliveryStatus;
   error?: string;
+  client_nonce?: string;
 }
 
 export interface ConversationMember {

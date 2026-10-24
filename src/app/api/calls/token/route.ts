@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken, TrackSource } from 'livekit-server-sdk';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
@@ -13,7 +13,6 @@ const tokenRequestSchema = z.object({
 });
 
 // High-performance bounded in-memory sliding-window rate limiter
-// Zero repeating timers: uses lazy passive pruning on request arrival to support serverless runtimes
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS_PER_WINDOW = 30;
 const MAX_RATE_LIMIT_ENTRIES = 1000;
@@ -30,7 +29,6 @@ function pruneStaleRateLimits(now: number) {
 function checkRateLimit(key: string): boolean {
   const now = Date.now();
 
-  // Lazy bounded pruning: prune if map exceeds threshold or randomly on 5% of requests
   if (rateLimitMap.size > MAX_RATE_LIMIT_ENTRIES || Math.random() < 0.05) {
     pruneStaleRateLimits(now);
   }
@@ -69,7 +67,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { conversationId, serverId, channelId, roomName, userId: requestedUserId } = parseResult.data;
+    const { conversationId, serverId, channelId, roomName, userId: requestedUserId, userName: requestedUserName } = parseResult.data;
 
     // 1. Authenticate user from session / token
     const supabase = createClient();
@@ -103,6 +101,7 @@ export async function POST(request: Request) {
 
     const targetUserId = user.id;
     const participantName =
+      requestedUserName?.trim() ||
       user.user_metadata?.display_name ||
       user.user_metadata?.username ||
       user.email?.split('@')[0] ||
@@ -162,7 +161,6 @@ export async function POST(request: Request) {
         );
       }
 
-      // Authoritative server ID derived from the validated channel record
       const targetServerId = channel.server_id;
       if (!targetServerId) {
         return NextResponse.json({ error: 'Channel is not associated with a server' }, { status: 400 });
@@ -176,10 +174,25 @@ export async function POST(request: Request) {
         );
       }
 
-      // Require authenticated server membership
+      // Check server bans
+      const { data: ban } = await supabase
+        .from('server_bans')
+        .select('id')
+        .eq('server_id', targetServerId)
+        .eq('user_id', targetUserId)
+        .maybeSingle();
+
+      if (ban) {
+        return NextResponse.json(
+          { error: 'Forbidden: You are banned from this server' },
+          { status: 403 }
+        );
+      }
+
+      // Require authenticated server membership and check timeout
       const { data: srvMem, error: srvErr } = await supabase
         .from('server_members')
-        .select('id')
+        .select('id, timeout_until')
         .eq('server_id', targetServerId)
         .eq('user_id', targetUserId)
         .maybeSingle();
@@ -191,9 +204,16 @@ export async function POST(request: Request) {
         );
       }
 
+      if (srvMem.timeout_until && new Date(srvMem.timeout_until).getTime() > Date.now()) {
+        return NextResponse.json(
+          { error: 'Forbidden: You are currently timed out in this server' },
+          { status: 403 }
+        );
+      }
+
       finalRoomName = `nexus-voice-${channelId.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
     } else if (serverId) {
-      // Server-wide voice room: Verify server membership
+      // Server-wide voice room: Verify server membership, bans, and timeouts
       if (!UUID_REGEX.test(serverId)) {
         return NextResponse.json(
           { error: 'Invalid server format: Server ID must be a valid UUID' },
@@ -201,9 +221,23 @@ export async function POST(request: Request) {
         );
       }
 
+      const { data: ban } = await supabase
+        .from('server_bans')
+        .select('id')
+        .eq('server_id', serverId)
+        .eq('user_id', targetUserId)
+        .maybeSingle();
+
+      if (ban) {
+        return NextResponse.json(
+          { error: 'Forbidden: You are banned from this server' },
+          { status: 403 }
+        );
+      }
+
       const { data: srvMem, error: srvErr } = await supabase
         .from('server_members')
-        .select('id')
+        .select('id, timeout_until')
         .eq('server_id', serverId)
         .eq('user_id', targetUserId)
         .maybeSingle();
@@ -211,6 +245,13 @@ export async function POST(request: Request) {
       if (srvErr || !srvMem) {
         return NextResponse.json(
           { error: 'Forbidden: You are not a member of this server' },
+          { status: 403 }
+        );
+      }
+
+      if (srvMem.timeout_until && new Date(srvMem.timeout_until).getTime() > Date.now()) {
+        return NextResponse.json(
+          { error: 'Forbidden: You are currently timed out in this server' },
           { status: 403 }
         );
       }
@@ -260,20 +301,19 @@ export async function POST(request: Request) {
           .eq('id', candidateChanId)
           .maybeSingle();
 
-        if (!channel) {
-          return NextResponse.json({ error: 'Voice channel not found' }, { status: 404 });
-        }
-
-        if (channel.type !== 'voice') {
+        if (!channel || channel.type !== 'voice') {
           return NextResponse.json(
-            { error: 'Invalid channel type: Voice credentials can only be issued for voice channels' },
-            { status: 400 }
+            { error: 'Voice channel not found or is not a voice channel' },
+            { status: 404 }
           );
         }
 
         const targetServerId = channel.server_id;
         if (!targetServerId) {
-          return NextResponse.json({ error: 'Voice channel is not associated with a server' }, { status: 400 });
+          return NextResponse.json(
+            { error: 'Voice channel is not associated with a server' },
+            { status: 400 }
+          );
         }
 
         if (serverId && serverId !== targetServerId) {
@@ -283,9 +323,23 @@ export async function POST(request: Request) {
           );
         }
 
+        const { data: ban } = await supabase
+          .from('server_bans')
+          .select('id')
+          .eq('server_id', targetServerId)
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
+        if (ban) {
+          return NextResponse.json(
+            { error: 'Forbidden: You are banned from this server' },
+            { status: 403 }
+          );
+        }
+
         const { data: srvMem } = await supabase
           .from('server_members')
-          .select('id')
+          .select('id, timeout_until')
           .eq('server_id', targetServerId)
           .eq('user_id', targetUserId)
           .maybeSingle();
@@ -293,6 +347,13 @@ export async function POST(request: Request) {
         if (!srvMem) {
           return NextResponse.json(
             { error: 'Forbidden: You are not a member of this voice channel server' },
+            { status: 403 }
+          );
+        }
+
+        if (srvMem.timeout_until && new Date(srvMem.timeout_until).getTime() > Date.now()) {
+          return NextResponse.json(
+            { error: 'Forbidden: You are currently timed out in this server' },
             { status: 403 }
           );
         }
@@ -307,9 +368,23 @@ export async function POST(request: Request) {
           );
         }
 
+        const { data: ban } = await supabase
+          .from('server_bans')
+          .select('id')
+          .eq('server_id', candidateSrvId)
+          .eq('user_id', targetUserId)
+          .maybeSingle();
+
+        if (ban) {
+          return NextResponse.json(
+            { error: 'Forbidden: You are banned from this server' },
+            { status: 403 }
+          );
+        }
+
         const { data: srvMem } = await supabase
           .from('server_members')
-          .select('id')
+          .select('id, timeout_until')
           .eq('server_id', candidateSrvId)
           .eq('user_id', targetUserId)
           .maybeSingle();
@@ -317,6 +392,13 @@ export async function POST(request: Request) {
         if (!srvMem) {
           return NextResponse.json(
             { error: 'Forbidden: You are not a member of this server' },
+            { status: 403 }
+          );
+        }
+
+        if (srvMem.timeout_until && new Date(srvMem.timeout_until).getTime() > Date.now()) {
+          return NextResponse.json(
+            { error: 'Forbidden: You are currently timed out in this server' },
             { status: 403 }
           );
         }
@@ -329,7 +411,10 @@ export async function POST(request: Request) {
         );
       }
     } else {
-      finalRoomName = 'nexus-voice-lounge';
+      return NextResponse.json(
+        { error: 'Bad Request: Missing conversationId, channelId, serverId, or roomName parameter' },
+        { status: 400 }
+      );
     }
 
     if (!finalRoomName) {
@@ -355,10 +440,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Issue authenticated LiveKit token with least-privilege room grants
+    // 4. Issue authenticated LiveKit token with least-privilege room grants and 1-hour TTL
     const at = new AccessToken(apiKey, apiSecret, {
       identity: targetUserId,
       name: participantName,
+      ttl: 3600, // 1 hour token validity
     });
 
     at.addGrant({
@@ -367,6 +453,7 @@ export async function POST(request: Request) {
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
+      canPublishSources: [TrackSource.CAMERA, TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE],
     });
 
     const token = await at.toJwt();

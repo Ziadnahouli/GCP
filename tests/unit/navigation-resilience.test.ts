@@ -159,7 +159,7 @@ describe('Navigation Resilience & Failover Regression Tests', () => {
   });
 
   describe('useServers channel synthesis & community servers', () => {
-    it('synthesizes fallback channels when server has empty channels array in database', async () => {
+    it('does not fabricate client-side channel IDs when server has empty channels array', async () => {
       mockState.selectResult = {
         data: [
           {
@@ -188,9 +188,9 @@ describe('Navigation Resilience & Failover Regression Tests', () => {
 
       const server = result.current.servers.find((s) => s.id === 'server-custom-1');
       expect(server).toBeDefined();
-      expect(server!.channels.length).toBeGreaterThanOrEqual(1);
-      expect(server!.channels.some((c) => c.name === 'general' && c.type === 'text')).toBe(true);
-      expect(server!.channels.some((c) => c.type === 'voice')).toBe(true);
+      // Phase 4 A5: Client must not fabricate fake default-chan-* IDs
+      expect(server!.channels.length).toBe(0);
+      expect(server!.channels.some((c) => c.id.startsWith('default-chan'))).toBe(false);
     });
 
     it('strictly excludes dummy/unjoined seed servers from user server list', async () => {

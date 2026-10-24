@@ -65,15 +65,18 @@ vi.mock('@/lib/supabase/client', () => {
         }
 
         const queryBuilder: any = {
-          order: vi.fn().mockImplementation(() => {
-            if (table === 'messages' || table === 'channel_messages') {
-              return Promise.resolve(mockState.selectResult);
-            }
-            return Promise.resolve({ data: [], error: null });
-          }),
+          order: vi.fn().mockImplementation(() => queryBuilder),
+          limit: vi.fn().mockImplementation(() => queryBuilder),
+          lt: vi.fn().mockImplementation(() => queryBuilder),
           in: vi.fn().mockResolvedValue(mockState.selectResult),
           maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
           single: vi.fn().mockResolvedValue({ data: null, error: null }),
+          then: (resolve: any, reject: any) => {
+            if (table === 'messages' || table === 'channel_messages') {
+              return Promise.resolve(mockState.selectResult).then(resolve, reject);
+            }
+            return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+          },
         };
         queryBuilder.eq = vi.fn().mockReturnValue(queryBuilder);
 
@@ -255,7 +258,9 @@ describe('Messaging Regression Audit & Verification', () => {
           }),
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+              order: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
             }),
           }),
         };
@@ -375,7 +380,9 @@ describe('Messaging Regression Audit & Verification', () => {
           ),
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+              order: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
             }),
           }),
         };
@@ -474,7 +481,9 @@ describe('Messaging Regression Audit & Verification', () => {
           }),
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+              order: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
             }),
           }),
         };
@@ -528,22 +537,24 @@ describe('Messaging Regression Audit & Verification', () => {
             if (fields && fields.includes('sender:sender_id')) {
               return {
                 eq: vi.fn().mockReturnValue({
-                  order: vi.fn().mockResolvedValue({
-                    data: [
-                      {
-                        id: 'db-already-committed',
-                        conversation_id: validConvId,
-                        sender_id: mockUser.id,
-                        content: 'Idempotent retry test',
-                        reply_to_id: null,
-                        is_pinned: false,
-                        is_edited: false,
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString(),
-                        sender: mockProfile,
-                      },
-                    ],
-                    error: null,
+                  order: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue({
+                      data: [
+                        {
+                          id: 'db-already-committed',
+                          conversation_id: validConvId,
+                          sender_id: mockUser.id,
+                          content: 'Idempotent retry test',
+                          reply_to_id: null,
+                          is_pinned: false,
+                          is_edited: false,
+                          created_at: new Date().toISOString(),
+                          updated_at: new Date().toISOString(),
+                          sender: mockProfile,
+                        },
+                      ],
+                      error: null,
+                    }),
                   }),
                 }),
               };

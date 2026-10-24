@@ -6,6 +6,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { FriendItem, FriendRequestItem, BlockedUserItem } from '@/lib/types/social';
 import { UserProfile } from '@/lib/types/profile';
 import { useToast } from '@/components/ui/toast';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 
 export function useSocial() {
   const { user, profile, isConfigured } = useAuth();
@@ -177,7 +178,7 @@ export function useSocial() {
     if (!isConfigured || !user) return;
 
     // Realtime Postgres database updates listener for social data
-    const channel = supabase.channel('nexus-social-db');
+    const channel = realtimeHub.acquire('nexus-social-db', undefined, supabase);
 
     channel
       .on(
@@ -231,9 +232,9 @@ export function useSocial() {
         document.removeEventListener('visibilitychange', handleResume);
       }
       socialChannelRef.current = null;
-      supabase.removeChannel(channel);
+      realtimeHub.release('nexus-social-db', 1000);
     };
-  }, [fetchSocialData, isConfigured, user, supabase]);
+  }, [fetchSocialData, isConfigured, user?.id, supabase]);
 
   // Send a friend request by username
   const sendFriendRequest = async (targetUsername: string) => {
@@ -319,8 +320,10 @@ export function useSocial() {
       }
       await fetchSocialData();
       return { error: null };
-    } catch {
-      return { error: 'Failed to send request' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send request';
+      console.error('Error sending friend request:', err);
+      return { error: msg };
     }
   };
 

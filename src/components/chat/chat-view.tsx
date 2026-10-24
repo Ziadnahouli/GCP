@@ -410,7 +410,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         }
 
         const { data } = await supabase
-          .from('user_settings')
+          .from('user_communication_privacy')
           .select('allow_direct_messages')
           .eq('user_id', targetUserId)
           .maybeSingle();

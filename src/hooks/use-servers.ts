@@ -14,55 +14,21 @@ import {
 import { useAuth } from '@/features/auth/auth-provider';
 import { supabase } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 
 const STORAGE_KEY = 'nexus_gaming_servers_store';
-const DELETED_CHANS_KEY = 'nexus_deleted_channels_store';
 
 const DUMMY_SERVER_IDS = new Set([
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000002',
 ]);
 
-const getDeletedChannelIds = (): Set<string> => {
-  if (typeof window === 'undefined') return new Set();
-  try {
-    const raw = localStorage.getItem(DELETED_CHANS_KEY);
-    if (raw) return new Set(JSON.parse(raw));
-  } catch {}
-  return new Set();
-};
-
-const markChannelDeleted = (channelId: string) => {
-  if (typeof window === 'undefined') return;
-  try {
-    const set = getDeletedChannelIds();
-    set.add(channelId);
-    localStorage.setItem(DELETED_CHANS_KEY, JSON.stringify(Array.from(set)));
-  } catch {}
-};
-
 const DEFAULT_SERVERS: Server[] = [];
 
 export function useServersInternal() {
   const { user, profile } = useAuth();
-  const [servers, setServers] = React.useState<Server[]>(() => {
-    if (typeof window === 'undefined') return DEFAULT_SERVERS;
-    try {
-      const userStorageKey = user ? `${STORAGE_KEY}_${user.id}` : STORAGE_KEY;
-      const stored = localStorage.getItem(userStorageKey);
-      if (stored) {
-        const parsed: Server[] = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          return parsed.filter(
-            (s) =>
-              !DUMMY_SERVER_IDS.has(s.id) &&
-              (s.owner_id === user?.id || (s.members || []).some((m) => m.user_id === user?.id))
-          );
-        }
-      }
-    } catch {}
-    return DEFAULT_SERVERS;
-  });
+  // A8: Deterministic SSR initialization to avoid hydration mismatch
+  const [servers, setServers] = React.useState<Server[]>(DEFAULT_SERVERS);
   const [loading, setLoading] = React.useState(false);
   const serversChannelRef = React.useRef<any>(null);
 
@@ -84,7 +50,6 @@ export function useServersInternal() {
         `);
 
       if (!error && srvData) {
-        const deletedChans = getDeletedChannelIds();
         const parsed: Server[] = srvData
           .filter((s) => !DUMMY_SERVER_IDS.has(s.id))
           // Only show servers where user is the owner or an existing member
@@ -94,30 +59,8 @@ export function useServersInternal() {
             return isOwner || isMember;
           })
           .map((s) => {
-            const rawChannels = (s.channels || []).filter((c: Channel) => !deletedChans.has(c.id));
-            const channels =
-              rawChannels.length > 0
-                ? rawChannels.sort((a: Channel, b: Channel) => a.position - b.position)
-                : [
-                    {
-                      id: `default-chan-${s.id}`,
-                      server_id: s.id,
-                      name: 'general',
-                      type: 'text' as const,
-                      topic: 'General team discussion & lobby chatter',
-                      position: 0,
-                      created_at: s.created_at || new Date().toISOString(),
-                    },
-                    {
-                      id: `default-voice-${s.id}`,
-                      server_id: s.id,
-                      name: 'Voice Lounge',
-                      type: 'voice' as const,
-                      topic: 'Instant squad voice comms',
-                      position: 1,
-                      created_at: s.created_at || new Date().toISOString(),
-                    },
-                  ];
+            // A5: Sort real channels directly; default channels are created in DB trigger
+            const channels = (s.channels || []).sort((a: Channel, b: Channel) => a.position - b.position);
 
             return {
               id: s.id,
@@ -177,8 +120,8 @@ export function useServersInternal() {
 
     if (!user || !supabase) return;
 
-    const channel = supabase
-      .channel('servers-realtime')
+    const channel = realtimeHub
+      .acquire('servers-realtime', undefined, supabase)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'servers' }, () => {
         fetchServers();
       })
@@ -190,8 +133,8 @@ export function useServersInternal() {
       })
       .on('broadcast', { event: 'servers_update' }, () => {
         fetchServers();
-      })
-      .subscribe();
+      });
+    channel.subscribe();
 
     serversChannelRef.current = channel;
 
@@ -215,7 +158,7 @@ export function useServersInternal() {
         window.removeEventListener('nexus_servers_updated', handleLocalServersUpdate);
       }
       serversChannelRef.current = null;
-      supabase.removeChannel(channel);
+      realtimeHub.release('servers-realtime', 1000);
     };
   }, [fetchServers, user]);
 
@@ -533,8 +476,6 @@ export function useServersInternal() {
 
   const deleteChannel = React.useCallback(
     async (serverId: string, channelId: string) => {
-      markChannelDeleted(channelId);
-
       const updated = servers.map((srv) => {
         if (srv.id === serverId) {
           return {
@@ -580,98 +521,105 @@ export function useServersInternal() {
 
   const joinServer = React.useCallback(
     async (serverIdOrInvite: string): Promise<{ success: boolean; server?: Server; error?: string }> => {
-      if (!serverIdOrInvite?.trim()) {
-        return { success: false, error: 'Please enter a valid Server ID or Invite Link.' };
+      const rawInput = serverIdOrInvite?.trim();
+      if (!rawInput) {
+        return { success: false, error: 'Please enter a valid Server Invite Code or Link.' };
       }
 
-      // Robust UUID extraction from any URL format (?join=UUID, /join/UUID, or direct UUID)
-      const uuidMatch = serverIdOrInvite.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-      const targetId = uuidMatch ? uuidMatch[0] : serverIdOrInvite.trim();
-
-      // Check if already in servers list
-      const existing = servers.find(
-        (s) =>
-          s.id.toLowerCase() === targetId.toLowerCase() ||
-          s.name.toLowerCase() === targetId.toLowerCase()
-      );
-      if (existing) {
-        return { success: true, server: existing };
+      // Extract code from link formats (e.g., https://.../invite/CODE, ?invite=CODE, ?join=CODE, or raw CODE)
+      let inviteCode = rawInput;
+      if (rawInput.includes('/invite/')) {
+        inviteCode = rawInput.split('/invite/').pop()?.split(/[?#]/)[0] || rawInput;
+      } else if (rawInput.includes('invite=')) {
+        inviteCode = new URL(rawInput, 'http://localhost').searchParams.get('invite') || rawInput;
+      } else if (rawInput.includes('join=')) {
+        inviteCode = new URL(rawInput, 'http://localhost').searchParams.get('join') || rawInput;
       }
 
-      if (user && supabase) {
-        try {
-          const memberId =
-            typeof crypto !== 'undefined' && crypto.randomUUID
-              ? crypto.randomUUID()
-              : `00000000-0000-4000-8005-${Date.now().toString(16).padStart(12, '0')}`;
+      inviteCode = inviteCode.trim();
 
-          // Add membership first so RLS policies allow querying the server
-          try {
-            await supabase.from('server_members').upsert({
-              id: memberId,
-              server_id: targetId,
-              user_id: user.id,
-              role: 'member',
-            });
-          } catch {}
+      if (!user || !supabase) {
+        return { success: false, error: 'Please sign in to join squad servers.' };
+      }
 
-          try {
-            await supabase.rpc('join_server_by_id', { target_server_id: targetId });
-          } catch {}
+      try {
+        const { data: joinRes, error: joinErr } = await supabase.rpc('join_server_with_invite', {
+          p_code: inviteCode,
+        });
 
-          const { data: srvData, error: srvErr } = await supabase
-            .from('servers')
-            .select(`
-              id, name, description, icon_url, owner_id, created_at,
-              channels ( id, server_id, name, type, topic, position, created_at ),
-              server_members (
-                id, server_id, user_id, role, joined_at,
-                profile:user_id (
-                  id, username, display_name, avatar_url, banner_url, banner_color,
-                  bio, custom_status, status, game_activity, created_at, updated_at
-                )
-              )
-            `)
-            .eq('id', targetId)
-            .single();
-
-          if (srvErr || !srvData) {
-            return { success: false, error: 'Server not found with this ID or Invite Link.' };
+        if (joinErr) {
+          const errMsg = joinErr.message || '';
+          if (errMsg.includes('banned')) {
+            return { success: false, error: 'You are banned from this server.' };
           }
-
-          const deletedChans = getDeletedChannelIds();
-          const parsedServer: Server = {
-            id: srvData.id,
-            name: srvData.name,
-            description: srvData.description,
-            icon_url: srvData.icon_url,
-            owner_id: srvData.owner_id,
-            created_at: srvData.created_at,
-            channels: (srvData.channels || [])
-              .filter((c: Channel) => !deletedChans.has(c.id))
-              .sort((a: Channel, b: Channel) => a.position - b.position),
-            members: [
-              ...(srvData.server_members || []).map((m: any) => ({
-                id: m.id,
-                server_id: m.server_id,
-                user_id: m.user_id,
-                role: m.role,
-                joined_at: m.joined_at,
-                profile: m.profile || undefined,
-              })),
-            ],
-          };
-
-          const updated = [...servers.filter((s) => s.id !== parsedServer.id), parsedServer];
-          saveServersRef.current(updated);
-          notifyServersUpdate();
-          return { success: true, server: parsedServer };
-        } catch (err: any) {
-          return { success: false, error: err?.message || 'Failed to join server.' };
+          if (errMsg.includes('expired')) {
+            return { success: false, error: 'This invite link has expired.' };
+          }
+          if (errMsg.includes('maximum uses')) {
+            return { success: false, error: 'This invite link has reached its maximum uses.' };
+          }
+          if (errMsg.includes('revoked')) {
+            return { success: false, error: 'This invite link has been revoked.' };
+          }
+          if (errMsg.includes('Invalid')) {
+            return { success: false, error: 'Invalid server invite code or link.' };
+          }
+          return { success: false, error: errMsg || 'Failed to join server.' };
         }
-      }
 
-      return { success: false, error: 'Please sign in to join squad servers.' };
+        const targetServerId = joinRes?.server_id;
+        if (!targetServerId) {
+          return { success: false, error: 'Failed to resolve server details from invite.' };
+        }
+
+        const { data: srvData, error: srvErr } = await supabase
+          .from('servers')
+          .select(`
+            id, name, description, icon_url, owner_id, created_at,
+            channels ( id, server_id, name, type, topic, position, created_at ),
+            server_members (
+              id, server_id, user_id, role, joined_at,
+              profile:user_id (
+                id, username, display_name, avatar_url, banner_url, banner_color,
+                bio, custom_status, status, game_activity, created_at, updated_at
+              )
+            )
+          `)
+          .eq('id', targetServerId)
+          .single();
+
+        if (srvErr || !srvData) {
+          return { success: false, error: 'Unable to load server after joining.' };
+        }
+
+        const parsedServer: Server = {
+          id: srvData.id,
+          name: srvData.name,
+          description: srvData.description,
+          icon_url: srvData.icon_url,
+          owner_id: srvData.owner_id,
+          created_at: srvData.created_at,
+          channels: (srvData.channels || [])
+            .sort((a: Channel, b: Channel) => (a.position || 0) - (b.position || 0)),
+          members: [
+            ...(srvData.server_members || []).map((m: any) => ({
+              id: m.id,
+              server_id: m.server_id,
+              user_id: m.user_id,
+              role: m.role,
+              joined_at: m.joined_at,
+              profile: m.profile || undefined,
+            })),
+          ],
+        };
+
+        const updated = [...servers.filter((s) => s.id !== parsedServer.id), parsedServer];
+        saveServersRef.current(updated);
+        notifyServersUpdate();
+        return { success: true, server: parsedServer };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to join server.' };
+      }
     },
     [servers, user, notifyServersUpdate]
   );
@@ -690,13 +638,22 @@ export function useServersInternal() {
 
       if (supabase) {
         try {
-          await supabase
+          const { error: leaveErr } = await supabase
             .from('server_members')
             .delete()
             .eq('server_id', serverId)
             .eq('user_id', user.id);
+          if (leaveErr) {
+            console.error('Failed to leave server:', leaveErr);
+            saveServersRef.current(servers);
+            return false;
+          }
           notifyServersUpdate();
-        } catch {}
+        } catch (err) {
+          console.error('Error leaving server:', err);
+          saveServersRef.current(servers);
+          return false;
+        }
       }
       return true;
     },
@@ -719,14 +676,21 @@ export function useServersInternal() {
 
       if (user && supabase) {
         try {
-          await supabase
+          const { error: updateErr } = await supabase
             .from('server_members')
             .update({ role: newRole })
             .eq('server_id', serverId)
             .eq('user_id', userId);
+          if (updateErr) {
+            console.error('Failed to update member role:', updateErr);
+            saveServersRef.current(servers);
+            return false;
+          }
           notifyServersUpdate();
           return true;
-        } catch {
+        } catch (err) {
+          console.error('Error updating member role:', err);
+          saveServersRef.current(servers);
           return false;
         }
       }
@@ -757,15 +721,22 @@ export function useServersInternal() {
             p_reason: reason || null,
           });
           if (error) {
-            await supabase
+            const { error: delErr } = await supabase
               .from('server_members')
               .delete()
               .eq('server_id', serverId)
               .eq('user_id', userId);
+            if (delErr) {
+              console.error('Failed to delete member during kick fallback:', delErr);
+              saveServersRef.current(servers);
+              return false;
+            }
           }
           notifyServersUpdate();
           return true;
-        } catch {
+        } catch (err) {
+          console.error('Error kicking member:', err);
+          saveServersRef.current(servers);
           return false;
         }
       }

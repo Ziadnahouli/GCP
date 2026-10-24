@@ -6,8 +6,11 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
 import { debugLogger } from '@/lib/logger/debug-logger';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 
 const STORAGE_KEY_PREFIX = 'nexus_channel_msgs_';
+const PAGE_SIZE = 50;
+const MAX_CONTENT_LENGTH = 4000;
 
 const getCachedChannelMessages = (chanId: string | null): ChannelMessage[] => {
   if (!chanId || typeof window === 'undefined') return [];
@@ -24,12 +27,18 @@ const getCachedChannelMessages = (chanId: string | null): ChannelMessage[] => {
 export function useChannelMessages(channelId: string | null) {
   const { user, profile, isConfigured } = useAuth();
   const supabase = React.useMemo(() => getBrowserClient(), []);
+
   const [messages, setMessages] = React.useState<ChannelMessage[]>(() => getCachedChannelMessages(channelId));
   const [isLoading, setIsLoading] = React.useState<boolean>(() => getCachedChannelMessages(channelId).length === 0);
+  const [isLoadingMore, setIsLoadingMore] = React.useState<boolean>(false);
+  const [hasMore, setHasMore] = React.useState<boolean>(false);
+
   const channelRef = React.useRef<any>(null);
   const activeChannelIdRef = React.useRef<string | null>(channelId);
   const prevChannelIdRef = React.useRef<string | null>(channelId);
-  const isFetchingRef = React.useRef(false);
+  const isFetchingRef = React.useRef<boolean>(false);
+  const generationRef = React.useRef<number>(0);
+  const fallbackPollTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   React.useEffect(() => {
     activeChannelIdRef.current = channelId;
@@ -41,99 +50,188 @@ export function useChannelMessages(channelId: string | null) {
 
   const userId = user?.id;
 
-  const fetchChannelMessages = React.useCallback(async (isInitial = false) => {
-    if (!channelId) {
-      setMessages([]);
-      setIsLoading(false);
-      return;
+  const fetchChannelMessagesRef = React.useRef<(isInitial?: boolean) => Promise<void>>(() => Promise.resolve());
+
+  const stopFallbackPolling = React.useCallback(() => {
+    if (fallbackPollTimerRef.current) {
+      clearInterval(fallbackPollTimerRef.current);
+      fallbackPollTimerRef.current = null;
     }
+  }, []);
 
-    const channelChanged = prevChannelIdRef.current !== channelId;
-    if (channelChanged) {
-      prevChannelIdRef.current = channelId;
-      const cached = getCachedChannelMessages(channelId);
-      setMessages(cached);
-      setIsLoading(cached.length === 0);
-    } else if (isInitial) {
-      // Background revalidation: keep existing messages visible while loading
-    }
+  const startFallbackPolling = React.useCallback(() => {
+    stopFallbackPolling();
+    fallbackPollTimerRef.current = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (activeChannelIdRef.current) {
+        fetchChannelMessagesRef.current(false);
+      }
+    }, 10000); // 10s fallback polling ONLY when disconnected
+  }, [stopFallbackPolling]);
 
-    try {
-      if (userId && isConfigured && isUUID) {
-        const { data, error } = await supabase
-          .from('channel_messages')
-          .select(`
-            id, channel_id, user_id, content, created_at, updated_at,
-            profile:user_id (
-              id, username, display_name, avatar_url, banner_url, banner_color,
-              bio, custom_status, status, game_activity, created_at, updated_at
-            )
-          `)
-          .eq('channel_id', channelId)
-          .order('created_at', { ascending: true });
+  // Keyset fetch (M1)
+  const fetchChannelMessages = React.useCallback(
+    async (isInitial = false) => {
+      if (!channelId) {
+        setMessages([]);
+        setIsLoading(false);
+        setHasMore(false);
+        return;
+      }
 
-        // Guard against race conditions if user switched channels while fetch was in-flight
-        if (activeChannelIdRef.current !== channelId) return;
+      const channelChanged = prevChannelIdRef.current !== channelId;
+      if (channelChanged) {
+        prevChannelIdRef.current = channelId;
+        const cached = getCachedChannelMessages(channelId);
+        setMessages(cached);
+        setIsLoading(cached.length === 0);
+      }
 
-        if (!error && data) {
-          const parsed: ChannelMessage[] = data.map((m) => ({
-            id: m.id,
-            channel_id: m.channel_id,
-            user_id: m.user_id,
-            content: m.content,
-            created_at: m.created_at,
-            updated_at: m.updated_at,
-            status: 'sent' as const,
-            profile: (m.profile as unknown as UserProfile) || undefined,
-          }));
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
+      const currentGen = ++generationRef.current;
 
-          setMessages((prev) => {
-            const combined = [...parsed];
-            for (const p of prev) {
-              if (p.channel_id === channelId && !combined.some((c) => c.id === p.id)) {
-                // Deduplicate: If p is an optimistic message whose content was already saved in parsed messages, drop it
-                const alreadyPersisted =
-                  combined.some(
-                    (c) =>
-                      c.user_id === p.user_id &&
-                      c.content.trim() === p.content.trim()
-                  );
-                if (!alreadyPersisted) {
+      try {
+        if (userId && isConfigured && isUUID) {
+          const { data, error } = await supabase
+            .from('channel_messages')
+            .select(`
+              id, channel_id, user_id, content, created_at, updated_at,
+              profile:user_id (
+                id, username, display_name, avatar_url, banner_url, banner_color,
+                bio, custom_status, status, game_activity, created_at, updated_at
+              )
+            `)
+            .eq('channel_id', channelId)
+            .order('created_at', { ascending: false })
+            .limit(PAGE_SIZE);
+
+          // Guard against race condition on channel switch (M4)
+          if (activeChannelIdRef.current !== channelId || generationRef.current !== currentGen) return;
+
+          if (!error && data) {
+            // Reverse from descending keyset to chronological order (oldest top, newest bottom)
+            const chronological = [...data].reverse();
+            const parsed: ChannelMessage[] = chronological.map((m) => ({
+              id: m.id,
+              channel_id: m.channel_id,
+              user_id: m.user_id,
+              content: m.content ?? '', // M7: Null-safe fallback
+              created_at: m.created_at,
+              updated_at: m.updated_at,
+              status: 'sent' as const,
+              profile: (m.profile as unknown as UserProfile) || undefined,
+            }));
+
+            setMessages((prev) => {
+              // Exact ID deduplication: keep optimistic and failed messages (M3)
+              const pending = prev.filter((p) => p.channel_id === channelId && (p.status === 'sending' || p.status === 'failed'));
+              const combined = [...parsed];
+              for (const p of pending) {
+                if (!combined.some((c) => c.id === p.id)) {
                   combined.push(p);
                 }
               }
-            }
-            combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-            return combined;
-          });
-          try {
-            localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(parsed));
-          } catch {}
-          return;
-        } else if (error) {
-          console.warn('Database error fetching channel messages:', error);
+              combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+              return combined;
+            });
+
+            setHasMore(data.length >= PAGE_SIZE);
+
+            try {
+              localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(parsed));
+            } catch {}
+            return;
+          } else if (error) {
+            console.warn('Database error fetching channel messages:', error);
+          }
+        }
+
+        // Demo/unconfigured fallback
+        if (!isConfigured || !userId) {
+          const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}${channelId}`);
+          if (stored) {
+            setMessages(JSON.parse(stored));
+          } else {
+            setMessages([]);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to fetch channel messages:', e);
+      } finally {
+        isFetchingRef.current = false;
+        if (activeChannelIdRef.current === channelId) {
+          setIsLoading(false);
         }
       }
+    },
+    [channelId, userId, isConfigured, isUUID, supabase]
+  );
+  fetchChannelMessagesRef.current = fetchChannelMessages;
 
-      // Demo/unconfigured fallback
-      if (!isConfigured || !userId) {
-        const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}${channelId}`);
-        if (stored) {
-          setMessages(JSON.parse(stored));
-        } else {
-          setMessages([]);
+  // Load older messages using keyset cursor on created_at (M1)
+  const loadMore = React.useCallback(async () => {
+    if (!channelId || isLoadingMore || !hasMore || isFetchingRef.current || !userId || !isConfigured || !isUUID) return;
+
+    const oldest = messages[0];
+    if (!oldest?.created_at) return;
+
+    setIsLoadingMore(true);
+    isFetchingRef.current = true;
+    const currentGen = generationRef.current;
+
+    try {
+      const { data, error } = await supabase
+        .from('channel_messages')
+        .select(`
+          id, channel_id, user_id, content, created_at, updated_at,
+          profile:user_id (
+            id, username, display_name, avatar_url, banner_url, banner_color,
+            bio, custom_status, status, game_activity, created_at, updated_at
+          )
+        `)
+        .eq('channel_id', channelId)
+        .lt('created_at', oldest.created_at)
+        .order('created_at', { ascending: false })
+        .limit(PAGE_SIZE);
+
+      if (activeChannelIdRef.current !== channelId || generationRef.current !== currentGen) return;
+
+      if (!error && data) {
+        if (data.length === 0) {
+          setHasMore(false);
+          return;
         }
+
+        const olderChronological: ChannelMessage[] = [...data].reverse().map((m) => ({
+          id: m.id,
+          channel_id: m.channel_id,
+          user_id: m.user_id,
+          content: m.content ?? '',
+          created_at: m.created_at,
+          updated_at: m.updated_at,
+          status: 'sent' as const,
+          profile: (m.profile as unknown as UserProfile) || undefined,
+        }));
+
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m.id));
+          const filteredOlder = olderChronological.filter((m) => !existingIds.has(m.id));
+          return [...filteredOlder, ...prev];
+        });
+
+        setHasMore(data.length >= PAGE_SIZE);
       }
     } catch (e) {
-      console.warn('Failed to fetch channel messages:', e);
+      console.warn('Failed to load older channel messages:', e);
     } finally {
       isFetchingRef.current = false;
-      if (activeChannelIdRef.current === channelId) {
-        setIsLoading(false);
-      }
+      setIsLoadingMore(false);
     }
-  }, [channelId, userId, isConfigured, isUUID, supabase]);
+  }, [channelId, isLoadingMore, hasMore, messages, userId, isConfigured, isUUID, supabase]);
 
+  // Realtime subscription setup
   React.useEffect(() => {
     if (prevChannelIdRef.current !== channelId) {
       prevChannelIdRef.current = channelId;
@@ -155,16 +253,14 @@ export function useChannelMessages(channelId: string | null) {
     const setupChannel = () => {
       if (isCleanedUp) return;
 
-      if (channelRef.current) {
-        try {
-          supabase.removeChannel(channelRef.current);
-        } catch {}
-      }
-
       const channelName = `chan-room-${channelId}`;
-      const ch = supabase.channel(channelName, {
-        config: { broadcast: { self: false } },
-      });
+      const ch = realtimeHub.acquire(
+        channelName,
+        {
+          config: { broadcast: { self: false } },
+        },
+        supabase
+      );
 
       ch.on('broadcast', { event: 'new_channel_msg' }, ({ payload }) => {
         if (payload?.message) {
@@ -190,6 +286,7 @@ export function useChannelMessages(channelId: string | null) {
             const newRow = payload.new as any;
             if (!newRow?.id) return;
             if (newRow.channel_id && newRow.channel_id !== channelId) return;
+
             setMessages((prev) => {
               const existingIdx = prev.findIndex((m) => m.id === newRow.id);
               if (existingIdx !== -1) {
@@ -197,12 +294,21 @@ export function useChannelMessages(channelId: string | null) {
                 updated[existingIdx] = {
                   ...updated[existingIdx],
                   ...newRow,
+                  content: newRow.content ?? '',
                   status: 'sent',
                 };
                 return updated;
               }
-              fetchChannelMessages();
-              return prev;
+              const newMsg: ChannelMessage = {
+                id: newRow.id,
+                channel_id: newRow.channel_id,
+                user_id: newRow.user_id,
+                content: newRow.content ?? '',
+                created_at: newRow.created_at,
+                updated_at: newRow.updated_at,
+                status: 'sent',
+              };
+              return [...prev, newMsg];
             });
           }
         )
@@ -214,7 +320,17 @@ export function useChannelMessages(channelId: string | null) {
             table: 'channel_messages',
             filter: `channel_id=eq.${channelId}`,
           },
-          () => fetchChannelMessages()
+          (payload) => {
+            const updatedRow = payload.new as any;
+            if (!updatedRow?.id) return;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === updatedRow.id
+                  ? { ...m, ...updatedRow, content: updatedRow.content ?? m.content }
+                  : m
+              )
+            );
+          }
         )
         .on(
           'postgres_changes',
@@ -230,12 +346,13 @@ export function useChannelMessages(channelId: string | null) {
               setMessages((prev) => {
                 const next = prev.filter((m) => m.id !== oldRow.id);
                 try {
-                  localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(next.filter((m) => m.status === 'sent')));
+                  localStorage.setItem(
+                    `${STORAGE_KEY_PREFIX}${channelId}`,
+                    JSON.stringify(next.filter((m) => m.status === 'sent'))
+                  );
                 } catch {}
                 return next;
               });
-            } else {
-              fetchChannelMessages();
             }
           }
         );
@@ -245,10 +362,11 @@ export function useChannelMessages(channelId: string | null) {
         debugLogger.info('realtime', `Server channel [${channelName}] status: ${status}`, err);
         if (status === 'SUBSCRIBED') {
           debugLogger.success('realtime', `Connected to channel chat for channel ${channelId}`);
+          stopFallbackPolling();
           if (isUUID) fetchChannelMessages();
         } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          debugLogger.warn('realtime', `Server channel disconnected (${status}). Auto-reconnecting in 2.5s with full listeners...`);
-          if (isUUID) fetchChannelMessages();
+          debugLogger.warn('realtime', `Server channel disconnected (${status}). Starting fallback polling...`);
+          startFallbackPolling();
           if (!reconnectTimeout && !isCleanedUp) {
             reconnectTimeout = setTimeout(() => {
               reconnectTimeout = null;
@@ -263,16 +381,7 @@ export function useChannelMessages(channelId: string | null) {
 
     setupChannel();
 
-    // Fast-adaptive background poll (3.5s when active tab):
-    // Guarantees real-time delivery without requiring page refresh
-    const autoSyncTimer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      if (isUUID) {
-        fetchChannelMessages();
-      }
-    }, 3500);
-
-    // Heartbeat ping every 20 seconds to keep channel socket active and revive dropped sockets
+    // Heartbeat ping every 20 seconds to keep channel socket active
     heartbeatTimer = setInterval(() => {
       if (channelRef.current && channelRef.current.state === 'joined') {
         channelRef.current.send({
@@ -285,46 +394,46 @@ export function useChannelMessages(channelId: string | null) {
       }
     }, 20000);
 
-    // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {
-      if (isUUID) fetchChannelMessages();
+      if (isUUID && document.visibilityState === 'visible') fetchChannelMessages();
     };
-    const handleVisibility = () => {
-      if (typeof document !== 'undefined' && !document.hidden && isUUID) {
-        fetchChannelMessages();
-      }
-    };
+
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', handleFocus);
-      document.addEventListener('visibilitychange', handleVisibility);
+      document.addEventListener('visibilitychange', handleFocus);
     }
 
     return () => {
       isCleanedUp = true;
-      clearInterval(autoSyncTimer);
+      stopFallbackPolling();
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', handleFocus);
-        document.removeEventListener('visibilitychange', handleVisibility);
+        document.removeEventListener('visibilitychange', handleFocus);
       }
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
         channelRef.current = null;
+        realtimeHub.release(`chan-room-${channelId}`, 1000);
       }
     };
-  }, [channelId, fetchChannelMessages, isConfigured, userId, isUUID, supabase]);
+  }, [channelId, fetchChannelMessages, isConfigured, userId, isUUID, supabase, stopFallbackPolling, startFallbackPolling]);
 
   const sendMessage = React.useCallback(
     async (content: string): Promise<{ error: string | null }> => {
-      const trimmed = content.trim();
+      const trimmed = (content ?? '').trim();
       if (!channelId || !trimmed) return { error: 'Empty message' };
+
+      // M7: Enforce 4000 character maximum length limit
+      if (content && content.length > MAX_CONTENT_LENGTH) {
+        return { error: 'Message exceeds maximum length of 4000 characters' };
+      }
 
       if (isConfigured && !user) {
         return { error: 'User is not authenticated' };
       }
 
-      // Local demo mode simulation ONLY when Supabase is not configured
+      // Local demo mode simulation
       if (!isConfigured) {
         const demoMsg: ChannelMessage = {
           id: `demo-${Date.now()}`,
@@ -354,14 +463,12 @@ export function useChannelMessages(channelId: string | null) {
         return { error: 'User is not authenticated' };
       }
 
-      // Generate a stable UUID for the message
-      const messageId =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `00000000-0000-4000-8005-${Date.now().toString(16).padStart(12, '0')}`;
+      // Generate stable client nonce / message UUID (M3)
+      const messageId = crypto.randomUUID();
 
       const optimisticMsg: ChannelMessage = {
         id: messageId,
+        client_nonce: messageId,
         channel_id: channelId,
         user_id: user.id,
         content: trimmed,
@@ -371,34 +478,11 @@ export function useChannelMessages(channelId: string | null) {
         profile: profile || undefined,
       };
 
-      // 1. Add optimistic message to UI with 'sending' status
       setMessages((prev) => [...prev, optimisticMsg]);
 
-      // 2. Persist to Supabase BEFORE considering delivered
       try {
-        // Proactively check session expiration
-        if (isConfigured && supabase.auth?.getSession) {
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.expires_at) {
-              const timeLeftSec = session.expires_at - Math.floor(Date.now() / 1000);
-              if (timeLeftSec < 120 && supabase.auth.refreshSession) {
-                debugLogger.info('auth', `Proactively refreshing session (${timeLeftSec}s remaining)...`);
-                await supabase.auth.refreshSession();
-              }
-            }
-          } catch {}
-        }
-
-
-        debugLogger.info('channel_messaging', `Initiating channel message send (${trimmed.length} chars) to channel ${channelId}`, {
-          messageId,
-          userId: user.id,
-        });
-
-        const insertStartTime = performance.now();
         const insertPromise = supabase.from('channel_messages').insert({
-          id: messageId,
+          id: messageId, // Passes client draft ID as primary key (M3)
           channel_id: channelId,
           user_id: user.id,
           content: trimmed,
@@ -416,176 +500,81 @@ export function useChannelMessages(channelId: string | null) {
           insertErr = raceErr;
         }
 
-        const insertDurationMs = Math.round(performance.now() - insertStartTime);
-
-        // Auto-recovery: If rejected due to RLS/auth/JWT expiration or PGRST301, refresh session and retry once
         if (insertErr) {
-          debugLogger.warn('channel_messaging', `Channel message insert failed (${insertDurationMs}ms): [${(insertErr as any).code}] ${insertErr.message}`, insertErr);
-          const errLower = (insertErr.message || '').toLowerCase();
-          const isAuthOrRls =
-            errLower.includes('jwt') ||
-            errLower.includes('security') ||
-            errLower.includes('rls') ||
-            errLower.includes('unauthorized') ||
-            errLower.includes('authenticated') ||
-            (insertErr as any).code === 'PGRST301' ||
-            (insertErr as any).code === '42501';
-
-          if (isAuthOrRls && supabase.auth?.refreshSession) {
-            try {
-              debugLogger.info('auth', 'Channel message insert rejected by auth/RLS. Refreshing session...');
-              console.warn('Channel message insert auth issue detected, refreshing session and retrying...');
-              const { data: refreshed, error: refErr } = await supabase.auth.refreshSession();
-              if (refErr) {
-                debugLogger.error('auth', `Token auto-refresh failed: ${refErr.message}`, refErr);
-              }
-              if (refreshed?.session?.user) {
-                debugLogger.success('auth', 'Token renewed. Retrying channel message insert...');
-                const retryRes = await supabase.from('channel_messages').insert({
-                  id: messageId,
-                  channel_id: channelId,
-                  user_id: user.id,
-                  content: trimmed,
-                });
-                if (!retryRes.error) {
-                  insertErr = null;
-                  debugLogger.success('channel_messaging', 'Channel message insert retry succeeded.');
-                } else {
-                  debugLogger.error('channel_messaging', `Retry insert failed: ${retryRes.error.message}`, retryRes.error);
-                }
-              }
-            } catch (refreshErr) {
-              debugLogger.error('auth', 'Exception during auto session refresh:', refreshErr);
-              console.warn('Auto session refresh retry failed:', refreshErr);
-            }
-          }
-        }
-
-        if (insertErr) {
-          debugLogger.error('channel_messaging', `Failed to persist channel message: ${insertErr.message}`, {
-            error: insertErr,
-            channelId,
-            userId: user.id,
-          });
-          console.error('Failed to persist channel message:', insertErr);
-          // Mark optimistic message as failed
+          const errMsg = insertErr?.message || 'Failed to persist channel message';
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === messageId ? { ...m, status: 'failed', error: insertErr.message } : m
-            )
+            prev.map((m) => (m.id === messageId ? { ...m, status: 'failed', error: errMsg } : m))
           );
-          return { error: insertErr.message || 'Failed to send message to database' };
+          return { error: errMsg };
         }
 
-        debugLogger.success('channel_messaging', `Channel message saved to database (${insertDurationMs}ms): id=${messageId}`);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, status: 'sent', error: undefined } : m))
+        );
 
-        // 3. Mark message as sent
-        const sentMsg: ChannelMessage = {
-          ...optimisticMsg,
-          status: 'sent',
-        };
-
-        setMessages((prev) => {
-          const updated = prev.map((m) => (m.id === messageId ? sentMsg : m));
-          try {
-            localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(updated));
-          } catch {}
-          return updated;
-        });
-
-        // 4. Broadcast to peers ONLY AFTER successful database persistence
         if (channelRef.current) {
-          if (channelRef.current.state === 'joined') {
-            channelRef.current
-              .send({
-                type: 'broadcast',
-                event: 'new_channel_msg',
-                payload: { message: sentMsg },
-              })
-              .catch((bcErr: unknown) => {
-                console.warn('Realtime channel broadcast warning:', bcErr);
-              });
-          } else if (typeof channelRef.current.httpSend === 'function') {
-            channelRef.current
-              .httpSend({
-                type: 'broadcast',
-                event: 'new_channel_msg',
-                payload: { message: sentMsg },
-              })
-              .catch(() => {});
-          }
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'new_channel_msg',
+            payload: { message: { ...optimisticMsg, status: 'sent' } },
+          }).catch(() => {});
         }
-
-        // Fast authoritative follow-up reconciliations
-        setTimeout(() => {
-          if (activeChannelIdRef.current === channelId) {
-            fetchChannelMessages();
-          }
-        }, 400);
-
-        setTimeout(() => {
-          if (activeChannelIdRef.current === channelId) {
-            fetchChannelMessages();
-          }
-        }, 1200);
 
         return { error: null };
-      } catch (err: unknown) {
-        console.error('Channel send exception:', err);
-        const errMsg = err instanceof Error ? err.message : 'Network error sending channel message';
+      } catch (err: any) {
+        const errMsg = err?.message || 'Failed to send channel message';
         setMessages((prev) =>
           prev.map((m) => (m.id === messageId ? { ...m, status: 'failed', error: errMsg } : m))
         );
         return { error: errMsg };
       }
     },
-    [channelId, isConfigured, user, profile, isUUID, supabase, fetchChannelMessages]
+    [channelId, isConfigured, user, profile, isUUID, supabase]
   );
 
   const retryMessage = React.useCallback(
     async (messageId: string): Promise<{ error: string | null }> => {
-      const target = messages.find((m) => m.id === messageId && m.status === 'failed');
-      if (!target) return { error: 'Message not found or not in failed state' };
+      const msg = messages.find((m) => m.id === messageId);
+      if (!msg) return { error: 'Message not found' };
 
-      // Idempotency check: verify if the timed-out message was already committed to the database
-      if (isConfigured && userId && isUUID && channelId) {
-        try {
-          const { data: existing } = await supabase
-            .from('channel_messages')
-            .select('id, created_at')
-            .eq('channel_id', channelId)
-            .eq('user_id', userId)
-            .eq('content', target.content.trim())
-            .gte('created_at', new Date(Date.now() - 60000).toISOString())
-            .order('created_at', { ascending: false })
-            .limit(1);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, status: 'sending', error: undefined } : m))
+      );
 
-          if (existing && existing.length > 0) {
-            debugLogger.info('channel_messaging', 'Retry detected channel message was already committed. Reconciling...');
-            setMessages((prev) => prev.filter((m) => m.id !== messageId));
-            await fetchChannelMessages();
-            return { error: null };
-          }
-        } catch {}
+      try {
+        const { error } = await supabase.from('channel_messages').insert({
+          id: msg.id,
+          channel_id: msg.channel_id,
+          user_id: msg.user_id,
+          content: msg.content,
+        });
+
+        if (error) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === messageId ? { ...m, status: 'failed', error: error.message } : m))
+          );
+          return { error: error.message };
+        }
+
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, status: 'sent', error: undefined } : m))
+        );
+        return { error: null };
+      } catch (err: any) {
+        const errMsg = err?.message || 'Retry failed';
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, status: 'failed', error: errMsg } : m))
+        );
+        return { error: errMsg };
       }
-
-      // Remove the failed message and re-send
-      setMessages((prev) => prev.filter((m) => m.id !== messageId));
-      return sendMessage(target.content);
     },
-    [messages, sendMessage, isConfigured, userId, isUUID, channelId, supabase, fetchChannelMessages]
+    [messages, supabase]
   );
 
   const deleteMessage = React.useCallback(
     async (messageId: string): Promise<{ error: string | null }> => {
-      if (!isConfigured || !user) {
-        setMessages((prev) => {
-          const next = prev.filter((m) => m.id !== messageId);
-          try {
-            localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(next));
-          } catch {}
-          return next;
-        });
+      if (!isConfigured) {
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
         return { error: null };
       }
 
@@ -602,18 +591,24 @@ export function useChannelMessages(channelId: string | null) {
       setMessages((prev) => {
         const next = prev.filter((m) => m.id !== messageId);
         try {
-          localStorage.setItem(`${STORAGE_KEY_PREFIX}${channelId}`, JSON.stringify(next.filter((m) => m.status === 'sent')));
+          localStorage.setItem(
+            `${STORAGE_KEY_PREFIX}${channelId}`,
+            JSON.stringify(next.filter((m) => m.status === 'sent'))
+          );
         } catch {}
         return next;
       });
       return { error: null };
     },
-    [channelId, isConfigured, user, supabase]
+    [channelId, isConfigured, supabase]
   );
 
   return {
     messages,
     isLoading,
+    isLoadingMore,
+    hasMore,
+    loadMore,
     sendMessage,
     retryMessage,
     deleteMessage,

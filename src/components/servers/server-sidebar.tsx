@@ -244,29 +244,7 @@ export function ServerSidebar({
   const canManageServer = hasServerPermission(server, user?.id, 'manage_server') || hasServerPermission(server, user?.id, 'manage_roles');
   const canManageChannels = hasServerPermission(server, user?.id, 'manage_channels');
 
-  const allChannels =
-    server.channels && server.channels.length > 0
-      ? server.channels
-      : [
-          {
-            id: `default-chan-${server.id}`,
-            server_id: server.id,
-            name: 'general',
-            type: 'text' as const,
-            topic: 'General team discussion & lobby chatter',
-            position: 0,
-            created_at: server.created_at || new Date().toISOString(),
-          },
-          {
-            id: `default-voice-${server.id}`,
-            server_id: server.id,
-            name: 'Voice Lounge',
-            type: 'voice' as const,
-            topic: 'Instant squad voice comms',
-            position: 1,
-            created_at: server.created_at || new Date().toISOString(),
-          },
-        ];
+  const allChannels = server.channels || [];
 
   const textChannels = allChannels.filter((c) => c.type === 'text');
   const voiceChannels = allChannels.filter((c) => c.type === 'voice');

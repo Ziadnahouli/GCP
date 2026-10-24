@@ -21,6 +21,7 @@ import { LogsWindow } from '@/components/diagnostics/logs-window';
 import { VoiceLoungePopup } from '@/components/servers/voice-lounge-popup';
 import { MixerAdapterBridge } from '@/components/audio/mixer-adapter-bridge';
 import { OfflineBanner } from '@/components/network/offline-banner';
+import { ComponentErrorBoundary } from '@/components/ui/error-boundary';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers, ServersProvider } from '@/hooks/use-servers';
 import { ConversationsProvider } from '@/hooks/use-conversations';
@@ -109,8 +110,8 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const handleSelectServer = (serverId: string | null) => {
     if (serverId) {
       const targetServer = servers.find((s) => s.id === serverId);
-      const firstChannel = targetServer?.channels?.[0]?.id || `default-chan-${serverId}`;
-      router.push(`/?s=${serverId}&ch=${firstChannel}`);
+      const firstChannel = targetServer?.channels?.[0]?.id || '';
+      router.push(firstChannel ? `/?s=${serverId}&ch=${firstChannel}` : `/?s=${serverId}`);
     } else {
       router.push('/');
     }
@@ -166,93 +167,38 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
       <OfflineBanner />
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* 1. Desktop Docked Sidebars (Rail + Sub-Sidebar) - Hidden on Mobile */}
-        <div className="hidden md:flex flex-row shrink-0 h-full">
-        <ServerRail
-          servers={servers}
-          activeServerId={selectedServerId}
-          onSelectServer={handleSelectServer}
-          onOpenCreateServer={() => setShowCreateServer(true)}
-        />
-
-        <div className="flex flex-col shrink-0 h-full">
-          <div className="flex-1 overflow-hidden">
-            {activeServer && !selectedConversationId ? (
-              <ServerSidebar
-                server={activeServer}
-                activeChannelId={selectedChannelId || activeServer.channels[0]?.id || null}
-                onSelectChannel={handleSelectChannel}
-                onConnectVoiceChannel={(channel) => {
-                  serverVoice.joinVoiceChannel(activeServer.id, channel.id, activeServer.name, channel.name);
-                }}
-                onOpenServerSettings={() => setShowServerSettings(true)}
-                onCreateChannel={async (name, type, topic) => {
-                  await createChannel(activeServer.id, name, type, topic);
-                }}
-                onUpdateChannel={async (chanId, updates) => {
-                  await updateChannel(activeServer.id, chanId, updates);
-                }}
-                onDeleteChannel={async (chanId) => {
-                  await deleteChannel(activeServer.id, chanId);
-                }}
-              />
-            ) : (
-              <Sidebar
-                collapsed={collapsed}
-                onToggleCollapse={() => setCollapsed((prev) => !prev)}
-                selectedConversationId={selectedConversationId}
-                onSelectConversation={handleSelectConversation}
-              />
-            )}
-          </div>
-
-          {serverVoice.isVoiceConnected && serverVoice.activeChannelName && (
-            <VoiceConnectedBar
-              channelName={serverVoice.activeChannelName}
-              serverName={serverVoice.activeServerName || undefined}
-              isMuted={serverVoice.isMicMuted}
-              isDeafened={serverVoice.isDeafened}
-              onDisconnect={serverVoice.disconnectVoice}
-              onToggleMic={serverVoice.toggleMic}
-              onToggleDeafen={serverVoice.toggleDeafen}
-              onClick={() => {
-                if (serverVoice.activeServerId && serverVoice.activeChannelId) {
-                  router.push(`/?s=${serverVoice.activeServerId}&ch=${serverVoice.activeChannelId}`);
-                }
-              }}
-            />
-          )}
-
-          <UserBar />
-        </div>
-      </div>
-
-      {/* 2. Mobile Off-Canvas Drawer (Slide-out menu for Phones) */}
-      {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          {/* Backdrop overlay */}
+        {/* Mobile Drawer Backdrop Overlay */}
+        {mobileMenuOpen && (
           <div
-            className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity z-40 md:hidden"
             onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Unified Responsive Navigation Sidebar (Docked on Desktop, Slide-out Drawer on Mobile) */}
+        <div
+          className={cn(
+            'fixed inset-y-0 left-0 z-50 flex flex-row shrink-0 h-full transition-transform duration-200 ease-in-out md:static md:z-auto md:translate-x-0',
+            mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
+          )}
+        >
+          <ServerRail
+            servers={servers}
+            activeServerId={selectedServerId}
+            onSelectServer={(srvId) => {
+              handleSelectServer(srvId);
+              setMobileMenuOpen(false);
+            }}
+            onOpenCreateServer={() => {
+              setShowCreateServer(true);
+              setMobileMenuOpen(false);
+            }}
           />
 
-          {/* Drawer content */}
-          <div className="relative flex h-full max-w-[92vw] shadow-2xl z-10 animate-in slide-in-from-left duration-200">
-            <ServerRail
-              servers={servers}
-              activeServerId={selectedServerId}
-              onSelectServer={(srvId) => {
-                handleSelectServer(srvId);
-                setMobileMenuOpen(false);
-              }}
-              onOpenCreateServer={() => {
-                setShowCreateServer(true);
-                setMobileMenuOpen(false);
-              }}
-            />
-
-            <div className="flex flex-col w-[calc(92vw-72px)] sm:w-64 max-w-[280px] h-full bg-surface-sidebar border-r border-white/[0.06]">
-              <div className="flex-1 overflow-hidden">
+          <div className="flex flex-col w-[calc(92vw-72px)] sm:w-64 max-w-[280px] md:w-60 md:max-w-none shrink-0 h-full bg-surface-sidebar border-r border-white/[0.06]">
+            <div className="flex-1 overflow-hidden">
+              <ComponentErrorBoundary sectionName="Sidebar Navigation">
                 {activeServer && !selectedConversationId ? (
                   <ServerSidebar
                     server={activeServer}
@@ -280,7 +226,8 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
                   />
                 ) : (
                   <Sidebar
-                    collapsed={false}
+                    collapsed={collapsed}
+                    onToggleCollapse={() => setCollapsed((prev) => !prev)}
                     selectedConversationId={selectedConversationId}
                     onSelectConversation={(id) => {
                       handleSelectConversation(id);
@@ -288,194 +235,203 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
                     }}
                   />
                 )}
-              </div>
-
-              {serverVoice.isVoiceConnected && serverVoice.activeChannelName && (
-                <VoiceConnectedBar
-                  channelName={serverVoice.activeChannelName}
-                  serverName={serverVoice.activeServerName || undefined}
-                  isMuted={serverVoice.isMicMuted}
-                  isDeafened={serverVoice.isDeafened}
-                  onDisconnect={serverVoice.disconnectVoice}
-                  onToggleMic={serverVoice.toggleMic}
-                  onToggleDeafen={serverVoice.toggleDeafen}
-                  onClick={() => {
-                    if (serverVoice.activeServerId && serverVoice.activeChannelId) {
-                      router.push(`/?s=${serverVoice.activeServerId}&ch=${serverVoice.activeChannelId}`);
-                      setMobileMenuOpen(false);
-                    }
-                  }}
-                />
-              )}
-
-              <UserBar />
+              </ComponentErrorBoundary>
             </div>
+
+            {serverVoice.isVoiceConnected && serverVoice.activeChannelName && (
+              <VoiceConnectedBar
+                channelName={serverVoice.activeChannelName}
+                serverName={serverVoice.activeServerName || undefined}
+                isMuted={serverVoice.isMicMuted}
+                isDeafened={serverVoice.isDeafened}
+                onDisconnect={serverVoice.disconnectVoice}
+                onToggleMic={serverVoice.toggleMic}
+                onToggleDeafen={serverVoice.toggleDeafen}
+                onClick={() => {
+                  if (serverVoice.activeServerId && serverVoice.activeChannelId) {
+                    router.push(`/?s=${serverVoice.activeServerId}&ch=${serverVoice.activeChannelId}`);
+                    setMobileMenuOpen(false);
+                  }
+                }}
+              />
+            )}
+
+            <UserBar />
           </div>
         </div>
-      )}
 
-      {/* 3. Main Content Stage */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-background">
-        <NavHeader onOpenMobileMenu={() => setMobileMenuOpen(true)} />
-        <main className="flex-1 overflow-y-auto min-h-0 bg-background">{children}</main>
+        {/* Main Content Stage */}
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-background">
+          <NavHeader onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+          <main className="flex-1 overflow-y-auto min-h-0 bg-background">
+            <ComponentErrorBoundary sectionName="Main Chat & Content Area">
+              {children}
+            </ComponentErrorBoundary>
+          </main>
 
-        {/* Mobile Persistent Voice Connected Indicator Bar (when drawer is closed) */}
-        {serverVoice.isVoiceConnected && serverVoice.activeChannelName && (
-          <div className="md:hidden shrink-0">
-            <VoiceConnectedBar
-              channelName={serverVoice.activeChannelName}
-              serverName={serverVoice.activeServerName || undefined}
-              isMuted={serverVoice.isMicMuted}
-              isDeafened={serverVoice.isDeafened}
-              onDisconnect={serverVoice.disconnectVoice}
-              onToggleMic={serverVoice.toggleMic}
-              onToggleDeafen={serverVoice.toggleDeafen}
+          {/* Mobile Persistent Voice Connected Indicator Bar (only when drawer is closed to prevent duplicate instances) */}
+          {!mobileMenuOpen && serverVoice.isVoiceConnected && serverVoice.activeChannelName && (
+            <div className="md:hidden shrink-0">
+              <VoiceConnectedBar
+                channelName={serverVoice.activeChannelName}
+                serverName={serverVoice.activeServerName || undefined}
+                isMuted={serverVoice.isMicMuted}
+                isDeafened={serverVoice.isDeafened}
+                onDisconnect={serverVoice.disconnectVoice}
+                onToggleMic={serverVoice.toggleMic}
+                onToggleDeafen={serverVoice.toggleDeafen}
+                onClick={() => {
+                  if (serverVoice.activeServerId && serverVoice.activeChannelId) {
+                    router.push(`/?s=${serverVoice.activeServerId}&ch=${serverVoice.activeChannelId}`);
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {/* Mobile Bottom Tab Bar (Phone Friendly) */}
+          <nav className="md:hidden h-14 bg-surface-sidebar border-t border-white/[0.06] flex items-center justify-around px-2 shrink-0 z-20 select-none">
+            <button
+              onClick={() => router.push('/')}
+              className={cn(
+                'flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-medium transition-colors',
+                !selectedServerId && !selectedConversationId
+                  ? 'text-primary font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              title="Friends & Activity"
+            >
+              <Users className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5">Friends</span>
+            </button>
+
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className={cn(
+                'flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-medium transition-colors',
+                mobileMenuOpen || selectedServerId
+                  ? 'text-primary font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              title="Servers"
+            >
+              <Gamepad2 className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5">Servers</span>
+            </button>
+
+            <button
               onClick={() => {
-                if (serverVoice.activeServerId && serverVoice.activeChannelId) {
-                  router.push(`/?s=${serverVoice.activeServerId}&ch=${serverVoice.activeChannelId}`);
+                if (selectedServerId) {
+                  router.push('/');
                 }
+                setMobileMenuOpen(true);
               }}
-            />
-          </div>
+              className={cn(
+                'flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-medium transition-colors',
+                selectedConversationId
+                  ? 'text-primary font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              title="Direct Messages"
+            >
+              <MessageSquare className="w-5 h-5" />
+              <span className="text-[10px] mt-0.5">Messages</span>
+            </button>
+
+            <button
+              onClick={() => setShowUserSettings(true)}
+              className="flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+              title="User Profile & Settings"
+            >
+              <Avatar
+                src={profile?.avatar_url || null}
+                name={profile?.display_name || 'Gamer'}
+                status={profile?.status || 'online'}
+                showStatus
+                size="xs"
+              />
+              <span className="text-[10px] mt-0.5">You</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Create Server Modal */}
+        <CreateServerModal
+          open={showCreateServer}
+          onOpenChange={setShowCreateServer}
+          onCreateServer={handleCreateServerSubmit}
+          onJoinServer={handleJoinServerSubmit}
+        />
+
+        {/* Server Settings Modal */}
+        {activeServer && (
+          <ServerSettingsModal
+            open={showServerSettings}
+            onOpenChange={setShowServerSettings}
+            server={activeServer}
+            onUpdateServer={updateServer}
+            onDeleteServer={handleDeleteServer}
+            onCreateChannel={createChannel}
+            onUpdateChannel={updateChannel}
+            onDeleteChannel={deleteChannel}
+            onUpdateMemberRole={updateMemberRole}
+            onKickMember={kickMember}
+            onLeaveServer={handleLeaveServer}
+            onCreateRole={createRole}
+            onUpdateRole={updateRole}
+            onDeleteRole={deleteRole}
+            onUpdateRolePermissions={updateRolePermissions}
+          />
         )}
 
-        {/* 4. Mobile Bottom Tab Bar (Phone Friendly) */}
-        <nav className="md:hidden h-14 bg-surface-sidebar border-t border-white/[0.06] flex items-center justify-around px-2 shrink-0 z-20 select-none">
-          <button
-            onClick={() => router.push('/')}
-            className={cn(
-              'flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-medium transition-colors',
-              !selectedServerId && !selectedConversationId
-                ? 'text-primary font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-            title="Friends & Activity"
-          >
-            <Users className="w-5 h-5" />
-            <span className="text-[10px] mt-0.5">Friends</span>
-          </button>
+        {/* User Settings Modal for Mobile & Global */}
+        <SettingsModal open={showUserSettings} onOpenChange={setShowUserSettings} />
 
-          <button
-            onClick={() => setMobileMenuOpen(true)}
-            className={cn(
-              'flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-medium transition-colors',
-              mobileMenuOpen || selectedServerId
-                ? 'text-primary font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-            title="Servers"
-          >
-            <Gamepad2 className="w-5 h-5" />
-            <span className="text-[10px] mt-0.5">Servers</span>
-          </button>
+        {/* Global Browser & Hardware Permissions Onboarding Modal */}
+        <PermissionsModal />
 
-          <button
-            onClick={() => {
-              if (selectedServerId) {
-                router.push('/');
-              }
-              setMobileMenuOpen(true);
-            }}
-            className={cn(
-              'flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-medium transition-colors',
-              selectedConversationId
-                ? 'text-primary font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-            title="Direct Messages"
-          >
-            <MessageSquare className="w-5 h-5" />
-            <span className="text-[10px] mt-0.5">Messages</span>
-          </button>
+        {/* Global Incoming Call Ringing Modal */}
+        <IncomingCallModal />
 
-          <button
-            onClick={() => setShowUserSettings(true)}
-            className="flex flex-col items-center justify-center p-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-            title="User Profile & Settings"
-          >
-            <Avatar
-              src={profile?.avatar_url || null}
-              name={profile?.display_name || 'Gamer'}
-              status={profile?.status || 'online'}
-              showStatus
-              size="xs"
-            />
-            <span className="text-[10px] mt-0.5">You</span>
-          </button>
-        </nav>
-      </div>
+        {/* Global Active WebRTC Voice/Video Call Modal */}
+        <ComponentErrorBoundary sectionName="Call Modal">
+          <CallModal
+            open={call.callStatus === 'in_call' || call.callStatus === 'outgoing_ringing'}
+            callStatus={call.callStatus}
+            isVideo={call.isVideoCall}
+            isMicMuted={call.isMicMuted}
+            isDeafened={call.isDeafened}
+            isCameraOn={call.isCameraOn}
+            isScreenSharing={call.isScreenSharing}
+            isNoiseSuppressionEnabled={call.isNoiseSuppressionEnabled}
+            isLiveKitActive={call.isLiveKitActive}
+            participants={call.participants}
+            stats={call.stats}
+            localStream={call.localStream}
+            remoteStream={call.remoteStream}
+            screenStream={call.screenStream}
+            onEndCall={call.endCall}
+            onToggleMic={call.toggleMic}
+            onToggleDeafen={call.toggleDeafen}
+            onToggleCamera={call.toggleCamera}
+            onToggleScreenShare={call.toggleScreenShare}
+            onToggleNoiseSuppression={call.toggleNoiseSuppression}
+            onRestartConnection={call.restartConnection}
+          />
+        </ComponentErrorBoundary>
 
-      {/* Create Server Modal */}
-      <CreateServerModal
-        open={showCreateServer}
-        onOpenChange={setShowCreateServer}
-        onCreateServer={handleCreateServerSubmit}
-        onJoinServer={handleJoinServerSubmit}
-      />
+        {/* Floating Pop-Up Screen for Active Server Voice Lounge */}
+        <ComponentErrorBoundary sectionName="Voice Lounge">
+          <VoiceLoungePopup />
+        </ComponentErrorBoundary>
 
-      {/* Server Settings Modal */}
-      {activeServer && (
-        <ServerSettingsModal
-          open={showServerSettings}
-          onOpenChange={setShowServerSettings}
-          server={activeServer}
-          onUpdateServer={updateServer}
-          onDeleteServer={handleDeleteServer}
-          onCreateChannel={createChannel}
-          onUpdateChannel={updateChannel}
-          onDeleteChannel={deleteChannel}
-          onUpdateMemberRole={updateMemberRole}
-          onKickMember={kickMember}
-          onLeaveServer={handleLeaveServer}
-          onCreateRole={createRole}
-          onUpdateRole={updateRole}
-          onDeleteRole={deleteRole}
-          onUpdateRolePermissions={updateRolePermissions}
-        />
-      )}
-
-      {/* User Settings Modal for Mobile & Global */}
-      <SettingsModal open={showUserSettings} onOpenChange={setShowUserSettings} />
-
-      {/* Global Browser & Hardware Permissions Onboarding Modal */}
-      <PermissionsModal />
-
-      {/* Global Incoming Call Ringing Modal */}
-      <IncomingCallModal />
-
-      {/* Global Active WebRTC Voice/Video Call Modal */}
-      <CallModal
-        open={call.callStatus === 'in_call' || call.callStatus === 'outgoing_ringing'}
-        callStatus={call.callStatus}
-        isVideo={call.isVideoCall}
-        isMicMuted={call.isMicMuted}
-        isDeafened={call.isDeafened}
-        isCameraOn={call.isCameraOn}
-        isScreenSharing={call.isScreenSharing}
-        isNoiseSuppressionEnabled={call.isNoiseSuppressionEnabled}
-        isLiveKitActive={call.isLiveKitActive}
-        participants={call.participants}
-        stats={call.stats}
-        localStream={call.localStream}
-        remoteStream={call.remoteStream}
-        screenStream={call.screenStream}
-        onEndCall={call.endCall}
-        onToggleMic={call.toggleMic}
-        onToggleDeafen={call.toggleDeafen}
-        onToggleCamera={call.toggleCamera}
-        onToggleScreenShare={call.toggleScreenShare}
-        onToggleNoiseSuppression={call.toggleNoiseSuppression}
-        onRestartConnection={call.restartConnection}
-      />
-
-      {/* Floating Pop-Up Screen for Active Server Voice Lounge */}
-      <VoiceLoungePopup />
-
-      {/* Chrome Call Controls Mixer Adapter Bridge */}
-      <MixerAdapterBridge />
+        {/* Chrome Call Controls Mixer Adapter Bridge */}
+        <MixerAdapterBridge />
 
         {/* Global Diagnostics & Live Telemetry Logs Console */}
-        <LogsWindow />
+        <ComponentErrorBoundary sectionName="Diagnostics Window">
+          <LogsWindow />
+        </ComponentErrorBoundary>
       </div>
     </div>
   );

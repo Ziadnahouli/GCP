@@ -9,6 +9,8 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
 import { soundboardEngine, SoundboardClip } from '@/lib/soundboard/audio-engine';
 import { createGcpNoisePipeline, GcpNoisePipeline, NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { audioSessionCoordinator } from '@/lib/webrtc/audio-session-coordinator';
 import {
   DEFAULT_RTC_CONFIG,
   cleanIceCandidate,
@@ -19,7 +21,7 @@ import {
   synthesizeZeroTierCandidate,
 } from '@/lib/webrtc/ice-config';
 
-export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_call' | 'ended';
+export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_call' | 'reconnecting' | 'ended';
 
 export interface CallParticipant {
   id: string;
@@ -45,7 +47,7 @@ export interface IncomingCallData {
   groupName?: string | null;
 }
 
-interface CallContextType {
+export interface CallStateContextType {
   callStatus: CallStatus;
   activeConversationId: string | null;
   isVideoCall: boolean;
@@ -61,7 +63,14 @@ interface CallContextType {
   remoteStream: MediaStream | null;
   screenStream: MediaStream | null;
   participants: CallParticipant[];
-  stats: DiagnosticsStats;
+  isNoiseSuppressionEnabled: boolean;
+  noiseSuppressionMode: NoiseCancellationMode;
+  peerZeroTierIp: string | null;
+  incomingVolume: number;
+  activeSquadCalls: Map<string, any>;
+}
+
+export interface CallActionsContextType {
   startCall: (targetUserId: string, conversationId: string, video?: boolean) => Promise<void>;
   acceptCall: () => Promise<void>;
   rejectCall: () => void;
@@ -72,18 +81,13 @@ interface CallContextType {
   toggleCamera: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
   broadcastSoundboardClip: (clip: SoundboardClip) => void;
-  isNoiseSuppressionEnabled: boolean;
-  noiseSuppressionMode: NoiseCancellationMode;
   toggleNoiseSuppression: () => void;
   setNoiseSuppressionMode: (mode: NoiseCancellationMode) => void;
-  peerZeroTierIp: string | null;
   setPeerZeroTierDirectIp: (ip: string) => void;
-  incomingVolume: number;
   setIncomingVolume: (volume: number) => Promise<void>;
   setMicMutedExplicit: (muted: boolean) => Promise<void>;
   setDeafenedExplicit: (deafened: boolean) => Promise<void>;
   forceMute: () => void;
-  activeSquadCalls: Map<string, any>;
   isSquadCallActive: (conversationId?: string | null) => boolean;
   getSquadCallParticipants: (conversationId?: string | null) => Array<{
     id: string;
@@ -96,7 +100,40 @@ interface CallContextType {
   unregisterSquadCall?: (conversationId: string) => void;
 }
 
+export interface CallStatsContextType {
+  stats: DiagnosticsStats;
+}
+
+export type CallContextType = CallStateContextType & CallActionsContextType & CallStatsContextType;
+
+export const CallStateContext = React.createContext<CallStateContextType | null>(null);
+export const CallActionsContext = React.createContext<CallActionsContextType | null>(null);
+export const CallStatsContext = React.createContext<CallStatsContextType | null>(null);
 export const CallContext = React.createContext<CallContextType | null>(null);
+
+export function useCallState(): CallStateContextType {
+  const context = React.useContext(CallStateContext);
+  if (!context) {
+    throw new Error('useCallState must be used within a CallProvider');
+  }
+  return context;
+}
+
+export function useCallActions(): CallActionsContextType {
+  const context = React.useContext(CallActionsContext);
+  if (!context) {
+    throw new Error('useCallActions must be used within a CallProvider');
+  }
+  return context;
+}
+
+export function useCallStats(): CallStatsContextType {
+  const context = React.useContext(CallStatsContext);
+  if (!context) {
+    throw new Error('useCallStats must be used within a CallProvider');
+  }
+  return context;
+}
 
 // Procedural Web Audio Ringtone Generator (no external assets needed)
 class RingtonePlayer {
@@ -1855,18 +1892,35 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   // 1. GLOBAL SIGNALING LISTENER: Subscribes on mount for the authenticated user
   React.useEffect(() => {
-    if (!user || !supabase) return;
+    if (!user?.id || !supabase) return;
 
     const personalChannelName = `user-signals-${user.id}`;
-    const myChannel = supabase.channel(personalChannelName);
+    const myChannel = realtimeHub.acquire(personalChannelName, undefined, supabase);
 
     myChannel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
         if (!payload || payload.callerId === user.id) return;
 
-        // If user is already in active call or dialing, do not disrupt
-        if (callStatusRef.current === 'in_call' || callStatusRef.current === 'outgoing_ringing') {
-          console.log('[CallSignaling] Ignoring incoming call beacon while already active or dialing');
+        // C5: If user is already in active call or dialing, or in server voice channel, respond with busy!
+        const isBusy =
+          callStatusRef.current === 'in_call' ||
+          callStatusRef.current === 'outgoing_ringing' ||
+          audioSessionCoordinator.isServerVoiceActive();
+
+        if (isBusy) {
+          console.log('[CallSignaling] Callee is busy in another call/voice channel. Sending busy response to caller.');
+          if (!payload.isGroup) {
+            sendDirectSignalRef.current(`user-signals-${payload.callerId}`, 'call_rejected', {
+              conversationId: payload.conversationId,
+              calleeId: user.id,
+              reason: 'busy',
+            });
+          }
+          toast({
+            title: 'Missed Call',
+            description: `${payload.callerName || 'Squadmate'} tried to call you, but you were busy in another call/voice channel.`,
+            type: 'info',
+          });
           return;
         }
 
@@ -2140,10 +2194,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         ringtoneRef.current.stop();
         ringtoneRef.current = null;
       }
-      myChannel.unsubscribe();
-      supabase.removeChannel(myChannel);
+      realtimeHub.release(personalChannelName, 1000);
     };
-  }, [user, supabase, toast, drainPendingRemoteCandidates]);
+  }, [user?.id, supabase, toast, drainPendingRemoteCandidates]);
 
   // 2. START OUTGOING CALL
   const startCall = async (targetUserId: string, conversationId: string, video = false) => {
@@ -2156,6 +2209,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       console.log('[CallSignaling] Cannot start call while status is:', callStatusRef.current);
       return;
     }
+
+    // C5: Disconnect server voice channel if active
+    if (audioSessionCoordinator.isServerVoiceActive()) {
+      audioSessionCoordinator.disconnectVoiceIfActive();
+    }
+
     isStartingCallRef.current = true;
 
     // Check if this conversation is a group
@@ -2941,6 +3000,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (ringingTimerRef.current) {
       clearTimeout(ringingTimerRef.current);
       ringingTimerRef.current = null;
+    }
+
+    // C5: Disconnect server voice channel if active before answering
+    if (audioSessionCoordinator.isServerVoiceActive()) {
+      audioSessionCoordinator.disconnectVoiceIfActive();
     }
 
     const { callerId, callerName, conversationId, isVideo, sdp } = incomingCall;
@@ -4205,7 +4269,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     [activeSquadCalls]
   );
 
-  const callContextValue = React.useMemo(
+  // C5 & C8: Register end call handler, sync call state, and unmount cleanup
+  React.useEffect(() => {
+    return audioSessionCoordinator.registerEndCallHandler(() => {
+      endCall();
+    });
+  }, [endCall]);
+
+  React.useEffect(() => {
+    audioSessionCoordinator.setCallState(callStatus);
+  }, [callStatus]);
+
+  React.useEffect(() => {
+    return () => {
+      stopMediaTracks();
+    };
+  }, [stopMediaTracks]);
+
+  // C2: Split contexts to eliminate rerender storms on stats ticks
+  const callStateValue = React.useMemo<CallStateContextType>(
     () => ({
       callStatus,
       activeConversationId,
@@ -4222,33 +4304,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       remoteStream,
       screenStream,
       participants,
-      stats,
-      startCall: stableStartCall,
-      acceptCall: stableAcceptCall,
-      rejectCall: stableRejectCall,
-      endCall: stableEndCall,
-      restartConnection: restartIceConnection,
-      toggleMic: stableToggleMic,
-      toggleDeafen: stableToggleDeafen,
-      toggleCamera: stableToggleCamera,
-      toggleScreenShare: stableToggleScreenShare,
-      broadcastSoundboardClip,
       isNoiseSuppressionEnabled,
       noiseSuppressionMode,
-      toggleNoiseSuppression,
-      setNoiseSuppressionMode,
       peerZeroTierIp,
-      setPeerZeroTierDirectIp,
       incomingVolume,
-      setIncomingVolume,
-      setMicMutedExplicit,
-      setDeafenedExplicit,
-      forceMute,
       activeSquadCalls,
-      isSquadCallActive,
-      getSquadCallParticipants,
-      registerSquadCallActive,
-      unregisterSquadCall,
     }),
     [
       callStatus,
@@ -4266,7 +4326,39 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       remoteStream,
       screenStream,
       participants,
-      stats,
+      isNoiseSuppressionEnabled,
+      noiseSuppressionMode,
+      peerZeroTierIp,
+      incomingVolume,
+      activeSquadCalls,
+    ]
+  );
+
+  const callActionsValue = React.useMemo<CallActionsContextType>(
+    () => ({
+      startCall: stableStartCall,
+      acceptCall: stableAcceptCall,
+      rejectCall: stableRejectCall,
+      endCall: stableEndCall,
+      restartConnection: restartIceConnection,
+      toggleMic: stableToggleMic,
+      toggleDeafen: stableToggleDeafen,
+      toggleCamera: stableToggleCamera,
+      toggleScreenShare: stableToggleScreenShare,
+      broadcastSoundboardClip,
+      toggleNoiseSuppression,
+      setNoiseSuppressionMode,
+      setPeerZeroTierDirectIp,
+      setIncomingVolume,
+      setMicMutedExplicit,
+      setDeafenedExplicit,
+      forceMute,
+      isSquadCallActive,
+      getSquadCallParticipants,
+      registerSquadCallActive,
+      unregisterSquadCall,
+    }),
+    [
       stableStartCall,
       stableAcceptCall,
       stableRejectCall,
@@ -4277,18 +4369,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       stableToggleCamera,
       stableToggleScreenShare,
       broadcastSoundboardClip,
-      isNoiseSuppressionEnabled,
-      noiseSuppressionMode,
       toggleNoiseSuppression,
       setNoiseSuppressionMode,
-      peerZeroTierIp,
       setPeerZeroTierDirectIp,
-      incomingVolume,
       setIncomingVolume,
       setMicMutedExplicit,
       setDeafenedExplicit,
       forceMute,
-      activeSquadCalls,
       isSquadCallActive,
       getSquadCallParticipants,
       registerSquadCallActive,
@@ -4296,17 +4383,37 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     ]
   );
 
+  const callStatsValue = React.useMemo<CallStatsContextType>(
+    () => ({ stats }),
+    [stats]
+  );
+
+  const callContextValue = React.useMemo<CallContextType>(
+    () => ({
+      ...callStateValue,
+      ...callActionsValue,
+      ...callStatsValue,
+    }),
+    [callStateValue, callActionsValue, callStatsValue]
+  );
+
   return (
-    <CallContext.Provider value={callContextValue}>
-      {children}
-      <audio
-        ref={remoteAudioElementRef}
-        autoPlay
-        playsInline
-        aria-hidden="true"
-        className="fixed -top-[9999px] -left-[9999px] w-1 h-1 opacity-0 pointer-events-none"
-      />
-    </CallContext.Provider>
+    <CallActionsContext.Provider value={callActionsValue}>
+      <CallStateContext.Provider value={callStateValue}>
+        <CallStatsContext.Provider value={callStatsValue}>
+          <CallContext.Provider value={callContextValue}>
+            {children}
+            <audio
+              ref={remoteAudioElementRef}
+              autoPlay
+              playsInline
+              aria-hidden="true"
+              className="fixed -top-[9999px] -left-[9999px] w-1 h-1 opacity-0 pointer-events-none"
+            />
+          </CallContext.Provider>
+        </CallStatsContext.Provider>
+      </CallStateContext.Provider>
+    </CallActionsContext.Provider>
   );
 }
 

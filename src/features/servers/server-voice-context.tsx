@@ -8,6 +8,7 @@ import { SoundboardClip, soundboardEngine } from '@/lib/soundboard/audio-engine'
 import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
 import { createGcpNoisePipeline, GcpNoisePipeline, NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
 import { applyGcpOptimalConstraints } from '@/lib/webrtc/safe-constraints';
+import { audioSessionCoordinator } from '@/lib/webrtc/audio-session-coordinator';
 import {
   Room,
   RoomEvent,
@@ -830,6 +831,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         return;
       }
 
+      // C5: If user is in an active 1-on-1 call, end it before joining voice
+      if (audioSessionCoordinator.isCallActive()) {
+        audioSessionCoordinator.endCallIfActive();
+      }
+
       setIsConnecting(true);
 
       // Disconnect from any previous voice channel first
@@ -1257,6 +1263,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                     });
                   }
 
+                  if (currentVoiceSessionIdRef.current !== voiceSessionId) {
+                    rawStream.getTracks().forEach((t) => t.stop());
+                    return;
+                  }
+
                   let streamToUse = rawStream;
                   try {
                     if (dspPipelineRef.current) {
@@ -1264,6 +1275,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                       dspPipelineRef.current = null;
                     }
                     const pipeline = await createGcpNoisePipeline(rawStream, noiseSuppressionMode);
+                    if (currentVoiceSessionIdRef.current !== voiceSessionId) {
+                      rawStream.getTracks().forEach((t) => t.stop());
+                      if (pipeline) pipeline.cleanup();
+                      return;
+                    }
                     if (pipeline) {
                       dspPipelineRef.current = pipeline;
                       streamToUse = pipeline.outputStream;
@@ -1755,21 +1771,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         });
       }
 
-      // Heartbeat discovery every 5 seconds
+      // C6: Redundant 5s polling loop eliminated. Supabase Presence tracks active occupants.
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
       }
-      heartbeatIntervalRef.current = setInterval(() => {
-        if (realtimeChannelRef.current) {
-          try {
-            realtimeChannelRef.current.send({
-              type: 'broadcast',
-              event: 'voice_announce',
-              payload: getMyVoiceState(),
-            });
-          } catch {}
-        }
-      }, 5000);
 
       setIsVoiceConnected(true);
       setIsConnecting(false);
@@ -1868,6 +1874,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
     setChannelOccupants(new Map());
     cleanUpAllPeers();
+    audioSessionCoordinator.setServerVoiceChannel(null);
     activeChannelIdRef.current = null;
     setIsVoiceConnected(false);
     setIsConnecting(false);
@@ -1885,6 +1892,26 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       );
     }
   }, [stopAllMediaStreams, activeChannelId, activeServerId, cleanUpAllPeers]);
+
+  const disconnectVoiceRef = React.useRef(disconnectVoice);
+  disconnectVoiceRef.current = disconnectVoice;
+
+  // C5 & C8: Register voice disconnect handler and unmount cleanup
+  React.useEffect(() => {
+    return audioSessionCoordinator.registerVoiceDisconnectHandler(() => {
+      disconnectVoiceRef.current();
+    });
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      disconnectVoiceRef.current();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    audioSessionCoordinator.setServerVoiceChannel(isVoiceConnected ? activeChannelId : null);
+  }, [isVoiceConnected, activeChannelId]);
 
   // Toggle microphone
   const toggleMic = React.useCallback(async () => {

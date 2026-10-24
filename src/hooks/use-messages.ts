@@ -8,6 +8,10 @@ import { UserProfile } from '@/lib/types/profile';
 import { uploadAttachmentFile } from '@/lib/storage/upload';
 import { debugLogger } from '@/lib/logger/debug-logger';
 import { useToast } from '@/components/ui/toast';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
+
+const PAGE_SIZE = 50;
+const MAX_CONTENT_LENGTH = 4000;
 
 export function useMessages(conversationId: string | null) {
   const { user, profile, isConfigured } = useAuth();
@@ -15,6 +19,11 @@ export function useMessages(conversationId: string | null) {
   const userId = user?.id;
   const currentUsername = profile?.username;
   const supabase = React.useMemo(() => getBrowserClient(), []);
+
+  const cacheKey = React.useMemo(() => {
+    if (!conversationId) return '';
+    return userId ? `nexus_dm_msgs_${userId}_${conversationId}` : `nexus_dm_msgs_guest_${conversationId}`;
+  }, [conversationId, userId]);
 
   const [messages, setMessages] = React.useState<Message[]>(() => {
     if (!conversationId || typeof window === 'undefined') return [];
@@ -28,6 +37,7 @@ export function useMessages(conversationId: string | null) {
     } catch {}
     return [];
   });
+
   const [isLoading, setIsLoading] = React.useState<boolean>(() => {
     if (!conversationId || typeof window === 'undefined') return false;
     try {
@@ -40,6 +50,9 @@ export function useMessages(conversationId: string | null) {
     } catch {}
     return true;
   });
+
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+  const [hasMore, setHasMore] = React.useState(false);
   const [typingUsers, setTypingUsers] = React.useState<string[]>([]);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showPinnedOnly, setShowPinnedOnly] = React.useState(false);
@@ -48,8 +61,11 @@ export function useMessages(conversationId: string | null) {
   const activeConversationIdRef = React.useRef<string | null>(conversationId);
   const prevConversationIdRef = React.useRef<string | null>(conversationId);
   const isFetchingRef = React.useRef(false);
-  const membershipVerifiedRef = React.useRef<Set<string>>(new Set());
+  const generationRef = React.useRef(0);
   const createdBlobUrlsRef = React.useRef<Set<string>>(new Set());
+  const typingTimersRef = React.useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const fallbackPollTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const signedUrlCacheRef = React.useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
 
   // Revoke any created blob object URLs on unmount to prevent memory leaks
   React.useEffect(() => {
@@ -74,23 +90,91 @@ export function useMessages(conversationId: string | null) {
       : false;
   }, [conversationId]);
 
-  const cacheKey = React.useMemo(() => {
-    if (!conversationId) return '';
-    return userId ? `nexus_dm_msgs_${userId}_${conversationId}` : `nexus_dm_msgs_guest_${conversationId}`;
-  }, [conversationId, userId]);
+  // Clean up all typing debounce timers (M5)
+  const clearTypingTimers = React.useCallback(() => {
+    typingTimersRef.current.forEach((timer) => clearTimeout(timer));
+    typingTimersRef.current.clear();
+    setTypingUsers([]);
+  }, []);
 
-  // Fetch messages with attachments and reactions
+  const fetchMessagesRef = React.useRef<(isInitial?: boolean) => Promise<void>>(() => Promise.resolve());
+
+  // Stop polling interval
+  const stopFallbackPolling = React.useCallback(() => {
+    if (fallbackPollTimerRef.current) {
+      clearInterval(fallbackPollTimerRef.current);
+      fallbackPollTimerRef.current = null;
+    }
+  }, []);
+
+  const startFallbackPolling = React.useCallback(() => {
+    stopFallbackPolling();
+    fallbackPollTimerRef.current = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (activeConversationIdRef.current) {
+        fetchMessagesRef.current(false);
+      }
+    }, 10000);
+  }, [stopFallbackPolling]);
+
+  // Sign attachment paths with cache awareness (M6)
+  const resolveSignedUrls = React.useCallback(
+    async (rawAttachments: any[]): Promise<Map<string, string>> => {
+      const signedMap = new Map<string, string>();
+      const missingPaths: string[] = [];
+      const now = Date.now();
+
+      for (const a of rawAttachments) {
+        const path = a.storage_path;
+        if (!path) continue;
+        const cached = signedUrlCacheRef.current.get(path);
+        if (cached && cached.expiresAt > now + 60000) {
+          signedMap.set(path, cached.url);
+        } else {
+          missingPaths.push(path);
+        }
+      }
+
+      if (missingPaths.length > 0) {
+        try {
+          const { data: signedData } = await (supabase.storage.from('attachments') as any).createSignedUrls(
+            missingPaths,
+            3600
+          );
+          if (Array.isArray(signedData)) {
+            signedData.forEach((s: any) => {
+              if (s.signedUrl && s.path) {
+                signedMap.set(s.path, s.signedUrl);
+                signedUrlCacheRef.current.set(s.path, {
+                  url: s.signedUrl,
+                  expiresAt: now + 3500 * 1000,
+                });
+              }
+            });
+          }
+        } catch {}
+      }
+
+      return signedMap;
+    },
+    [supabase]
+  );
+
+  // Fetch messages with keyset pagination (M1)
   const fetchMessages = React.useCallback(
     async (isInitial = false) => {
       if (!conversationId) {
         setMessages([]);
         setIsLoading(false);
+        setHasMore(false);
         return;
       }
 
       if (!userId) {
         setMessages([]);
         setIsLoading(false);
+        setHasMore(false);
         return;
       }
 
@@ -105,13 +189,19 @@ export function useMessages(conversationId: string | null) {
           setMessages([]);
         }
         setIsLoading(false);
+        setHasMore(false);
         return;
       }
+
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
+      const currentGen = ++generationRef.current;
 
       try {
         const convChanged = prevConversationIdRef.current !== conversationId;
         if (convChanged) {
           prevConversationIdRef.current = conversationId;
+          clearTypingTimers();
           let cached: Message[] = [];
           try {
             const raw = localStorage.getItem(cacheKey);
@@ -122,8 +212,6 @@ export function useMessages(conversationId: string | null) {
           } catch {}
           setMessages(cached);
           setIsLoading(cached.length === 0);
-        } else if (isInitial) {
-          // Keep current messages visible during background revalidation
         }
 
         const { data: msgsData, error: msgsErr } = await supabase
@@ -137,37 +225,19 @@ export function useMessages(conversationId: string | null) {
             )
           `)
           .eq('conversation_id', conversationId)
-          .order('created_at', { ascending: true });
+          .order('created_at', { ascending: false })
+          .limit(PAGE_SIZE);
 
-        // Stale response guard: ignore if user has switched conversation while query was in-flight
-        if (activeConversationIdRef.current !== conversationId) return;
+        // Guard against race condition on conversation switch (M4)
+        if (activeConversationIdRef.current !== conversationId || generationRef.current !== currentGen) return;
 
         if (msgsErr) {
           const errMsg = String(msgsErr.message || msgsErr || '');
-          const isTransientNetwork =
-            errMsg.includes('Failed to fetch') ||
-            errMsg.includes('NetworkError') ||
-            errMsg.includes('network') ||
-            msgsErr.name === 'AbortError';
-
-          if (isTransientNetwork) {
-            debugLogger.warn('messaging', `Transient network glitch fetching messages (will retry): ${errMsg}`);
-            console.warn('Transient network glitch fetching messages:', msgsErr);
-            if (activeConversationIdRef.current === conversationId) {
-              setTimeout(() => {
-                if (activeConversationIdRef.current === conversationId && !isFetchingRef.current) {
-                  fetchMessages(false);
-                }
-              }, 1500);
-            }
-          } else {
-            debugLogger.error('messaging', `Error fetching messages from database: ${msgsErr.message}`, msgsErr);
-            console.warn('Error fetching messages from database:', msgsErr);
-          }
+          debugLogger.error('messaging', `Error fetching messages from database: ${errMsg}`, msgsErr);
           return;
         }
 
-        // Database is authoritative, but retain active sending and failed drafts
+        // Database authoritative: empty result clears stale cache
         if (!msgsData || msgsData.length === 0) {
           setMessages((prev) => {
             return prev.filter((m) => {
@@ -175,6 +245,7 @@ export function useMessages(conversationId: string | null) {
               return m.status === 'sending' || m.status === 'failed';
             });
           });
+          setHasMore(false);
           try {
             if (cacheKey) localStorage.removeItem(cacheKey);
           } catch {}
@@ -197,29 +268,19 @@ export function useMessages(conversationId: string | null) {
             .in('message_id', msgIds),
         ]);
 
-        if (activeConversationIdRef.current !== conversationId) return;
+        if (activeConversationIdRef.current !== conversationId || generationRef.current !== currentGen) return;
 
         const rawAttachments = attachmentsRes.data || [];
-        const signedUrlMap = new Map<string, string>();
-        if (rawAttachments.length > 0) {
-          try {
-            const paths = rawAttachments.map((a: any) => a.storage_path).filter(Boolean);
-            const { data: signedData } = await (supabase.storage.from('attachments') as any).createSignedUrls(paths, 3600);
-            if (Array.isArray(signedData)) {
-              signedData.forEach((s: any) => {
-                if (s.signedUrl && s.path) {
-                  signedUrlMap.set(s.path, s.signedUrl);
-                }
-              });
-            }
-          } catch {}
-        }
+        const signedUrlMap = await resolveSignedUrls(rawAttachments);
 
-        const parsed: Message[] = msgsData.map((m) => {
+        // Reverse descending keyset to chronological order (oldest top, newest bottom)
+        const chronologicalMsgs = [...msgsData].reverse();
+
+        const parsed: Message[] = chronologicalMsgs.map((m) => {
           // Attachments
           const mAttachments: MessageAttachment[] = rawAttachments
-            .filter((a) => a.message_id === m.id)
-            .map((a) => {
+            .filter((a: any) => a.message_id === m.id)
+            .map((a: any) => {
               const signed = signedUrlMap.get(a.storage_path);
               if (signed) {
                 return {
@@ -237,16 +298,16 @@ export function useMessages(conversationId: string | null) {
             });
 
           // Reactions grouped by emoji
-          const rawReactions = (reactionsRes.data || []).filter((r) => r.message_id === m.id);
+          const rawReactions = (reactionsRes.data || []).filter((r: any) => r.message_id === m.id);
           const reactionMap = new Map<string, { count: number; has_reacted: boolean; users: string[] }>();
 
-          rawReactions.forEach((r) => {
+          rawReactions.forEach((r: any) => {
             const existing = reactionMap.get(r.emoji) || { count: 0, has_reacted: false, users: [] };
             const userName =
               (r.profile as unknown as { display_name?: string })?.display_name || 'Gamer';
             existing.count += 1;
             existing.users.push(userName);
-            if (r.user_id === user.id) existing.has_reacted = true;
+            if (r.user_id === user?.id) existing.has_reacted = true;
             reactionMap.set(r.emoji, existing);
           });
 
@@ -259,6 +320,7 @@ export function useMessages(conversationId: string | null) {
 
           return {
             ...m,
+            content: m.content ?? '', // M7: Null-safe fallback
             status: 'sent' as const,
             sender: m.sender as unknown as UserProfile,
             attachments: mAttachments,
@@ -267,43 +329,37 @@ export function useMessages(conversationId: string | null) {
         });
 
         setMessages((prev) => {
+          // Retain pending optimistic and failed drafts (M3)
+          const pending = prev.filter(
+            (p) => p.conversation_id === conversationId && (p.status === 'sending' || p.status === 'failed')
+          );
           const combined = [...parsed];
-          for (const p of prev) {
-            if (p.conversation_id === conversationId && !combined.some((c) => c.id === p.id)) {
-              // Deduplicate: If p is an optimistic message whose content was already saved and returned in parsed messages, drop it
-              const alreadyPersisted =
-                p.id.startsWith('opt-') &&
-                combined.some(
-                  (c) =>
-                    c.sender_id === p.sender_id &&
-                    c.content.trim() === p.content.trim()
-                );
-              if (!alreadyPersisted) {
-                combined.push(p);
-              }
+          for (const p of pending) {
+            if (!combined.some((c) => c.id === p.id)) {
+              combined.push(p);
             }
           }
           combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
           return combined;
         });
 
+        setHasMore(msgsData.length >= PAGE_SIZE);
+
+        // M6: Sanitize cache so ephemeral tokens with 1-hour expiration are not stored in localStorage
         try {
-          if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(parsed));
+          if (cacheKey) {
+            const cachePayload = parsed.map((m) => ({
+              ...m,
+              attachments: m.attachments?.map((a) => ({
+                ...a,
+                url: a.storage_path ? undefined : a.url,
+              })),
+            }));
+            localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
+          }
         } catch {}
       } catch (err: any) {
-        const errMsg = String(err?.message || err || '');
-        if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
-          debugLogger.warn('messaging', `Network fetch error (will retry): ${errMsg}`);
-          if (activeConversationIdRef.current === conversationId) {
-            setTimeout(() => {
-              if (activeConversationIdRef.current === conversationId && !isFetchingRef.current) {
-                fetchMessages(false);
-              }
-            }, 1500);
-          }
-        } else {
-          console.error('Error fetching messages:', err);
-        }
+        console.error('Error fetching messages:', err);
       } finally {
         isFetchingRef.current = false;
         if (activeConversationIdRef.current === conversationId) {
@@ -311,13 +367,115 @@ export function useMessages(conversationId: string | null) {
         }
       }
     },
-    [conversationId, userId, supabase, isUUID, isConfigured, cacheKey, user?.id]
+    [conversationId, userId, supabase, isUUID, isConfigured, cacheKey, user?.id, clearTypingTimers, resolveSignedUrls]
   );
+  fetchMessagesRef.current = fetchMessages;
+
+  // Load older messages via keyset cursor on created_at (M1)
+  const loadMore = React.useCallback(async () => {
+    if (!conversationId || isLoadingMore || !hasMore || isFetchingRef.current || !userId || !isConfigured || !isUUID) return;
+
+    const oldest = messages[0];
+    if (!oldest?.created_at) return;
+
+    setIsLoadingMore(true);
+    isFetchingRef.current = true;
+    const currentGen = generationRef.current;
+
+    try {
+      const { data: olderBatch, error } = await supabase
+        .from('messages')
+        .select(`
+          id, conversation_id, sender_id, content, reply_to_id,
+          is_pinned, is_edited, created_at, updated_at,
+          sender:sender_id (
+            id, username, display_name, avatar_url, banner_url, banner_color,
+            bio, custom_status, status, game_activity, created_at, updated_at
+          )
+        `)
+        .eq('conversation_id', conversationId)
+        .lt('created_at', oldest.created_at)
+        .order('created_at', { ascending: false })
+        .limit(PAGE_SIZE);
+
+      if (activeConversationIdRef.current !== conversationId || generationRef.current !== currentGen) return;
+
+      if (!error && olderBatch) {
+        if (olderBatch.length === 0) {
+          setHasMore(false);
+          return;
+        }
+
+        const msgIds = olderBatch.map((m) => m.id);
+        const [attachmentsRes, reactionsRes] = await Promise.all([
+          supabase
+            .from('message_attachments')
+            .select('*')
+            .in('message_id', msgIds),
+          supabase
+            .from('message_reactions')
+            .select(`
+              id, message_id, user_id, emoji, created_at,
+              profile:user_id (display_name, username)
+            `)
+            .in('message_id', msgIds),
+        ]);
+
+        const rawAttachments = attachmentsRes.data || [];
+        const signedUrlMap = await resolveSignedUrls(rawAttachments);
+
+        const chronologicalOlder: Message[] = [...olderBatch].reverse().map((m) => {
+          const mAttachments: MessageAttachment[] = rawAttachments
+            .filter((a: any) => a.message_id === m.id)
+            .map((a: any) => ({
+              ...a,
+              url: signedUrlMap.get(a.storage_path) || undefined,
+            }));
+
+          const rawReactions = (reactionsRes.data || []).filter((r: any) => r.message_id === m.id);
+          const reactionMap = new Map<string, { count: number; has_reacted: boolean; users: string[] }>();
+
+          rawReactions.forEach((r: any) => {
+            const existing = reactionMap.get(r.emoji) || { count: 0, has_reacted: false, users: [] };
+            const userName =
+              (r.profile as unknown as { display_name?: string })?.display_name || 'Gamer';
+            existing.count += 1;
+            existing.users.push(userName);
+            if (r.user_id === user?.id) existing.has_reacted = true;
+            reactionMap.set(r.emoji, existing);
+          });
+
+          return {
+            ...m,
+            content: m.content ?? '',
+            status: 'sent' as const,
+            sender: m.sender as unknown as UserProfile,
+            attachments: mAttachments,
+            reactions: Array.from(reactionMap.entries()).map(([emoji, data]) => ({ emoji, ...data })),
+          };
+        });
+
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m.id));
+          const filteredOlder = chronologicalOlder.filter((m) => !existingIds.has(m.id));
+          return [...filteredOlder, ...prev];
+        });
+
+        setHasMore(olderBatch.length >= PAGE_SIZE);
+      }
+    } catch (e) {
+      console.warn('Failed to load older messages:', e);
+    } finally {
+      isFetchingRef.current = false;
+      setIsLoadingMore(false);
+    }
+  }, [conversationId, isLoadingMore, hasMore, messages, userId, isConfigured, isUUID, supabase, resolveSignedUrls, user?.id]);
 
   // Realtime channel subscriptions
   React.useEffect(() => {
     if (prevConversationIdRef.current !== conversationId) {
       prevConversationIdRef.current = conversationId;
+      clearTypingTimers();
       let cached: Message[] = [];
       try {
         const raw = localStorage.getItem(cacheKey);
@@ -343,18 +501,14 @@ export function useMessages(conversationId: string | null) {
     const setupChannel = () => {
       if (isCleanedUp) return;
 
-      if (chatChannelRef.current) {
-        try {
-          supabase.removeChannel(chatChannelRef.current);
-        } catch {}
-      }
-
       const channelName = `chat-room-${conversationId}`;
-      const ch = supabase.channel(channelName, {
-        config: {
-          broadcast: { self: false },
+      const ch = realtimeHub.acquire(
+        channelName,
+        {
+          config: { broadcast: { self: false } },
         },
-      });
+        supabase
+      );
 
       ch.on(
         'postgres_changes',
@@ -368,11 +522,32 @@ export function useMessages(conversationId: string | null) {
           const newRow = payload.new as any;
           if (!newRow?.id) return;
           if (newRow.conversation_id && newRow.conversation_id !== conversationId) return;
+
           setMessages((prev) => {
-            const exists = prev.some((m) => m.id === newRow.id);
-            if (exists) return prev;
-            fetchMessages();
-            return prev;
+            const existingIdx = prev.findIndex((m) => m.id === newRow.id);
+            if (existingIdx !== -1) {
+              const updated = [...prev];
+              updated[existingIdx] = {
+                ...updated[existingIdx],
+                ...newRow,
+                content: newRow.content ?? '',
+                status: 'sent',
+              };
+              return updated;
+            }
+            const newMsg: Message = {
+              id: newRow.id,
+              conversation_id: newRow.conversation_id,
+              sender_id: newRow.sender_id,
+              content: newRow.content ?? '',
+              reply_to_id: newRow.reply_to_id || null,
+              is_pinned: Boolean(newRow.is_pinned),
+              is_edited: Boolean(newRow.is_edited),
+              created_at: newRow.created_at,
+              updated_at: newRow.updated_at,
+              status: 'sent',
+            };
+            return [...prev, newMsg];
           });
         }
       )
@@ -384,7 +559,17 @@ export function useMessages(conversationId: string | null) {
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`,
         },
-        () => fetchMessages()
+        (payload) => {
+          const updatedRow = payload.new as any;
+          if (!updatedRow?.id) return;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === updatedRow.id
+                ? { ...m, ...updatedRow, content: updatedRow.content ?? m.content }
+                : m
+            )
+          );
+        }
       )
       .on(
         'postgres_changes',
@@ -406,29 +591,8 @@ export function useMessages(conversationId: string | null) {
               } catch {}
               return next;
             });
-          } else {
-            fetchMessages();
           }
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'message_attachments',
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        () => fetchMessages()
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'message_reactions',
-        },
-        () => fetchMessages()
       )
       .on('broadcast', { event: 'new_msg' }, ({ payload }) => {
         if (payload?.message) {
@@ -440,14 +604,23 @@ export function useMessages(conversationId: string | null) {
           });
         }
       })
+      // M5: Anti-flicker typing indicator map
       .on('broadcast', { event: 'typing' }, (payload) => {
         const { username } = payload.payload;
         if (username && username !== profile?.username) {
+          const existingTimer = typingTimersRef.current.get(username);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
+          }
+
           setTypingUsers((prev) => (prev.includes(username) ? prev : [...prev, username]));
+
           const timer = setTimeout(() => {
+            typingTimersRef.current.delete(username);
             setTypingUsers((prev) => prev.filter((u) => u !== username));
           }, 3000);
-          return () => clearTimeout(timer);
+
+          typingTimersRef.current.set(username, timer);
         }
       });
 
@@ -455,10 +628,11 @@ export function useMessages(conversationId: string | null) {
         debugLogger.info('realtime', `Chat channel [${channelName}] status: ${status}`, err);
         if (status === 'SUBSCRIBED') {
           debugLogger.success('realtime', `Connected to real-time chat for conv ${conversationId}`);
+          stopFallbackPolling();
           fetchMessages();
         } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          debugLogger.warn('realtime', `Chat channel disconnected (${status}). Fetching via REST and auto-reconnecting in 2.5s with full listeners...`);
-          fetchMessages();
+          debugLogger.warn('realtime', `Chat channel disconnected (${status}). Starting fallback polling...`);
+          startFallbackPolling();
           if (!reconnectTimeout && !isCleanedUp) {
             reconnectTimeout = setTimeout(() => {
               reconnectTimeout = null;
@@ -473,100 +647,81 @@ export function useMessages(conversationId: string | null) {
 
     setupChannel();
 
-    // Fast-adaptive background poll (3.5s when active tab):
-    // Guarantees delivery even across strict corporate firewalls or when Supabase WebSockets idle out
-    const syncInterval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      fetchMessages();
-    }, 3500);
-
-    // Heartbeat ping every 20 seconds to keep WebSocket connection active and revive dropped sockets
+    // Heartbeat ping every 20 seconds to keep WebSocket connection active
     heartbeatTimer = setInterval(() => {
       if (chatChannelRef.current && chatChannelRef.current.state === 'joined') {
-        chatChannelRef.current.send({
-          type: 'broadcast',
-          event: 'heartbeat',
-          payload: { timestamp: Date.now() },
-        }).catch(() => {});
+        chatChannelRef.current
+          .send({
+            type: 'broadcast',
+            event: 'heartbeat',
+            payload: { timestamp: Date.now() },
+          })
+          .catch(() => {});
       } else if (chatChannelRef.current && (chatChannelRef.current.state === 'closed' || chatChannelRef.current.state === 'errored')) {
         setupChannel();
       }
     }, 20000);
 
-    // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {
-      fetchMessages();
+      if (document.visibilityState === 'visible') fetchMessages();
     };
-    const handleVisibility = () => {
-      if (typeof document !== 'undefined' && !document.hidden) {
-        fetchMessages();
-      }
-    };
+
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', handleFocus);
-      document.addEventListener('visibilitychange', handleVisibility);
+      document.addEventListener('visibilitychange', handleFocus);
     }
 
     return () => {
       isCleanedUp = true;
-      clearInterval(syncInterval);
+      stopFallbackPolling();
+      clearTypingTimers();
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', handleFocus);
-        document.removeEventListener('visibilitychange', handleVisibility);
+        document.removeEventListener('visibilitychange', handleFocus);
       }
       if (chatChannelRef.current) {
-        supabase.removeChannel(chatChannelRef.current);
         chatChannelRef.current = null;
+        realtimeHub.release(`chat-room-${conversationId}`, 1000);
       }
     };
-  }, [conversationId, fetchMessages, isConfigured, userId, currentUsername, supabase, isUUID, profile?.username, cacheKey]);
+  }, [conversationId, fetchMessages, isConfigured, userId, isUUID, supabase, cacheKey, profile?.username, stopFallbackPolling, startFallbackPolling, clearTypingTimers]);
 
-  // Send message with optional file uploads
+  // Send a new message (M3, M7)
   const sendMessage = async (
     content: string,
-    replyToId: string | null = null,
+    replyToId?: string | null,
     files: File[] = []
   ): Promise<{ error: string | null; messageId?: string }> => {
-    const trimmed = content.trim();
-    if (!trimmed && files.length === 0) return { error: 'Empty content' };
-    if (!conversationId) return { error: 'No conversation selected' };
-
-    if (isConfigured && !user) {
-      return { error: 'User is not authenticated' };
+    const trimmed = (content ?? '').trim();
+    if (!trimmed && files.length === 0) {
+      return { error: 'Empty message' };
     }
 
-    // Local demo mode simulation ONLY when Supabase is not configured
-    if (!isConfigured) {
-      const mockAttachments: MessageAttachment[] = files.map((f, i) => {
-        const url = URL.createObjectURL(f);
-        createdBlobUrlsRef.current.add(url);
-        return {
-          id: `att-mock-${Date.now()}-${i}`,
-          message_id: `local-msg-${Date.now()}`,
-          conversation_id: conversationId,
-          file_name: f.name,
-          file_type: f.type,
-          file_size: f.size,
-          storage_path: 'local/path',
-          url,
-          created_at: new Date().toISOString(),
-        };
-      });
+    // M7: Enforce 4000 character length limit
+    if (content && content.length > MAX_CONTENT_LENGTH) {
+      return { error: 'Message exceeds maximum length of 4000 characters' };
+    }
 
+    if (!conversationId) {
+      return { error: 'No active conversation selected' };
+    }
+
+    // Local demo mode simulation
+    if (!isConfigured) {
       const newMsg: Message = {
-        id: `local-msg-${Date.now()}`,
+        id: `demo-${Date.now()}`,
         conversation_id: conversationId,
-        sender_id: user?.id || 'local-user-id',
+        sender_id: user?.id || 'demo-user',
         content: trimmed,
-        reply_to_id: replyToId,
+        reply_to_id: null,
         is_pinned: false,
         is_edited: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         sender: profile || undefined,
-        attachments: mockAttachments,
+        attachments: [],
         reactions: [],
         status: 'sent',
       };
@@ -582,84 +737,18 @@ export function useMessages(conversationId: string | null) {
       return { error: 'User is not authenticated' };
     }
 
-    // Direct Message Privacy Enforcement Check
-    try {
-      const { data: convInfo } = await supabase
-        .from('conversations')
-        .select('type')
-        .eq('id', conversationId)
-        .maybeSingle();
-
-      if (convInfo?.type === 'direct') {
-        const { data: otherMember } = await supabase
-          .from('conversation_members')
-          .select('user_id')
-          .eq('conversation_id', conversationId)
-          .neq('user_id', user.id)
-          .maybeSingle();
-
-        if (otherMember?.user_id) {
-          let dmPolicy = 'everyone';
-          try {
-            const { data: rpcPolicy } = await supabase.rpc('get_user_dm_policy', {
-              p_user_id: otherMember.user_id,
-            });
-            if (rpcPolicy?.allow_direct_messages) {
-              dmPolicy = rpcPolicy.allow_direct_messages;
-            } else {
-              const { data: targetSettings } = await supabase
-                .from('user_settings')
-                .select('allow_direct_messages')
-                .eq('user_id', otherMember.user_id)
-                .maybeSingle();
-              if (targetSettings?.allow_direct_messages) {
-                dmPolicy = targetSettings.allow_direct_messages;
-              }
-            }
-          } catch {}
-
-          if (dmPolicy === 'none') {
-            toast({
-              title: 'Cannot Send Message',
-              description: 'This user does not accept direct messages from anyone.',
-              type: 'error',
-            });
-            return { error: 'This user does not accept direct messages from anyone.' };
-          }
-
-          if (dmPolicy === 'friends') {
-            const { data: friendRow } = await supabase
-              .from('friendships')
-              .select('id')
-              .or(`and(user_id.eq.${user.id},friend_id.eq.${otherMember.user_id}),and(user_id.eq.${otherMember.user_id},friend_id.eq.${user.id})`)
-              .maybeSingle();
-
-            if (!friendRow) {
-              toast({
-                title: 'Cannot Send Message',
-                description: 'This user only accepts direct messages from friends.',
-                type: 'error',
-              });
-              return { error: 'This user only accepts direct messages from friends.' };
-            }
-          }
-        }
-      }
-    } catch {}
-
-    // Validate reply ID: must reference an existing real message in this conversation
     const cleanReplyId =
       replyToId &&
       replyToId.trim() !== '' &&
-      !replyToId.startsWith('opt-') &&
       messages.some((m) => m.id === replyToId && m.status !== 'failed')
         ? replyToId
         : null;
 
-    // Optimistic local update with 'sending' status
-    const optId = `opt-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    // Stable client UUID primary key (M3)
+    const optId = crypto.randomUUID();
     const optMsg: Message = {
       id: optId,
+      client_nonce: optId,
       conversation_id: conversationId,
       sender_id: user.id,
       content: trimmed,
@@ -692,11 +781,13 @@ export function useMessages(conversationId: string | null) {
 
     try {
       const insertPayload: {
+        id: string; // Pass draft ID as primary key (M3)
         conversation_id: string;
         sender_id: string;
         content: string;
         reply_to_id?: string | null;
       } = {
+        id: optId,
         conversation_id: conversationId,
         sender_id: user.id,
         content: trimmed,
@@ -705,50 +796,6 @@ export function useMessages(conversationId: string | null) {
         insertPayload.reply_to_id = cleanReplyId;
       }
 
-      // Proactively check session expiration
-      if (isConfigured && supabase.auth?.getSession) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.expires_at) {
-            const timeLeftSec = session.expires_at - Math.floor(Date.now() / 1000);
-            if (timeLeftSec < 120 && supabase.auth.refreshSession) {
-              debugLogger.info('auth', `Proactively refreshing session (${timeLeftSec}s remaining)...`);
-              await supabase.auth.refreshSession();
-            }
-          }
-        } catch {}
-      }
-
-      // Ensure user is recorded in conversation_members to satisfy RLS (cached per conversation)
-      if (!membershipVerifiedRef.current.has(conversationId)) {
-        try {
-          const { data: memberData } = await supabase
-            .from('conversation_members')
-            .select('id')
-            .eq('conversation_id', conversationId)
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (!memberData) {
-            await supabase.from('conversation_members').insert({
-              conversation_id: conversationId,
-              user_id: user.id,
-              role: 'member',
-            });
-          }
-          membershipVerifiedRef.current.add(conversationId);
-        } catch (cmErr) {
-          console.warn('Ensure conversation member error:', cmErr);
-        }
-      }
-
-      debugLogger.info('messaging', `Initiating DM send (${trimmed.length} chars) to conv ${conversationId}`, {
-        optId,
-        cleanReplyId,
-        filesCount: files.length,
-      });
-
-      // 1. Insert message to database with bounded timeout to prevent hanging on dropped connections
       const insertStartTime = performance.now();
       const insertPromise = supabase
         .from('messages')
@@ -786,7 +833,6 @@ export function useMessages(conversationId: string | null) {
         if (isAuthOrRls && supabase.auth?.refreshSession) {
           try {
             debugLogger.info('auth', 'Auth issue detected during send. Refreshing auth session and retrying...');
-            console.warn('Potential token expiry detected, refreshing auth session and retrying message insert...');
             const { data: refreshed, error: refErr } = await supabase.auth.refreshSession();
             if (refErr) {
               debugLogger.error('auth', `Token auto-refresh failed: ${refErr.message}`, refErr);
@@ -801,12 +847,9 @@ export function useMessages(conversationId: string | null) {
                 msgRows = retryRes.data;
                 msgErr = null;
                 debugLogger.success('messaging', 'Message insert retry succeeded after token renewal.');
-              } else if (retryRes.error) {
-                debugLogger.error('messaging', `Message insert retry also failed: ${retryRes.error.message}`, retryRes.error);
               }
             }
           } catch (refreshErr) {
-            debugLogger.error('auth', 'Exception during auto-session refresh:', refreshErr);
             console.warn('Auto session refresh retry failed:', refreshErr);
           }
         }
@@ -814,24 +857,24 @@ export function useMessages(conversationId: string | null) {
 
       if (msgErr || !msgRows?.[0]?.id) {
         const errorMsg = msgErr?.message || 'Database rejected message insert';
-        debugLogger.error('messaging', `Final message delivery failure: ${errorMsg}`, {
-          error: msgErr,
-          conversationId,
-          userId: user.id,
-        });
         console.error('Database message insert failure:', errorMsg);
-        // Mark optimistic message as failed
+        if (errorMsg.includes('blocked') || errorMsg.includes('direct messages') || errorMsg.includes('Recipient')) {
+          toast({
+            title: 'Cannot Send Message',
+            description: errorMsg,
+            type: 'error',
+          });
+        }
         setMessages((prev) =>
           prev.map((m) => (m.id === optId ? { ...m, status: 'failed', error: errorMsg } : m))
         );
         return { error: errorMsg };
       }
 
-      const confirmedId = msgRows[0].id;
+      const confirmedId = msgRows[0].id || optId;
       const confirmedCreatedAt = msgRows[0].created_at;
-      debugLogger.success('messaging', `Message persisted to database (${insertDurationMs}ms): id=${confirmedId}`);
 
-      // 2. Upload any attachments and persist to message_attachments
+      // Upload attachments if present
       const uploadedAttachments: MessageAttachment[] = [];
       if (files.length > 0) {
         for (const file of files) {
@@ -878,8 +921,9 @@ export function useMessages(conversationId: string | null) {
         error: undefined,
       };
 
-      // 3. Reconcile optimistic message with confirmed persisted message
+      // Reconcile optimistic message by exact ID (M3)
       setMessages((prev) => prev.map((m) => (m.id === optId ? confirmedMsg : m)));
+
       try {
         if (cacheKey) {
           const current = messages.map((m) => (m.id === optId ? confirmedMsg : m));
@@ -887,7 +931,6 @@ export function useMessages(conversationId: string | null) {
         }
       } catch {}
 
-      // Revoke any optimistic blob URLs now that persisted attachments are confirmed
       optMsg.attachments?.forEach((a) => {
         if (a.url && a.url.startsWith('blob:')) {
           try {
@@ -897,8 +940,7 @@ export function useMessages(conversationId: string | null) {
         }
       });
 
-      // 4. Broadcast to peers ONLY AFTER successful database persistence
-      // 4. Broadcast to peers ONLY AFTER successful database persistence
+      // Broadcast to peers
       if (chatChannelRef.current) {
         if (chatChannelRef.current.state === 'joined') {
           chatChannelRef.current
@@ -907,112 +949,9 @@ export function useMessages(conversationId: string | null) {
               event: 'new_msg',
               payload: { message: confirmedMsg },
             })
-            .catch((bcErr: unknown) => {
-              console.warn('Realtime broadcast warning:', bcErr);
-            });
-        } else if (typeof chatChannelRef.current.httpSend === 'function') {
-          chatChannelRef.current
-            .httpSend({
-              type: 'broadcast',
-              event: 'new_msg',
-              payload: { message: confirmedMsg },
-            })
             .catch(() => {});
         }
       }
-
-      // 5. Broadcast conversation update so sidebar updates immediately
-      try {
-        const existingChannel = supabase
-          .getChannels()
-          .find((c) => c.topic === 'realtime:conversations-realtime');
-
-        if (existingChannel && existingChannel.state === 'joined') {
-          existingChannel
-            .send({
-              type: 'broadcast',
-              event: 'conv_update',
-              payload: { conversationId, lastMessage: confirmedMsg },
-            })
-            .catch(() => {});
-        } else {
-          const convListChannel = existingChannel || supabase.channel('conversations-realtime');
-          if (typeof (convListChannel as any).httpSend === 'function') {
-            (convListChannel as any)
-              .httpSend({
-                type: 'broadcast',
-                event: 'conv_update',
-                payload: { conversationId, lastMessage: confirmedMsg },
-              })
-              .catch(() => {});
-          }
-        }
-      } catch {}
-
-      // Update conversation updated_at timestamp
-      supabase
-        .from('conversations')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', conversationId)
-        .then(() => {}, () => {});
-
-      // Dispatch mention notifications to mentioned users
-      try {
-        const mentionMatches = trimmed.match(/@([a-zA-Z0-9_.-]+)/g);
-        if (mentionMatches && mentionMatches.length > 0) {
-          supabase
-            .from('conversation_members')
-            .select(`
-              user_id,
-              profile:user_id (id, username, display_name)
-            `)
-            .eq('conversation_id', conversationId)
-            .then(({ data: convMembers }) => {
-              if (convMembers && convMembers.length > 0) {
-                const mentionedLower = mentionMatches.map((m) => m.slice(1).toLowerCase());
-                const hasEveryone = mentionedLower.includes('everyone') || mentionedLower.includes('all');
-
-                const targetUsers = convMembers.filter((m: any) => {
-                  if (m.user_id === user.id) return false;
-                  if (hasEveryone) return true;
-                  const uName = (m.profile as any)?.username?.toLowerCase();
-                  return uName && mentionedLower.includes(uName);
-                });
-
-                if (targetUsers.length > 0) {
-                  const notifInserts = targetUsers.map((tu: any) => ({
-                    user_id: tu.user_id,
-                    actor_id: user.id,
-                    type: 'mention',
-                    title: `${profile?.display_name || 'Someone'} mentioned you`,
-                    body: trimmed.slice(0, 140),
-                    data: {
-                      conversation_id: conversationId,
-                      message_id: confirmedId,
-                    },
-                  }));
-
-                  supabase.from('notifications').insert(notifInserts).then(() => {}, () => {});
-                }
-              }
-            }, () => {});
-        }
-      } catch (mentionErr) {
-        console.warn('Mention dispatch error:', mentionErr);
-      }
-
-      // Fast authoritative follow-up reconciliations to guarantee server consistency
-      setTimeout(() => {
-        if (activeConversationIdRef.current === conversationId) {
-          fetchMessages();
-        }
-      }, 400);
-
-      setTimeout(() => {
-        if (activeConversationIdRef.current === conversationId) {
-          fetchMessages();
-        }
-      }, 1200);
 
       return { error: null, messageId: confirmedId };
     } catch (err: unknown) {
@@ -1025,12 +964,12 @@ export function useMessages(conversationId: string | null) {
     }
   };
 
-  // Retry sending a previously failed message
+  // Retry sending a previously failed message (M3)
   const retryMessage = async (messageId: string): Promise<{ error: string | null }> => {
     const target = messages.find((m) => m.id === messageId && m.status === 'failed');
     if (!target) return { error: 'Failed message not found' };
 
-    // Idempotency check: verify if the timed-out message was actually committed to the database
+    // Idempotency check: verify if the message was already committed to database
     if (isConfigured && userId && isUUID && conversationId) {
       try {
         const { data: existing } = await supabase
@@ -1052,7 +991,6 @@ export function useMessages(conversationId: string | null) {
       } catch {}
     }
 
-    // Remove the failed message and re-send
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
     return sendMessage(target.content, target.reply_to_id);
   };
@@ -1266,6 +1204,9 @@ export function useMessages(conversationId: string | null) {
     messages: filteredMessages,
     rawMessages: messages,
     isLoading,
+    isLoadingMore,
+    hasMore,
+    loadMore,
     typingUsers,
     searchQuery,
     setSearchQuery,

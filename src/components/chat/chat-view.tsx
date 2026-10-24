@@ -257,7 +257,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
     // 1. Database level postgres changes
     const dbChannel = supabase
-      .channel(`active_call_session_${conversationId}`)
+      .channel(`active_call_session_${conversationId}`, { config: { private: true } })
       .on(
         'postgres_changes',
         {
@@ -274,7 +274,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
     // 2. Real-time WebRTC broadcast channel for instant banner updates
     const roomChannel = supabase
-      .channel(`call-room-${conversationId}`)
+      .channel(`call-room-${conversationId}`, { config: { private: true } })
       .on('broadcast', { event: 'squad_call_active' }, (payload: any) => {
         lastHeartbeatTimeRef.current = Date.now();
         const sessData = payload.payload || { status: 'active', started_at: new Date().toISOString() };

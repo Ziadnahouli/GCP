@@ -77,7 +77,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
     checkSession();
 
     const ch = supabase
-      .channel(`call-room-${squadCallConvId}`)
+      .channel(`call-room-${squadCallConvId}`, { config: { private: true } })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'call_sessions', filter: `conversation_id=eq.${squadCallConvId}` },

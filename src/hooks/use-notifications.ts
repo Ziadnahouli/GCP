@@ -195,7 +195,7 @@ export function useNotifications() {
     if (!user || !isConfigured || !supabase) return;
 
     const channel = supabase
-      .channel(`user_notifications_${user.id}`)
+      .channel(`user_notifications_${user.id}`, { config: { private: true } })
       .on(
         'postgres_changes',
         {

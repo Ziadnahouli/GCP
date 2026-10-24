@@ -253,23 +253,53 @@ export function useChannelMessages(channelId: string | null) {
     const setupChannel = () => {
       if (isCleanedUp) return;
 
-      const channelName = `chan-room-${channelId}`;
+      const channelName = `channel:${channelId}:chat`;
       const ch = realtimeHub.acquire(
         channelName,
         {
-          config: { broadcast: { self: false } },
+          config: { private: true, broadcast: { self: false } },
         },
         supabase
       );
 
-      ch.on('broadcast', { event: 'new_channel_msg' }, ({ payload }) => {
-        if (payload?.message) {
+      ch.on('broadcast', { event: 'new_channel_msg' }, async ({ payload }) => {
+        if (payload?.message?.id && channelId) {
           const incoming = payload.message as ChannelMessage;
           if (incoming.channel_id !== channelId) return;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === incoming.id)) return prev;
-            return [...prev, incoming];
-          });
+          // Verify authenticity and content by fetching row from DB (A2)
+          try {
+            const { data, error } = await supabase
+              .from('channel_messages')
+              .select(`
+                id, channel_id, user_id, content, created_at, updated_at,
+                profile:user_id (
+                  id, username, display_name, avatar_url, banner_url, banner_color,
+                  bio, custom_status, status, game_activity, created_at, updated_at
+                )
+              `)
+              .eq('id', incoming.id)
+              .eq('channel_id', channelId)
+              .maybeSingle();
+
+            if (!error && data && activeChannelIdRef.current === channelId) {
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === data.id)) return prev;
+                const verifiedMsg: ChannelMessage = {
+                  id: data.id,
+                  channel_id: data.channel_id,
+                  user_id: data.user_id,
+                  content: data.content ?? '',
+                  created_at: data.created_at,
+                  updated_at: data.updated_at,
+                  status: 'sent',
+                  profile: (data.profile as unknown as UserProfile) || undefined,
+                };
+                return [...prev, verifiedMsg];
+              });
+            }
+          } catch {
+            // DB lookup failed or unauthorized - ignore unverified broadcast
+          }
         }
       });
 

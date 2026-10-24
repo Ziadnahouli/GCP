@@ -828,4 +828,151 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
       ).rejects.toThrow(/channel_messages_content_length_check/);
     });
   });
+
+  describe('S10: Supabase Realtime Authorization Policies on realtime.messages (A2)', () => {
+    it('authorizes conversation members and strictly rejects non-members on conv topics', async () => {
+      await asSuperuser();
+      await db.exec(`
+        INSERT INTO public.conversations (id, created_by, type)
+        VALUES ('${CONV_ID}', '${ALICE_ID}', 'direct')
+        ON CONFLICT DO NOTHING;
+
+        INSERT INTO public.conversation_members (conversation_id, user_id, role)
+        VALUES ('${CONV_ID}', '${ALICE_ID}', 'owner')
+        ON CONFLICT DO NOTHING;
+      `);
+
+      // Alice is in CONV_ID -> Alice can broadcast on conv topic
+      await asUser(ALICE_ID);
+      await db.query(`
+        INSERT INTO realtime.messages (topic, extension)
+        VALUES ('conv:${CONV_ID}:chat', 'broadcast');
+      `);
+
+      const aliceRes = await db.query<{ count: string }>(`
+        SELECT COUNT(*) as count FROM realtime.messages
+        WHERE topic = 'conv:${CONV_ID}:chat';
+      `);
+      expect(Number(aliceRes.rows[0].count)).toBe(1);
+
+      // Bob is NOT in CONV_ID -> Bob cannot broadcast or listen
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          INSERT INTO realtime.messages (topic, extension)
+          VALUES ('conv:${CONV_ID}:chat', 'broadcast');
+        `)
+      ).rejects.toThrow();
+
+      const bobRes = await db.query<{ count: string }>(`
+        SELECT COUNT(*) as count FROM realtime.messages
+        WHERE topic = 'conv:${CONV_ID}:chat';
+      `);
+      expect(Number(bobRes.rows[0].count)).toBe(0);
+    });
+
+    it('authorizes user to their own user topic and strictly rejects other users', async () => {
+      // Alice can broadcast on user:ALICE_ID:signals
+      await asUser(ALICE_ID);
+      await db.query(`
+        INSERT INTO realtime.messages (topic, extension)
+        VALUES ('user:${ALICE_ID}:signals', 'broadcast');
+      `);
+
+      const aliceRes = await db.query<{ count: string }>(`
+        SELECT COUNT(*) as count FROM realtime.messages
+        WHERE topic = 'user:${ALICE_ID}:signals';
+      `);
+      expect(Number(aliceRes.rows[0].count)).toBe(1);
+
+      // Bob cannot broadcast or read Alice's user topic
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          INSERT INTO realtime.messages (topic, extension)
+          VALUES ('user:${ALICE_ID}:signals', 'broadcast');
+        `)
+      ).rejects.toThrow();
+
+      const bobRes = await db.query<{ count: string }>(`
+        SELECT COUNT(*) as count FROM realtime.messages
+        WHERE topic = 'user:${ALICE_ID}:signals';
+      `);
+      expect(Number(bobRes.rows[0].count)).toBe(0);
+    });
+
+    it('authorizes server members on server voice topic and rejects non-members', async () => {
+      // Alice is member of SERVER_ID; Charlie is not
+      await asUser(ALICE_ID);
+      await db.query(`
+        INSERT INTO realtime.messages (topic, extension)
+        VALUES ('server:${SERVER_ID}:voice', 'broadcast');
+      `);
+
+      const aliceRes = await db.query<{ count: string }>(`
+        SELECT COUNT(*) as count FROM realtime.messages
+        WHERE topic = 'server:${SERVER_ID}:voice';
+      `);
+      expect(Number(aliceRes.rows[0].count)).toBe(1);
+
+      await asUser(CHARLIE_ID);
+      await expect(
+        db.query(`
+          INSERT INTO realtime.messages (topic, extension)
+          VALUES ('server:${SERVER_ID}:voice', 'broadcast');
+        `)
+      ).rejects.toThrow();
+
+      const charlieRes = await db.query<{ count: string }>(`
+        SELECT COUNT(*) as count FROM realtime.messages
+        WHERE topic = 'server:${SERVER_ID}:voice';
+      `);
+      expect(Number(charlieRes.rows[0].count)).toBe(0);
+    });
+
+    it('authorizes members of server on channel topic and rejects non-members', async () => {
+      // CHANNEL_ID is in SERVER_ID. Alice is member, Charlie is not.
+      await asUser(ALICE_ID);
+      await db.query(`
+        INSERT INTO realtime.messages (topic, extension)
+        VALUES ('channel:${CHANNEL_ID}:chat', 'broadcast');
+      `);
+
+      const aliceRes = await db.query<{ count: string }>(`
+        SELECT COUNT(*) as count FROM realtime.messages
+        WHERE topic = 'channel:${CHANNEL_ID}:chat';
+      `);
+      expect(Number(aliceRes.rows[0].count)).toBe(1);
+
+      await asUser(CHARLIE_ID);
+      await expect(
+        db.query(`
+          INSERT INTO realtime.messages (topic, extension)
+          VALUES ('channel:${CHANNEL_ID}:chat', 'broadcast');
+        `)
+      ).rejects.toThrow();
+
+      const charlieRes = await db.query<{ count: string }>(`
+        SELECT COUNT(*) as count FROM realtime.messages
+        WHERE topic = 'channel:${CHANNEL_ID}:chat';
+      `);
+      expect(Number(charlieRes.rows[0].count)).toBe(0);
+    });
+
+    it('strictly denies anon unauthenticated access to realtime.messages', async () => {
+      await asUser(null);
+      await expect(
+        db.query(`
+          INSERT INTO realtime.messages (topic, extension)
+          VALUES ('conv:${CONV_ID}:chat', 'broadcast');
+        `)
+      ).rejects.toThrow();
+
+      await expect(
+        db.query(`
+          SELECT * FROM realtime.messages;
+        `)
+      ).rejects.toThrow();
+    });
+  });
 });

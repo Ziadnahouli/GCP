@@ -501,11 +501,11 @@ export function useMessages(conversationId: string | null) {
     const setupChannel = () => {
       if (isCleanedUp) return;
 
-      const channelName = `chat-room-${conversationId}`;
+      const channelName = `conv:${conversationId}:chat`;
       const ch = realtimeHub.acquire(
         channelName,
         {
-          config: { broadcast: { self: false } },
+          config: { private: true, broadcast: { self: false } },
         },
         supabase
       );
@@ -594,14 +594,42 @@ export function useMessages(conversationId: string | null) {
           }
         }
       )
-      .on('broadcast', { event: 'new_msg' }, ({ payload }) => {
-        if (payload?.message) {
+      .on('broadcast', { event: 'new_msg' }, async ({ payload }) => {
+        if (payload?.message?.id && conversationId) {
           const incomingMsg = payload.message as Message;
           if (incomingMsg.conversation_id !== conversationId) return;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === incomingMsg.id)) return prev;
-            return [...prev, incomingMsg];
-          });
+          // Verify authenticity and content by fetching row from DB (A2)
+          try {
+            const { data, error } = await supabase
+              .from('messages')
+              .select('id, conversation_id, sender_id, content, reply_to_id, is_pinned, is_edited, created_at, updated_at')
+              .eq('id', incomingMsg.id)
+              .eq('conversation_id', conversationId)
+              .maybeSingle();
+
+            if (!error && data && activeConversationIdRef.current === conversationId) {
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === data.id)) return prev;
+                return [
+                  ...prev,
+                  {
+                    id: data.id,
+                    conversation_id: data.conversation_id,
+                    sender_id: data.sender_id,
+                    content: data.content ?? '',
+                    reply_to_id: data.reply_to_id || null,
+                    is_pinned: Boolean(data.is_pinned),
+                    is_edited: Boolean(data.is_edited),
+                    created_at: data.created_at,
+                    updated_at: data.updated_at,
+                    status: 'sent',
+                  },
+                ];
+              });
+            }
+          } catch {
+            // DB lookup failed or unauthenticated - ignore unverified broadcast
+          }
         }
       })
       // M5: Anti-flicker typing indicator map

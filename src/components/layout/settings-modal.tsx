@@ -813,7 +813,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
     if (!supabase) return;
     const channel = supabase
-      .channel(`devices_sync_${user.id}`)
+      .channel(`devices_sync_${user.id}`, { config: { private: true } })
       .on(
         'postgres_changes',
         {

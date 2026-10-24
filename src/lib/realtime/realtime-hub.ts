@@ -52,7 +52,15 @@ export class RealtimeHub {
       throw new Error('Supabase client unavailable for RealtimeHub');
     }
 
-    const channel = client.channel(topic, options);
+    const effectiveOptions = {
+      ...options,
+      config: {
+        private: true,
+        ...options?.config,
+      },
+    };
+
+    const channel = client.channel(topic, effectiveOptions);
     this.channels.set(topic, {
       channel,
       refCount: 1,

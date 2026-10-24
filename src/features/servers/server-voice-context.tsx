@@ -1488,6 +1488,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           const cleanServerId = serverId.toLowerCase().trim();
           const serverPresenceChannel = supabase.channel(`server_voice_${cleanServerId}`, {
             config: {
+              private: true,
               broadcast: { self: false },
               presence: { key: currentUser.id },
             },
@@ -1526,6 +1527,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
       const roomChannel = supabase ? supabase.channel(topic, {
         config: {
+          private: true,
           broadcast: { self: false },
           presence: { key: currentUser.id },
         },

@@ -73,7 +73,7 @@ export function ServerSidebar({
 
     const cleanServerId = server.id.toLowerCase().trim();
     const chan = supabase.channel(`server_voice_${cleanServerId}`, {
-      config: { presence: { key: user?.id || 'anon' } },
+      config: { private: true, presence: { key: user?.id || 'anon' } },
     });
 
     const updateFromPresence = () => {

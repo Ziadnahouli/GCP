@@ -41,6 +41,9 @@ export function getAudioEngineDiagnostics(): AudioEngineDiagnostics {
 }
 
 export function updateAudioEngineDiagnostics(partial: Partial<AudioEngineDiagnostics>): void {
+  const previousMode = currentDiagnostics.mode;
+  const isModeChanging = partial.mode !== undefined && partial.mode !== previousMode;
+
   currentDiagnostics = { ...currentDiagnostics, ...partial };
   listeners.forEach((fn) => {
     try {
@@ -50,8 +53,8 @@ export function updateAudioEngineDiagnostics(partial: Partial<AudioEngineDiagnos
     }
   });
 
-  // Backward-compatible window event dispatch
-  if (typeof window !== 'undefined') {
+  // Only dispatch window event if the mode ACTUALLY changed to prevent runaway event loops & toast storms
+  if (typeof window !== 'undefined' && isModeChanging) {
     try {
       window.dispatchEvent(
         new CustomEvent('gcp_noise_mode_changed', { detail: { ...currentDiagnostics } })

@@ -24,37 +24,93 @@ interface ToastContextType {
   removeToast: (id: string) => void;
 }
 
+const MAX_TOASTS = 3;
 const ToastContext = React.createContext<ToastContextType | null>(null);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
+  const timersRef = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const removeToast = React.useCallback((id: string) => {
+    const existingTimer = timersRef.current.get(id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      timersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const toast = React.useCallback(
     ({ duration = 4000, ...rest }: Omit<ToastItem, 'id'>) => {
-      const id = Math.random().toString(36).substring(2, 9);
-      const newToast: ToastItem = { id, duration, ...rest };
+      // Deduplicate: if an identical notification is already active, don't stack duplicates
+      let isDuplicate = false;
+      setToasts((prev) => {
+        const dupIndex = prev.findIndex(
+          (t) => t.title === rest.title && t.description === rest.description
+        );
+        if (dupIndex !== -1) {
+          isDuplicate = true;
+          // Refresh existing timer
+          const existingId = prev[dupIndex].id;
+          const oldTimer = timersRef.current.get(existingId);
+          if (oldTimer) clearTimeout(oldTimer);
+          if (duration > 0) {
+            const newTimer = setTimeout(() => {
+              removeToast(existingId);
+            }, duration);
+            timersRef.current.set(existingId, newTimer);
+          }
+          return prev;
+        }
 
-      setToasts((prev) => [...prev, newToast]);
+        const id = Math.random().toString(36).substring(2, 9);
+        const newToast: ToastItem = { id, duration, ...rest };
 
-      if (duration > 0) {
-        setTimeout(() => {
-          removeToast(id);
-        }, duration);
-      }
+        if (duration > 0) {
+          const timer = setTimeout(() => {
+            removeToast(id);
+          }, duration);
+          timersRef.current.set(id, timer);
+        }
+
+        const next = [...prev, newToast];
+        // Enforce maximum visible toasts cap (drop oldest if exceeding MAX_TOASTS)
+        if (next.length > MAX_TOASTS) {
+          const toRemove = next.slice(0, next.length - MAX_TOASTS);
+          toRemove.forEach((item) => {
+            const t = timersRef.current.get(item.id);
+            if (t) {
+              clearTimeout(t);
+              timersRef.current.delete(item.id);
+            }
+          });
+          return next.slice(-MAX_TOASTS);
+        }
+        return next;
+      });
     },
     [removeToast]
   );
+
+  React.useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
 
   const contextValue = React.useMemo(() => ({ toasts, toast, removeToast }), [toasts, toast, removeToast]);
 
   return (
     <ToastContext.Provider value={contextValue}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none p-2">
+      <div
+        className="fixed bottom-4 right-4 z-[999999] flex flex-col justify-end gap-2 max-w-sm w-full pointer-events-none p-2 max-h-[calc(100vh-2rem)] overflow-hidden"
+        aria-live="polite"
+        role="region"
+        aria-label="Notifications"
+      >
         {toasts.map((item) => (
           <div
             key={item.id}

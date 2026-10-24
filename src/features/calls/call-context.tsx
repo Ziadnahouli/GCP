@@ -329,6 +329,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return 'balanced';
   });
   const isNoiseSuppressionEnabled = noiseSuppressionMode !== 'off';
+  const noiseSuppressionModeRef = React.useRef<NoiseCancellationMode>(noiseSuppressionMode);
+  React.useEffect(() => {
+    noiseSuppressionModeRef.current = noiseSuppressionMode;
+  }, [noiseSuppressionMode]);
 
   const [isLiveKitActive, setIsLiveKitActive] = React.useState(false);
   const [isKrispActive, setIsKrispActive] = React.useState(false);
@@ -617,53 +621,63 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   );
 
     // Set noise suppression mode dynamically in active call
-  const setNoiseSuppressionMode = React.useCallback(async (mode: NoiseCancellationMode) => {
-    setNoiseSuppressionModeState(mode);
-    try {
-      localStorage.setItem('nexus_noise_suppression_mode', mode);
-      localStorage.setItem('nexus_noise_suppression', String(mode !== 'off'));
-    } catch {}
-
-    // 1. Update GCP AudioWorklet RNNoise Pipeline immediately (single owner of constraints)
-    if (gcpNoisePipelineRef.current) {
+  const setNoiseSuppressionMode = React.useCallback(
+    async (mode: NoiseCancellationMode, showToast: boolean = true) => {
+      // Guard against redundant execution
+      if (mode === noiseSuppressionModeRef.current) return;
+      noiseSuppressionModeRef.current = mode;
+      setNoiseSuppressionModeState(mode);
       try {
-        gcpNoisePipelineRef.current.setMode(mode);
+        localStorage.setItem('nexus_noise_suppression_mode', mode);
+        localStorage.setItem('nexus_noise_suppression', String(mode !== 'off'));
       } catch {}
-    } else if (rawMicStreamRef.current) {
-      // Direct track fallback if pipeline is not active
-      const audioTracks = rawMicStreamRef.current.getAudioTracks();
-      for (const track of audioTracks) {
-        await applyProcessingPolicy(track, mode === 'off' ? 'off' : 'browser').catch(() => {});
-      }
-    }
 
-    toast({
-      title: mode === 'off' ? 'Noise Suppression Off' : `GCP AI Suppression: ${mode.toUpperCase()}`,
-      description:
-        mode === 'off'
-          ? 'Raw microphone pass-through active (0ms DSP).'
-          : mode === 'strong'
-          ? 'Strong neural suppression active: mechanical keyboards and loud fans eradicated.'
-          : 'Balanced neural enhancement active: background noise suppressed, natural vocal warmth preserved.',
-      type: mode === 'off' ? 'info' : 'success',
-      duration: 2500,
-    });
-  }, [toast]);
+      // 1. Update GCP AudioWorklet RNNoise Pipeline immediately (single owner of constraints)
+      if (gcpNoisePipelineRef.current) {
+        try {
+          gcpNoisePipelineRef.current.setMode(mode);
+        } catch {}
+      } else if (rawMicStreamRef.current) {
+        // Direct track fallback if pipeline is not active
+        const audioTracks = rawMicStreamRef.current.getAudioTracks();
+        for (const track of audioTracks) {
+          await applyProcessingPolicy(track, mode === 'off' ? 'off' : 'browser').catch(() => {});
+        }
+      }
+
+      if (showToast) {
+        toast({
+          title: mode === 'off' ? 'Noise Suppression Off' : `GCP AI Suppression: ${mode.toUpperCase()}`,
+          description:
+            mode === 'off'
+              ? 'Raw microphone pass-through active (0ms DSP).'
+              : mode === 'strong'
+              ? 'Strong neural suppression active: mechanical keyboards and loud fans eradicated.'
+              : 'Balanced neural enhancement active: background noise suppressed, natural vocal warmth preserved.',
+          type: mode === 'off' ? 'info' : 'success',
+          duration: 2500,
+        });
+      }
+    },
+    [toast]
+  );
 
   // Toggle noise suppression for microphone dynamically in active call
   const toggleNoiseSuppression = React.useCallback(async () => {
     const nextMode: NoiseCancellationMode =
       noiseSuppressionMode === 'balanced' ? 'strong' :
       noiseSuppressionMode === 'strong' ? 'off' : 'balanced';
-    await setNoiseSuppressionMode(nextMode);
+    await setNoiseSuppressionMode(nextMode, true);
   }, [noiseSuppressionMode, setNoiseSuppressionMode]);
 
   // Synchronize with external settings modal mode updates in real-time
   React.useEffect(() => {
     const handleModeEvent = (e: Event) => {
       const customEvent = e as CustomEvent<{ mode: NoiseCancellationMode }>;
-      if (customEvent.detail?.mode) {
-        setNoiseSuppressionMode(customEvent.detail.mode);
+      const targetMode = customEvent.detail?.mode;
+      // Strictly ignore if mode did not change to prevent runaway loops & toast spam
+      if (targetMode && targetMode !== noiseSuppressionModeRef.current) {
+        setNoiseSuppressionMode(targetMode, false);
       }
     };
     const handleDesktopDspEvent = (e: Event) => {
@@ -674,7 +688,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         if (gcpNoisePipelineRef.current) {
-          gcpNoisePipelineRef.current.setMode(noiseSuppressionMode);
+          gcpNoisePipelineRef.current.setMode(noiseSuppressionModeRef.current);
         }
       }
     };
@@ -685,7 +699,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('gcp_noise_mode_changed', handleModeEvent);
       window.removeEventListener('gcp_desktop_dsp_active', handleDesktopDspEvent);
     };
-  }, [setNoiseSuppressionMode, noiseSuppressionMode]);
+  }, [setNoiseSuppressionMode]);
 
   // Helper to cleanly merge/update tracks into remoteStreamRef without dropping audio or video
   const attachRemoteTrack = React.useCallback((track: MediaStreamTrack) => {

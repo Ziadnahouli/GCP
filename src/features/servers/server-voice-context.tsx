@@ -134,6 +134,10 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     return 'balanced';
   });
   const isNoiseSuppressionEnabled = noiseSuppressionMode !== 'off';
+  const noiseSuppressionModeRef = React.useRef<NoiseCancellationMode>(noiseSuppressionMode);
+  React.useEffect(() => {
+    noiseSuppressionModeRef.current = noiseSuppressionMode;
+  }, [noiseSuppressionMode]);
   const [isSpeaking, setIsSpeaking] = React.useState(false);
   const [audioLevel, setAudioLevel] = React.useState(0);
 
@@ -2382,6 +2386,8 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
   // Update AI Noise Suppression Mode
   const setNoiseSuppressionMode = React.useCallback((mode: NoiseCancellationMode) => {
+    if (mode === noiseSuppressionModeRef.current) return;
+    noiseSuppressionModeRef.current = mode;
     setNoiseSuppressionModeState(mode);
     try {
       localStorage.setItem('nexus_noise_suppression_mode', mode);
@@ -2409,8 +2415,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   React.useEffect(() => {
     const handleModeEvent = (e: Event) => {
       const customEvent = e as CustomEvent<{ mode: NoiseCancellationMode }>;
-      if (customEvent.detail?.mode) {
-        setNoiseSuppressionMode(customEvent.detail.mode);
+      const targetMode = customEvent.detail?.mode;
+      if (targetMode && targetMode !== noiseSuppressionModeRef.current) {
+        setNoiseSuppressionMode(targetMode);
       }
     };
     const handleDesktopDspEvent = (e: Event) => {
@@ -2421,7 +2428,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         }
       } else {
         if (dspPipelineRef.current) {
-          dspPipelineRef.current.setMode(noiseSuppressionMode);
+          dspPipelineRef.current.setMode(noiseSuppressionModeRef.current);
         }
       }
     };
@@ -2432,7 +2439,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       window.removeEventListener('gcp_noise_mode_changed', handleModeEvent);
       window.removeEventListener('gcp_desktop_dsp_active', handleDesktopDspEvent);
     };
-  }, [setNoiseSuppressionMode, noiseSuppressionMode]);
+  }, [setNoiseSuppressionMode]);
 
   // Broadcast soundboard clip
   const broadcastSoundboard = React.useCallback(

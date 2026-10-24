@@ -304,6 +304,10 @@ export async function createGcpNoisePipeline(
     }
 
     const setMode = (mode: NoiseCancellationMode) => {
+      const isStatusMatching = pipelineStatus === (mode === 'off' ? 'disabled' : 'ready');
+      if (currentMode === mode && isStatusMatching) {
+        return;
+      }
       currentMode = mode;
       if (mode === 'off') {
         pipelineStatus = 'disabled';

@@ -10,7 +10,7 @@ import { ServerSidebar } from '@/components/servers/server-sidebar';
 import { CreateServerModal } from '@/components/servers/create-server-modal';
 import { ServerSettingsModal } from '@/components/servers/server-settings-modal';
 import { SettingsModal } from '@/components/layout/settings-modal';
-import { CallProvider, useCallContext } from '@/features/calls/call-context';
+import { CallProvider, useCallState, useCallActions, useCallStats } from '@/features/calls/call-context';
 import { PresenceProvider } from '@/features/presence/presence-context';
 import { ServerVoiceProvider, useServerVoiceContext } from '@/features/servers/server-voice-context';
 import { VoiceConnectedBar } from '@/components/servers/voice-connected-bar';
@@ -31,10 +31,41 @@ import { Avatar } from '@/components/ui/avatar';
 import { Channel } from '@/lib/types/server';
 import { cn } from '@/lib/utils';
 
+function ConnectedCallModal() {
+  const callState = useCallState();
+  const callActions = useCallActions();
+  const { stats } = useCallStats();
+
+  return (
+    <CallModal
+      open={callState.callStatus === 'in_call' || callState.callStatus === 'outgoing_ringing'}
+      callStatus={callState.callStatus}
+      isVideo={callState.isVideoCall}
+      isMicMuted={callState.isMicMuted}
+      isDeafened={callState.isDeafened}
+      isCameraOn={callState.isCameraOn}
+      isScreenSharing={callState.isScreenSharing}
+      isNoiseSuppressionEnabled={callState.isNoiseSuppressionEnabled}
+      isLiveKitActive={callState.isLiveKitActive}
+      participants={callState.participants}
+      stats={stats}
+      localStream={callState.localStream}
+      remoteStream={callState.remoteStream}
+      screenStream={callState.screenStream}
+      onEndCall={callActions.endCall}
+      onToggleMic={callActions.toggleMic}
+      onToggleDeafen={callActions.toggleDeafen}
+      onToggleCamera={callActions.toggleCamera}
+      onToggleScreenShare={callActions.toggleScreenShare}
+      onToggleNoiseSuppression={callActions.toggleNoiseSuppression}
+      onRestartConnection={callActions.restartConnection}
+    />
+  );
+}
+
 function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, profile, isLoading } = useAuth();
   useGlobalShortcuts();
-  const call = useCallContext();
   const serverVoice = useServerVoiceContext();
   const [collapsed, setCollapsed] = React.useState(false);
   const [showCreateServer, setShowCreateServer] = React.useState(false);
@@ -395,29 +426,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
         {/* Global Active WebRTC Voice/Video Call Modal */}
         <ComponentErrorBoundary sectionName="Call Modal">
-          <CallModal
-            open={call.callStatus === 'in_call' || call.callStatus === 'outgoing_ringing'}
-            callStatus={call.callStatus}
-            isVideo={call.isVideoCall}
-            isMicMuted={call.isMicMuted}
-            isDeafened={call.isDeafened}
-            isCameraOn={call.isCameraOn}
-            isScreenSharing={call.isScreenSharing}
-            isNoiseSuppressionEnabled={call.isNoiseSuppressionEnabled}
-            isLiveKitActive={call.isLiveKitActive}
-            participants={call.participants}
-            stats={call.stats}
-            localStream={call.localStream}
-            remoteStream={call.remoteStream}
-            screenStream={call.screenStream}
-            onEndCall={call.endCall}
-            onToggleMic={call.toggleMic}
-            onToggleDeafen={call.toggleDeafen}
-            onToggleCamera={call.toggleCamera}
-            onToggleScreenShare={call.toggleScreenShare}
-            onToggleNoiseSuppression={call.toggleNoiseSuppression}
-            onRestartConnection={call.restartConnection}
-          />
+          <ConnectedCallModal />
         </ComponentErrorBoundary>
 
         {/* Floating Pop-Up Screen for Active Server Voice Lounge */}

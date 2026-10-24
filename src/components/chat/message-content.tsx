@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { ExternalLink, Check, Users, Shield, ArrowRight, Loader2, Sparkles, Phone, PhoneOff, Radio, Volume2 } from 'lucide-react';
 import { useServers } from '@/hooks/use-servers';
-import { useCallContext } from '@/features/calls/call-context';
+import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { getBrowserClient } from '@/lib/supabase/client';
@@ -27,7 +27,8 @@ const MENTION_TOKEN_REGEX = /(@[a-zA-Z0-9_.-]+)/g;
 export function MessageContent({ content, isMe = false, isCallActive }: MessageContentProps) {
   const router = useRouter();
   const { servers, joinServer } = useServers();
-  const call = useCallContext();
+  const callState = useCallState();
+  const callActions = useCallActions();
   const { toast } = useToast();
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
@@ -127,10 +128,10 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
 
   const activeParticipants: Array<{ id: string; name: string; avatar_url?: string | null; isSpeaking?: boolean; isMuted?: boolean }> = React.useMemo(() => {
     if (!squadCallConvId) return [];
-    const fromCtx = call.getSquadCallParticipants?.(squadCallConvId) || [];
+    const fromCtx = callActions.getSquadCallParticipants?.(squadCallConvId) || [];
     if (fromCtx.length > 0) return fromCtx;
     if (broadcastParticipants.length > 0) return broadcastParticipants;
-    const squad = call.activeSquadCalls?.get(squadCallConvId);
+    const squad = callState.activeSquadCalls?.get(squadCallConvId);
     if (squad?.participants && Array.isArray(squad.participants) && squad.participants.length > 0) {
       return squad.participants;
     }
@@ -144,11 +145,11 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
       ];
     }
     return [];
-  }, [squadCallConvId, call, broadcastParticipants]);
+  }, [squadCallConvId, callActions, callState.activeSquadCalls, broadcastParticipants]);
 
   const isLive = isCallActive !== undefined
     ? isCallActive
-    : (sessionActive || (squadCallConvId && (call.activeSquadCalls?.get(squadCallConvId) || call.isSquadCallActive?.(squadCallConvId))) || (call.activeConversationId === squadCallConvId && (call.callStatus === 'in_call' || call.callStatus === 'incoming_ringing')));
+    : (sessionActive || (squadCallConvId && (callState.activeSquadCalls?.get(squadCallConvId) || callActions.isSquadCallActive?.(squadCallConvId))) || (callState.activeConversationId === squadCallConvId && (callState.callStatus === 'in_call' || callState.callStatus === 'incoming_ringing')));
 
   // Check if content contains a server invite
   const inviteMatch = React.useMemo(() => {
@@ -368,7 +369,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
               </div>
 
               <div className="shrink-0">
-                {call.activeConversationId === squadCallConvId && call.callStatus === 'in_call' ? (
+                {callState.activeConversationId === squadCallConvId && callState.callStatus === 'in_call' ? (
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-semibold text-xs">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                     <span>Connected</span>
@@ -377,10 +378,10 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
                   <button
                     type="button"
                     onClick={() => {
-                      if (call.callStatus === 'incoming_ringing') {
-                        call.acceptCall();
+                      if (callState.callStatus === 'incoming_ringing') {
+                        callActions.acceptCall();
                       } else {
-                        call.startCall(squadCallConvId, squadCallConvId, false);
+                        callActions.startCall(squadCallConvId, squadCallConvId, false);
                       }
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-900/40 transition-all hover:scale-[1.02]"

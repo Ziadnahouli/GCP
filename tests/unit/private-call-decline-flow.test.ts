@@ -253,8 +253,14 @@ describe('Private Call Decline Signaling & Re-Calling Elimination', () => {
     expect(mockSupabase.from).toHaveBeenCalledWith('call_sessions');
 
     // 3. Guaranteed direct signal was sent to caller channel 'user-signals-user-caller-other-222'
-    expect(mockSupabase.channel).toHaveBeenCalledWith('user-signals-user-caller-other-222');
-    expect(mockSupabase.channel).toHaveBeenCalledWith('call-room-conv-private-999');
+    expect(mockSupabase.channel).toHaveBeenCalledWith(
+      'user-signals-user-caller-other-222',
+      { config: { private: true } }
+    );
+    expect(mockSupabase.channel).toHaveBeenCalledWith(
+      'call-room-conv-private-999',
+      { config: { private: true } }
+    );
   });
 
   it('suppresses incoming_call beacons for recently declined calls and re-dispatches rejection', async () => {

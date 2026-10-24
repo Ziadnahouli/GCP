@@ -44,7 +44,7 @@ import { Message, MessageAttachment } from '@/lib/types/messaging';
 import { validateFile, formatFileSize } from '@/lib/storage/upload';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
-import { useCallContext } from '@/features/calls/call-context';
+import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { usePresence } from '@/features/presence/presence-context';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
@@ -103,7 +103,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     }
   }, [conversationId, markConversationAsRead, messages.length]);
 
-  const call = useCallContext();
+  const callState = useCallState();
+  const callActions = useCallActions();
   const { toast } = useToast();
   const { getUserStatus } = usePresence();
 
@@ -222,8 +223,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
   const [activeCallSession, setActiveCallSession] = React.useState<any>(null);
   const lastHeartbeatTimeRef = React.useRef<number>(0);
-  const callIsSquadCallActiveRef = React.useRef(call.isSquadCallActive);
-  callIsSquadCallActiveRef.current = call.isSquadCallActive;
+  const callIsSquadCallActiveRef = React.useRef(callActions.isSquadCallActive);
+  callIsSquadCallActiveRef.current = callActions.isSquadCallActive;
 
   React.useEffect(() => {
     if (!conversationId || !supabase) {
@@ -280,8 +281,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         lastHeartbeatTimeRef.current = Date.now();
         const sessData = payload.payload || { status: 'active', started_at: new Date().toISOString() };
         setActiveCallSession(sessData);
-        if (call.registerSquadCallActive) {
-          call.registerSquadCallActive(conversationId, sessData);
+        if (callActions.registerSquadCallActive) {
+          callActions.registerSquadCallActive(conversationId, sessData);
         }
       }
     );
@@ -292,8 +293,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       () => {
         lastHeartbeatTimeRef.current = 0;
         setActiveCallSession(null);
-        if (call.unregisterSquadCall) {
-          call.unregisterSquadCall(conversationId);
+        if (callActions.unregisterSquadCall) {
+          callActions.unregisterSquadCall(conversationId);
         }
       }
     );
@@ -313,14 +314,14 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       unsubActive();
       unsubEnded();
     };
-  }, [conversationId, call.registerSquadCallActive, call.unregisterSquadCall]);
+  }, [conversationId, callActions.registerSquadCallActive, callActions.unregisterSquadCall]);
 
   const isSquadCallActive = Boolean(
     activeCallSession ||
-    (conversationId && (call.activeSquadCalls?.get(conversationId) || call.isSquadCallActive?.(conversationId))) ||
-    (call.incomingCall?.isGroup && call.incomingCall?.conversationId === conversationId) ||
-    (call.callStatus === 'incoming_ringing' && call.activeConversationId === conversationId && isGroup) ||
-    (call.callStatus === 'in_call' && call.activeConversationId === conversationId && isGroup)
+    (conversationId && (callState.activeSquadCalls?.get(conversationId) || callActions.isSquadCallActive?.(conversationId))) ||
+    (callState.incomingCall?.isGroup && callState.incomingCall?.conversationId === conversationId) ||
+    (callState.callStatus === 'incoming_ringing' && callState.activeConversationId === conversationId && isGroup) ||
+    (callState.callStatus === 'in_call' && callState.activeConversationId === conversationId && isGroup)
   );
 
   const latestSquadCallMsgId = React.useMemo(() => {
@@ -554,11 +555,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
   const handleVoiceCallClick = async () => {
     if (isGroup) {
-      if (activeCallSession || call.isSquadCallActive?.(conversationId)) {
-        if (call.callStatus === 'incoming_ringing') {
-          call.acceptCall();
+      if (activeCallSession || callActions.isSquadCallActive?.(conversationId)) {
+        if (callState.callStatus === 'incoming_ringing') {
+          callActions.acceptCall();
         } else {
-          call.startCall(conversationId, conversationId, false);
+          callActions.startCall(conversationId, conversationId, false);
         }
         return;
       }
@@ -573,11 +574,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       const announcement = `📞 Started a squad voice call. [join-squad-call:${conversationId}] ${mentions ? `Hey ${mentions}, click Join Voice to connect!` : 'Click Join Voice to connect!'}`;
 
       sendMessage(announcement).catch(() => {});
-      call.startCall(conversationId, conversationId, false);
+      callActions.startCall(conversationId, conversationId, false);
     } else {
       const otherMember = (effectiveConversation?.members || []).find((m: any) => m.user_id !== user?.id);
       const peerId = targetUserId || otherMember?.user_id || conversationId;
-      call.startCall(peerId, conversationId, false);
+      callActions.startCall(peerId, conversationId, false);
     }
   };
 
@@ -826,12 +827,12 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           )}
 
           {/* Voice & Video Call Controls */}
-          {call.activeConversationId === conversationId && call.callStatus === 'in_call' ? (
+          {callState.activeConversationId === conversationId && callState.callStatus === 'in_call' ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="font-medium text-[11px]">In Voice</span>
               <button
-                onClick={() => call.endCall()}
+                onClick={() => callActions.endCall()}
                 className="ml-1 px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10px] font-semibold transition-colors"
                 title="Disconnect from Squad Call"
               >
@@ -870,7 +871,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                 onClick={() => {
                   const otherMember = (effectiveConversation?.members || []).find((m: any) => m.user_id !== user?.id);
                   const peerId = targetUserId || otherMember?.user_id || conversationId;
-                  call.startCall(peerId, conversationId, true);
+                  callActions.startCall(peerId, conversationId, true);
                 }}
                 className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
                 title="Start Video Call"
@@ -910,14 +911,14 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       {/* Active Squad Voice Call Banner */}
       {isGroup &&
         isSquadCallActive &&
-        (call.activeConversationId !== conversationId || call.callStatus !== 'in_call') && (
+        (callState.activeConversationId !== conversationId || callState.callStatus !== 'in_call') && (
           <div className="mx-4 my-2 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between text-xs animate-in fade-in">
             <div className="flex items-center gap-2 text-emerald-400 min-w-0">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
               <Volume2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span className="font-semibold shrink-0">Active Squad Voice Call</span>
               {(() => {
-                const bannerMembers = call.getSquadCallParticipants?.(conversationId) || [];
+                const bannerMembers = callActions.getSquadCallParticipants?.(conversationId) || [];
                 if (bannerMembers.length > 0) {
                   return (
                     <span className="text-emerald-300/90 text-[11px] font-medium truncate">
@@ -934,10 +935,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
             </div>
             <button
               onClick={() => {
-                if (call.callStatus === 'incoming_ringing') {
-                  call.acceptCall();
+                if (callState.callStatus === 'incoming_ringing') {
+                  callActions.acceptCall();
                 } else {
-                  call.startCall(conversationId, conversationId, false);
+                  callActions.startCall(conversationId, conversationId, false);
                 }
               }}
               className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm transition-all"

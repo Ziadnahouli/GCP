@@ -711,7 +711,7 @@ export function useMessages(conversationId: string | null) {
       }
       if (chatChannelRef.current) {
         chatChannelRef.current = null;
-        realtimeHub.release(`chat-room-${conversationId}`, 1000);
+        realtimeHub.release(`conv:${conversationId}:chat`, 1000);
       }
     };
   }, [conversationId, fetchMessages, isConfigured, userId, isUUID, supabase, cacheKey, profile?.username, stopFallbackPolling, startFallbackPolling, clearTypingTimers]);

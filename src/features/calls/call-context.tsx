@@ -4529,7 +4529,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * @deprecated useCallContext is deprecated to prevent re-render cascades.
+ * Use useCallState(), useCallActions(), or useCallStats() instead.
+ */
 export function useCallContext() {
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn(
+      '[useCallContext] Deprecated: useCallContext causes re-renders on call statistics updates. Use useCallState(), useCallActions(), or useCallStats() instead.'
+    );
+  }
   const context = React.useContext(CallContext);
   if (!context) {
     throw new Error('useCallContext must be used within a CallProvider');

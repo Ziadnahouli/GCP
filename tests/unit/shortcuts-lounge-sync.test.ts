@@ -32,6 +32,9 @@ vi.mock('@/features/servers/server-voice-context', () => ({
 
 vi.mock('@/features/calls/call-context', () => ({
   useCallContext: () => mockCallState,
+  useCallState: () => mockCallState,
+  useCallActions: () => mockCallState,
+  useCallStats: () => ({ stats: {} }),
 }));
 
 vi.mock('@/components/ui/toast', () => ({

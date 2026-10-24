@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
-import { useCallContext } from '@/features/calls/call-context';
+import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { useServerVoiceContext } from '@/features/servers/server-voice-context';
 import { useToast } from '@/components/ui/toast';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
@@ -49,7 +49,8 @@ export function matchesPttKey(evt: KeyboardEvent, configuredKey: string): boolea
 export function useGlobalShortcuts() {
   const auth = useOptionalAuth();
   const settings = auth?.settings;
-  const call = useCallContext();
+  const callState = useCallState();
+  const callActions = useCallActions();
   const serverVoice = useServerVoiceContext();
   const { toast } = useToast();
 
@@ -58,10 +59,15 @@ export function useGlobalShortcuts() {
     settingsRef.current = settings;
   }, [settings]);
 
-  const callRef = React.useRef(call);
+  const callStateRef = React.useRef(callState);
   React.useEffect(() => {
-    callRef.current = call;
-  }, [call]);
+    callStateRef.current = callState;
+  }, [callState]);
+
+  const callActionsRef = React.useRef(callActions);
+  React.useEffect(() => {
+    callActionsRef.current = callActions;
+  }, [callActions]);
 
   const serverVoiceRef = React.useRef(serverVoice);
   React.useEffect(() => {
@@ -86,11 +92,11 @@ export function useGlobalShortcuts() {
       pttUnmutedSessionRef.current = null;
       isPttKeyDownRef.current = false;
     }
-    if (pttUnmutedSessionRef.current === 'call' && call?.callStatus !== 'in_call') {
+    if (pttUnmutedSessionRef.current === 'call' && callState?.callStatus !== 'in_call') {
       pttUnmutedSessionRef.current = null;
       isPttKeyDownRef.current = false;
     }
-  }, [serverVoice?.isVoiceConnected, call?.callStatus]);
+  }, [serverVoice?.isVoiceConnected, callState?.callStatus]);
 
   React.useEffect(() => {
     const isTextInput = (target: EventTarget | null): boolean => {
@@ -145,9 +151,10 @@ export function useGlobalShortcuts() {
           sv.toggleMic();
         }
       } else if (unmutedSession === 'call') {
-        const cl = callRef.current;
-        if (cl?.callStatus === 'in_call' && !cl.isMicMuted) {
-          cl.toggleMic();
+        const cs = callStateRef.current;
+        const ca = callActionsRef.current;
+        if (cs?.callStatus === 'in_call' && !cs.isMicMuted) {
+          ca.toggleMic();
         }
       }
     };
@@ -185,7 +192,6 @@ export function useGlobalShortcuts() {
       if (isCtrlOrMeta && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
         e.preventDefault();
         const sv = serverVoiceRef.current;
-        const cl = callRef.current;
 
         if (sv?.isVoiceConnected) {
           const nextMuted = !sv.isMicMuted;
@@ -196,9 +202,11 @@ export function useGlobalShortcuts() {
             type: nextMuted ? 'info' : 'success',
             duration: 2000,
           });
-        } else if (cl?.callStatus === 'in_call') {
-          const nextMuted = !cl.isMicMuted;
-          cl.toggleMic();
+        } else if (callStateRef.current?.callStatus === 'in_call') {
+          const cs = callStateRef.current;
+          const ca = callActionsRef.current;
+          const nextMuted = !cs.isMicMuted;
+          ca.toggleMic();
           toastRef.current({
             title: nextMuted ? 'Microphone Muted' : 'Microphone Unmuted',
             description: `Private Call • Shortcut: Ctrl+Shift+M`,
@@ -220,7 +228,6 @@ export function useGlobalShortcuts() {
       if (isCtrlOrMeta && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault();
         const sv = serverVoiceRef.current;
-        const cl = callRef.current;
 
         if (sv?.isVoiceConnected) {
           const nextDeaf = !sv.isDeafened;
@@ -233,9 +240,11 @@ export function useGlobalShortcuts() {
             type: nextDeaf ? 'info' : 'success',
             duration: 2000,
           });
-        } else if (cl?.callStatus === 'in_call') {
-          const nextDeaf = !cl.isDeafened;
-          cl.toggleDeafen();
+        } else if (callStateRef.current?.callStatus === 'in_call') {
+          const cs = callStateRef.current;
+          const ca = callActionsRef.current;
+          const nextDeaf = !cs.isDeafened;
+          ca.toggleDeafen();
           toastRef.current({
             title: nextDeaf ? 'Audio Deafened' : 'Audio Undeafened',
             description: nextDeaf
@@ -269,7 +278,6 @@ export function useGlobalShortcuts() {
           isPttKeyDownRef.current = true;
 
           const sv = serverVoiceRef.current;
-          const cl = callRef.current;
 
           // Priority: server voice if connected, else private call
           if (sv?.isVoiceConnected) {
@@ -280,9 +288,11 @@ export function useGlobalShortcuts() {
               // Mic was already unmuted: DO NOT mute, DO NOT flag for re-mute on keyup
               pttUnmutedSessionRef.current = null;
             }
-          } else if (cl?.callStatus === 'in_call') {
-            if (cl.isMicMuted) {
-              cl.toggleMic();
+          } else if (callStateRef.current?.callStatus === 'in_call') {
+            const cs = callStateRef.current;
+            const ca = callActionsRef.current;
+            if (cs.isMicMuted) {
+              ca.toggleMic();
               pttUnmutedSessionRef.current = 'call';
             } else {
               // Mic was already unmuted: DO NOT mute, DO NOT flag for re-mute on keyup
@@ -323,9 +333,10 @@ export function useGlobalShortcuts() {
             sv.toggleMic();
           }
         } else if (unmutedSession === 'call') {
-          const cl = callRef.current;
-          if (cl?.callStatus === 'in_call' && !cl.isMicMuted) {
-            cl.toggleMic();
+          const cs = callStateRef.current;
+          const ca = callActionsRef.current;
+          if (cs?.callStatus === 'in_call' && !cs.isMicMuted) {
+            ca.toggleMic();
           }
         }
       }

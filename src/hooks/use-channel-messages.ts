@@ -444,7 +444,7 @@ export function useChannelMessages(channelId: string | null) {
       }
       if (channelRef.current) {
         channelRef.current = null;
-        realtimeHub.release(`chan-room-${channelId}`, 1000);
+        realtimeHub.release(`channel:${channelId}:chat`, 1000);
       }
     };
   }, [channelId, fetchChannelMessages, isConfigured, userId, isUUID, supabase, stopFallbackPolling, startFallbackPolling]);

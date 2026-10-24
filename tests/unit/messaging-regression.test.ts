@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMessages } from '@/hooks/use-messages';
 import { useChannelMessages } from '@/hooks/use-channel-messages';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 
 const {
   mockUser,
@@ -134,6 +135,7 @@ describe('Messaging Regression Audit & Verification', () => {
     mockState.deleteResult = { data: null, error: null };
     mockState.updateResult = { data: null, error: null };
     localStorage.clear();
+    realtimeHub.clear();
   });
 
   afterEach(() => {

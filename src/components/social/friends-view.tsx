@@ -27,7 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
-import { useCallContext } from '@/features/calls/call-context';
+import { useCallActions } from '@/features/calls/call-context';
 import { usePresence } from '@/features/presence/presence-context';
 
 interface FriendsViewProps {
@@ -77,7 +77,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
     });
   }, [friends, searchFilter, activeTab, isUserOnline]);
 
-  const call = useCallContext();
+  const { startCall } = useCallActions();
 
   const handleStartChat = async (targetUserId: string) => {
     const { conversationId, error } = await getOrCreateDirectConversation(targetUserId);
@@ -94,7 +94,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
       toast({ title: 'Error', description: error || 'Failed to start call', type: 'error' });
       return;
     }
-    call.startCall(targetUserId, conversationId, isVideo);
+    startCall(targetUserId, conversationId, isVideo);
   };
 
   const handleSendFriendRequest = async (e: React.FormEvent) => {

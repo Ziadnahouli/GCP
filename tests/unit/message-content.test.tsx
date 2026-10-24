@@ -15,17 +15,25 @@ vi.mock('@/hooks/use-servers', () => ({
   }),
 }));
 
-vi.mock('@/features/calls/call-context', () => ({
-  useCallContext: () => ({
+vi.mock('@/features/calls/call-context', () => {
+  const mockState = {
     activeConversationId: null,
     callStatus: 'idle',
     activeSquadCalls: new Map(),
+  };
+  const mockActions = {
     getSquadCallParticipants: vi.fn().mockReturnValue([]),
     isSquadCallActive: vi.fn().mockReturnValue(false),
     startCall: vi.fn(),
     acceptCall: vi.fn(),
-  }),
-}));
+  };
+  return {
+    useCallState: () => mockState,
+    useCallActions: () => mockActions,
+    useCallStats: () => ({ stats: {} }),
+    useCallContext: () => ({ ...mockState, ...mockActions }),
+  };
+});
 
 vi.mock('@/components/ui/toast', () => ({
   useToast: () => ({

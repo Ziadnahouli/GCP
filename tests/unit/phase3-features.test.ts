@@ -4,11 +4,13 @@ import * as React from 'react';
 import { useNotifications, NotificationItem } from '@/hooks/use-notifications';
 import { useModalEscape } from '@/hooks/use-modal-escape';
 import { useGlobalShortcuts, matchesPttKey } from '@/hooks/use-global-shortcuts';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 
 const {
   mockFrom,
   mockChannel,
   mockRemoveChannel,
+  mockClient,
   mockAuthState,
   mockServerVoiceState,
   mockCallState,
@@ -26,6 +28,16 @@ const {
   const mockToggleCallMic = vi.fn();
   const mockToggleCallDeafen = vi.fn();
   const mockToast = vi.fn();
+
+  const mockClient = {
+    from: mockFrom,
+    channel: mockChannel,
+    removeChannel: mockRemoveChannel,
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+      onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+    },
+  };
 
   const mockAuthState = {
     user: { id: 'user-p3-1', email: 'test@nexus.gg' } as { id: string; email: string } | null,
@@ -63,6 +75,7 @@ const {
     mockFrom,
     mockChannel,
     mockRemoveChannel,
+    mockClient,
     mockAuthState,
     mockServerVoiceState,
     mockCallState,
@@ -76,18 +89,9 @@ const {
 
 // Mock Supabase
 vi.mock('@/lib/supabase/client', () => {
-  const client = {
-    from: mockFrom,
-    channel: mockChannel,
-    removeChannel: mockRemoveChannel,
-    auth: {
-      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
-      onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
-    },
-  };
   return {
-    supabase: client,
-    getBrowserClient: () => client,
+    supabase: mockClient,
+    getBrowserClient: () => mockClient,
   };
 });
 
@@ -119,12 +123,17 @@ vi.mock('@/features/servers/server-voice-context', () => ({
 
 vi.mock('@/features/calls/call-context', () => ({
   useCallContext: () => mockCallState,
+  useCallState: () => mockCallState,
+  useCallActions: () => mockCallState,
+  useCallStats: () => ({ stats: {} }),
 }));
 
 describe('Phase 3 Comprehensive Audit: PTT State Machine, Notifications, Search, Escape Stack & Audio Prefs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    realtimeHub.clear();
+    realtimeHub.setClient(mockClient);
 
     mockAuthState.user = { id: 'user-p3-1', email: 'test@nexus.gg' };
     mockAuthState.settings = {

@@ -2,12 +2,13 @@
 
 import * as React from 'react';
 import { Phone, PhoneOff, Video, Gamepad2, Users } from 'lucide-react';
-import { useCallContext } from '@/features/calls/call-context';
+import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 
 export function IncomingCallModal() {
-  const { incomingCall, callStatus, acceptCall, rejectCall } = useCallContext();
+  const { incomingCall, callStatus } = useCallState();
+  const { acceptCall, rejectCall } = useCallActions();
 
   if (callStatus !== 'incoming_ringing' || !incomingCall) {
     return null;

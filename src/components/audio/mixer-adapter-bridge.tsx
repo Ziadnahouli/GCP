@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useServerVoiceContext } from '@/features/servers/server-voice-context';
-import { useCallContext } from '@/features/calls/call-context';
+import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { installMixerAdapter, MixerAdapterApi, MixerState } from '@/lib/audio/mixer-adapter';
 
 /**
@@ -14,11 +14,12 @@ let activeCallIdGlobal: string | null = null;
 
 export function MixerAdapterBridge() {
   const serverVoice = useServerVoiceContext();
-  const call = useCallContext();
+  const callState = useCallState();
+  const callActions = useCallActions();
 
   // Determine active call source and stable unique callId
   const isServerVoiceActive = Boolean(serverVoice.isVoiceConnected && serverVoice.activeChannelId);
-  const isDirectCallActive = Boolean(!isServerVoiceActive && call.callStatus === 'in_call' && call.activeConversationId);
+  const isDirectCallActive = Boolean(!isServerVoiceActive && callState.callStatus === 'in_call' && callState.activeConversationId);
 
   const activeCallId = React.useMemo(() => {
     if (isServerVoiceActive && serverVoice.activeChannelId) {
@@ -26,11 +27,11 @@ export function MixerAdapterBridge() {
         ? `server-voice:${serverVoice.activeServerId}:${serverVoice.activeChannelId}`
         : `voice:${serverVoice.activeChannelId}`;
     }
-    if (isDirectCallActive && call.activeConversationId) {
-      return `direct-call:${call.activeConversationId}`;
+    if (isDirectCallActive && callState.activeConversationId) {
+      return `direct-call:${callState.activeConversationId}`;
     }
     return null;
-  }, [isServerVoiceActive, isDirectCallActive, serverVoice.activeServerId, serverVoice.activeChannelId, call.activeConversationId]);
+  }, [isServerVoiceActive, isDirectCallActive, serverVoice.activeServerId, serverVoice.activeChannelId, callState.activeConversationId]);
 
   // Keep a reference to current context methods and state to satisfy synchronous getState() contract
   const latestStateRef = React.useRef<MixerState>({
@@ -66,21 +67,21 @@ export function MixerAdapterBridge() {
         setVolume: serverVoice.setIncomingVolume,
         forceMute: serverVoice.forceMute,
       };
-    } else if (isDirectCallActive && call.activeConversationId) {
-      const otherParticipant = call.participants?.[0]?.name;
+    } else if (isDirectCallActive && callState.activeConversationId) {
+      const otherParticipant = callState.participants?.[0]?.name;
       latestStateRef.current = {
         connected: true,
         callId: activeCallId || '',
         room: otherParticipant ? `Call with ${otherParticipant}` : 'Direct Call',
-        mic_muted: call.isMicMuted,
-        deafened: call.isDeafened,
-        volume: call.incomingVolume,
+        mic_muted: callState.isMicMuted,
+        deafened: callState.isDeafened,
+        volume: callState.incomingVolume,
       };
       activeProviderRef.current = {
-        setMicMuted: call.setMicMutedExplicit,
-        setDeafened: call.setDeafenedExplicit,
-        setVolume: call.setIncomingVolume,
-        forceMute: call.forceMute,
+        setMicMuted: callActions.setMicMutedExplicit,
+        setDeafened: callActions.setDeafenedExplicit,
+        setVolume: callActions.setIncomingVolume,
+        forceMute: callActions.forceMute,
       };
     } else {
       latestStateRef.current = {
@@ -98,7 +99,7 @@ export function MixerAdapterBridge() {
     isDirectCallActive,
     activeCallId,
     serverVoice.activeChannelId,
-    call.activeConversationId,
+    callState.activeConversationId,
     serverVoice.activeChannelName,
     serverVoice.activeServerName,
     serverVoice.isMicMuted,
@@ -108,14 +109,14 @@ export function MixerAdapterBridge() {
     serverVoice.setDeafenedExplicit,
     serverVoice.setIncomingVolume,
     serverVoice.forceMute,
-    call.participants,
-    call.isMicMuted,
-    call.isDeafened,
-    call.incomingVolume,
-    call.setMicMutedExplicit,
-    call.setDeafenedExplicit,
-    call.setIncomingVolume,
-    call.forceMute,
+    callState.participants,
+    callState.isMicMuted,
+    callState.isDeafened,
+    callState.incomingVolume,
+    callActions.setMicMutedExplicit,
+    callActions.setDeafenedExplicit,
+    callActions.setIncomingVolume,
+    callActions.forceMute,
   ]);
 
   // Desktop companion DSP coordination: Poll companion bridge to prevent double suppression

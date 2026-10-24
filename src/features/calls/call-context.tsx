@@ -23,6 +23,17 @@ import {
   synthesizeZeroTierCandidate,
 } from '@/lib/webrtc/ice-config';
 import { addBoundedSet, setBoundedMap } from '@/lib/utils';
+import {
+  connectLiveKitCall as connectLiveKitCallAdapter,
+  disconnectLiveKitRoom,
+  updateLiveKitAudioPublicationMute,
+} from './livekit-adapter';
+import {
+  dispatchSignalToUser,
+  dispatchDirectSignal,
+  dispatchSignalToRoom,
+  processIncomingIceCandidate,
+} from './webrtc-signaling';
 
 export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_call' | 'reconnecting' | 'ended';
 
@@ -478,61 +489,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Helper to reliably send a signal to a peer's personal channel with FIFO queuing
   const sendSignalToUser = React.useCallback(
     (targetUserId: string, event: string, payload: unknown) => {
-      if (!supabase || !targetUserId) return;
-
-      let queue = outboundQueueRef.current.get(targetUserId);
-      if (!queue) {
-        queue = [];
-        outboundQueueRef.current.set(targetUserId, queue);
-      }
-
-      let channelToUse = outboundChannelsRef.current.get(targetUserId);
-
-      // If existing channel is closed or errored from prior disconnected call, remove and re-subscribe cleanly
-      if (channelToUse && channelToUse.state !== 'joined' && channelToUse.state !== 'joining') {
-        try {
-          supabase.removeChannel(channelToUse);
-        } catch {}
-        outboundChannelsRef.current.delete(targetUserId);
-        channelToUse = undefined;
-      }
-
-      if (channelToUse && channelToUse.state === 'joined') {
-        channelToUse
-          .send({
-            type: 'broadcast',
-            event,
-            payload,
-          })
-          .catch((err) => {
-            console.warn('[CallSignaling] Error sending to user channel:', err);
-          });
-        return;
-      }
-
-      // If channel is joining or not yet created, queue signal for delivery on join
-      queue.push({ event, payload });
-
-      if (!channelToUse) {
-        const ch = realtimeHub.acquire(`user-signals-${targetUserId}`, { config: { private: true } }, supabase);
-        outboundChannelsRef.current.set(targetUserId, ch);
-
-        ch.subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            const pending = outboundQueueRef.current.get(targetUserId) || [];
-            while (pending.length > 0) {
-              const msg = pending.shift();
-              if (msg) {
-                ch.send({
-                  type: 'broadcast',
-                  event: msg.event,
-                  payload: msg.payload,
-                }).catch(() => {});
-              }
-            }
-          }
-        });
-      }
+      dispatchSignalToUser(targetUserId, event, payload, outboundQueueRef.current, outboundChannelsRef.current, supabase);
     },
     [supabase]
   );
@@ -540,47 +497,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Dedicated guaranteed signal sender that is resilient against immediate stopMediaTracks() cleanup
   const sendDirectSignal = React.useCallback(
     (channelTopic: string, event: string, payload: unknown) => {
-      if (!supabase || !channelTopic) return;
-      try {
-        const ch = realtimeHub.acquire(channelTopic, { config: { private: true } }, supabase);
-        if (ch.state === 'joined') {
-          ch.send({ type: 'broadcast', event, payload }).catch(() => {});
-          return;
-        }
-        ch.subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            ch.send({ type: 'broadcast', event, payload })
-              .catch(() => {})
-              .finally(() => {
-                setTimeout(() => {
-                  try {
-                    supabase.removeChannel(ch);
-                  } catch {}
-                }, 1500);
-              });
-          }
-        });
-      } catch (err) {
-        console.warn('[CallSignaling] Error in sendDirectSignal:', err);
-      }
+      dispatchDirectSignal(channelTopic, event, payload, supabase);
     },
     [supabase]
   );
 
   // Helper to broadcast on the active room channel with FIFO queuing
   const sendSignalToRoom = React.useCallback((event: string, payload: unknown) => {
-    const ch = roomChannelRef.current;
-    if (ch && ch.state === 'joined') {
-      ch.send({
-        type: 'broadcast',
-        event,
-        payload,
-      }).catch(() => {});
-      return;
-    }
-
-    // Queue signal until room channel joins
-    roomQueueRef.current.push({ event, payload });
+    dispatchSignalToRoom(event, payload, roomChannelRef.current, roomQueueRef.current);
   }, []);
 
   // Flush queued room signals once subscribed
@@ -941,9 +865,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     // Clean up LiveKit Cloud SFU room
     if (livekitRoomRef.current) {
-      try {
-        livekitRoomRef.current.disconnect();
-      } catch {}
+      disconnectLiveKitRoom(livekitRoomRef.current);
       livekitRoomRef.current = null;
     }
     mediaTransportRef.current = 'none';
@@ -1649,8 +1571,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // Helper kept for interface compatibility; LiveKit Cloud SFU is fully bypassed in favor of Direct WebRTC P2P
   const connectLiveKitCall = React.useCallback(
     async (): Promise<boolean> => {
-      console.log('[LiveKit Call] Cloud SFU bypassed in CallContext; strictly enforcing Direct WebRTC P2P.');
-      setIsLiveKitActive(false);
+      await connectLiveKitCallAdapter('', '', setIsLiveKitActive);
       return false;
     },
     []
@@ -1664,49 +1585,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const candidate = cleanIceCandidate(rawCandidate);
     if (!candidate) return;
 
-    // 1. If candidate contains .local and remote ZeroTier IP is known, unmask and inject direct route
     const targetZeroTierIp = peerZeroTierIpRef.current || getPeerZeroTierIp();
-    if (targetZeroTierIp && candidate.candidate && candidate.candidate.includes('.local')) {
-      const unmasked = unmaskCandidate(candidate, targetZeroTierIp);
-      if (unmasked) {
-        const unmaskedKey = JSON.stringify({
-          candidate: unmasked.candidate,
-          sdpMid: unmasked.sdpMid,
-          sdpMLineIndex: unmasked.sdpMLineIndex,
-        });
-        if (!seenCandidatesRef.current.has(unmaskedKey)) {
-          addBoundedSet(seenCandidatesRef.current, unmaskedKey, 1000);
-          try {
-            if (pc.remoteDescription && pc.remoteDescription.type) {
-              await pc.addIceCandidate(new RTCIceCandidate(unmasked));
-            } else {
-              pendingRemoteCandidatesRef.current.push(unmasked);
-            }
-          } catch (e) {
-            console.warn('[CallZeroTier] Error applying unmasked candidate:', e);
-          }
-        }
-      }
-    }
-
-    // 2. Also register standard candidate (deduplicated)
-    const candStr = JSON.stringify({
-      candidate: candidate.candidate,
-      sdpMid: candidate.sdpMid,
-      sdpMLineIndex: candidate.sdpMLineIndex,
-    });
-    if (seenCandidatesRef.current.has(candStr)) return;
-    addBoundedSet(seenCandidatesRef.current, candStr, 1000);
-
-    try {
-      if (pc.remoteDescription && pc.remoteDescription.type) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } else {
-        pendingRemoteCandidatesRef.current.push(candidate);
-      }
-    } catch (e) {
-      console.warn('[CallSignaling] Error applying candidate:', e);
-    }
+    await processIncomingIceCandidate(
+      pc,
+      candidate,
+      targetZeroTierIp,
+      seenCandidatesRef.current,
+      pendingRemoteCandidatesRef.current
+    );
   }, []);
 
   // Helper to drain pending remote candidates once remote description is set
@@ -3790,29 +3676,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Directly mute/unmute existing LiveKit audio publications without spawning duplicate tracks
-    if (livekitRoomRef.current?.localParticipant) {
-      try {
-        const lp = livekitRoomRef.current.localParticipant;
-        const promises: Promise<any>[] = [];
-        lp.audioTrackPublications.forEach((pub: any) => {
-          if (pub?.track) {
-            promises.push(nextMuted ? pub.track.mute() : pub.track.unmute());
-            if (pub.track.mediaStreamTrack) {
-              pub.track.mediaStreamTrack.enabled = !nextMuted;
-            }
-          }
-          if (nextMuted && typeof pub.mute === 'function') {
-            promises.push(pub.mute());
-          } else if (!nextMuted && typeof pub.unmute === 'function') {
-            promises.push(pub.unmute());
-          }
-        });
-        promises.push(lp.setMicrophoneEnabled(!nextMuted));
-        Promise.allSettled(promises).catch(() => {});
-      } catch (err) {
-        console.warn('[CallContext] Error updating LiveKit audio publication mute state:', err);
-      }
-    }
+    updateLiveKitAudioPublicationMute(livekitRoomRef.current, nextMuted).catch(() => {});
 
     // Update WebRTC fallback audio senders ONLY if WebRTC is the active transport
     if (mediaTransportRef.current === 'webrtc' && pcRef.current) {
@@ -3941,24 +3805,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    if (livekitRoomRef.current?.localParticipant) {
-      try {
-        const lp = livekitRoomRef.current.localParticipant;
-        const promises: Promise<any>[] = [];
-        lp.audioTrackPublications.forEach((pub: any) => {
-          if (pub.track) {
-            promises.push(muted ? pub.track.mute() : pub.track.unmute());
-            if (pub.track.mediaStreamTrack) {
-              pub.track.mediaStreamTrack.enabled = !muted;
-            }
-          }
-        });
-        promises.push(lp.setMicrophoneEnabled(!muted));
-        await Promise.allSettled(promises);
-      } catch (lkErr) {
-        console.warn('[LiveKit Call] Error setting mic state:', lkErr);
-      }
-    }
+    await updateLiveKitAudioPublicationMute(livekitRoomRef.current, muted);
 
     if (pcRef.current) {
       pcRef.current.getSenders().forEach((s: RTCRtpSender) => {

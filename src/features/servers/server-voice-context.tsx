@@ -12,6 +12,11 @@ import { getUserMediaAudioConstraints, applyProcessingPolicy } from '@/lib/webrt
 import { applyGcpOptimalConstraints } from '@/lib/webrtc/safe-constraints';
 import { audioSessionCoordinator } from '@/lib/webrtc/audio-session-coordinator';
 import {
+  createMeshPeerConnection,
+  setupRemoteAudioElement,
+  cleanupAllMeshPeers,
+} from './voice-mesh';
+import {
   Room,
   RoomEvent,
   Track,
@@ -390,23 +395,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
   // Clean up all WebRTC peer connections and DOM audio elements
   const cleanUpAllPeers = React.useCallback(() => {
-    peerConnectionsRef.current.forEach((pc) => {
-      try {
-        pc.close();
-      } catch {}
-    });
-    peerConnectionsRef.current.clear();
-
-    audioElementsRef.current.forEach((audio) => {
-      try {
-        audio.srcObject = null;
-        audio.pause();
-        if (audio.parentNode) {
-          audio.parentNode.removeChild(audio);
-        }
-      } catch {}
-    });
-    audioElementsRef.current.clear();
+    cleanupAllMeshPeers(peerConnectionsRef.current, audioElementsRef.current);
 
     remoteAudioNodesRef.current.forEach(({ source, gain }) => {
       try {
@@ -441,152 +430,45 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         return pc;
       }
 
-      try {
-        pc = new RTCPeerConnection(DEFAULT_RTC_CONFIG);
-      } catch (err) {
-        console.warn('[WebRTC] Failed to create RTCPeerConnection:', err);
-        return undefined;
-      }
-      peerConnectionsRef.current.set(remoteUserId, pc);
-
-      // Add local audio tracks if mic captured
-      if (localStreamRef.current) {
-        localStreamRef.current.getAudioTracks().forEach((track) => {
-          try {
-            pc!.addTrack(track, localStreamRef.current!);
-          } catch {}
-        });
-      }
-
-      // Pre-add video transceiver so camera/screenshare can be added or replaced dynamically
-      try {
-        pc.addTransceiver('video', { direction: 'sendrecv' });
-      } catch {}
-
-      // Add local video/screen tracks if active
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getVideoTracks().forEach((track) => {
-          try {
-            const senders = pc!.getSenders();
-            const vSender = senders.find((s) => s.track?.kind === 'video');
-            if (vSender) vSender.replaceTrack(track);
-            else pc!.addTrack(track, screenStreamRef.current!);
-          } catch {}
-        });
-      } else if (videoStreamRef.current) {
-        videoStreamRef.current.getVideoTracks().forEach((track) => {
-          try {
-            const senders = pc!.getSenders();
-            const vSender = senders.find((s) => s.track?.kind === 'video');
-            if (vSender) vSender.replaceTrack(track);
-            else pc!.addTrack(track, videoStreamRef.current!);
-          } catch {}
-        });
-      }
-
-      // Trickle ICE candidates
-      pc.onicecandidate = (event) => {
-        const cleaned = cleanIceCandidate(event.candidate?.toJSON());
-        if (cleaned && realtimeChannelRef.current) {
-          try {
-            realtimeChannelRef.current.send({
-              type: 'broadcast',
-              event: 'voice_rtc_signal',
-              payload: {
-                from: u.id,
-                to: remoteUserId,
-                type: 'ice-candidate',
-                candidate: cleaned,
-              },
-            });
-          } catch {}
-        }
-      };
-
-      // Handle receiving remote audio and video streams
-      pc.ontrack = (event) => {
-        if (event.track.kind === 'audio') {
+      pc = createMeshPeerConnection({
+        remoteUserId,
+        currentUserId: u.id,
+        isInitiator,
+        localStream: localStreamRef.current,
+        videoStream: videoStreamRef.current,
+        screenStream: screenStreamRef.current,
+        channel,
+        isDeafened: isDeafenedRef.current,
+        incomingVolume: incomingVolumeRef.current,
+        onAudioTrackReceived: (peerId, stream) => {
           if (mediaTransportRef.current === 'livekit' || livekitRoomRef.current?.state === 'connected') {
             console.log('[WebRTC Lounge] Suppressing WebRTC track playback; LiveKit SFU is authoritative.');
             return;
           }
-          console.log('[WebRTC] ontrack fired for peer (audio):', remoteUserId);
-          const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
-
-          let audioEl = audioElementsRef.current.get(remoteUserId);
-          if (!audioEl) {
-            audioEl = document.createElement('audio');
-            audioEl.id = `remote-voice-audio-${remoteUserId}`;
-            audioEl.autoplay = true;
-            audioEl.setAttribute('playsinline', 'true');
-            audioEl.style.display = 'none';
-            document.body.appendChild(audioEl);
-            audioElementsRef.current.set(remoteUserId, audioEl);
-          }
-
-          if (audioEl.srcObject !== stream) {
-            audioEl.srcObject = stream;
-          }
-          audioEl.muted = isDeafenedRef.current;
-          audioEl.volume = isDeafenedRef.current ? 0 : incomingVolumeRef.current / 100;
-
-          try {
-            const savedOutputId = localStorage.getItem('nexus_audio_output_device');
-            if (savedOutputId && 'setSinkId' in audioEl && typeof (audioEl as any).setSinkId === 'function') {
-              (audioEl as any).setSinkId(savedOutputId).catch(() => {});
-            }
-          } catch {}
-
-          const playPromise = audioEl.play();
-          if (playPromise !== undefined) {
-            playPromise.catch((err) => {
-              console.warn('[WebRTC] Audio autoplay awaiting user click:', err);
-            });
-          }
-        } else if (event.track.kind === 'video') {
-          console.log('[WebRTC] ontrack fired for peer (video):', remoteUserId);
-          const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
-          remoteVideoStreamsRef.current.set(remoteUserId, stream);
+          console.log('[WebRTC] ontrack fired for peer (audio):', peerId);
+          let audioEl = audioElementsRef.current.get(peerId);
+          audioEl = setupRemoteAudioElement(peerId, stream, isDeafenedRef.current, incomingVolumeRef.current, audioEl);
+          audioElementsRef.current.set(peerId, audioEl);
+        },
+        onVideoTrackReceived: (peerId, stream) => {
+          console.log('[WebRTC] ontrack fired for peer (video):', peerId);
+          remoteVideoStreamsRef.current.set(peerId, stream);
           setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
-
-          event.track.onended = () => {
-            remoteVideoStreamsRef.current.delete(remoteUserId);
-            setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
-          };
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (pc?.connectionState === 'failed' || pc?.connectionState === 'closed') {
-          peerConnectionsRef.current.delete(remoteUserId);
-          remoteVideoStreamsRef.current.delete(remoteUserId);
+        },
+        onVideoTrackEnded: (peerId) => {
+          remoteVideoStreamsRef.current.delete(peerId);
           setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
-        }
-      };
+        },
+        onConnectionFailed: (peerId) => {
+          peerConnectionsRef.current.delete(peerId);
+          remoteVideoStreamsRef.current.delete(peerId);
+          setRemoteVideoStreams(new Map(remoteVideoStreamsRef.current));
+        },
+      });
 
-      if (isInitiator) {
-        pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true } as any)
-          .then((offer) => pc!.setLocalDescription(offer))
-          .then(() => {
-            const ch = realtimeChannelRef.current || channel;
-            if (ch && pc?.localDescription) {
-              ch.send({
-                type: 'broadcast',
-                event: 'voice_rtc_signal',
-                payload: {
-                  from: u.id,
-                  to: remoteUserId,
-                  type: 'offer',
-                  sdp: pc.localDescription,
-                },
-              });
-            }
-          })
-          .catch((err) => {
-            console.warn('[WebRTC] Error creating offer:', err);
-          });
+      if (pc) {
+        peerConnectionsRef.current.set(remoteUserId, pc);
       }
-
       return pc;
     },
     []

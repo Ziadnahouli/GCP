@@ -55,7 +55,6 @@ export interface CallStateContextType {
   isVideoCall: boolean;
   isGroupCall: boolean;
   isLiveKitActive: boolean;
-  isKrispActive: boolean;
   isMicMuted: boolean;
   isDeafened: boolean;
   isCameraOn: boolean;
@@ -335,9 +334,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, [noiseSuppressionMode]);
 
   const [isLiveKitActive, setIsLiveKitActive] = React.useState(false);
-  const [isKrispActive, setIsKrispActive] = React.useState(false);
   const livekitRoomRef = React.useRef<any>(null);
-  const krispProcessorRef = React.useRef<any>(null);
   const mediaTransportRef = React.useRef<'livekit' | 'webrtc' | 'none'>('none');
 
   const userRef = React.useRef(user);
@@ -461,7 +458,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       noiseSuppression: true,
     },
     isNoiseSuppressionEnabled: true,
-    isKrispActive: false,
     videoPublishing: {
       isPublishingCamera: false,
       cameraResolution: null,
@@ -942,15 +938,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     outboundQueueRef.current.clear();
     roomQueueRef.current = [];
 
-    // Clean up LiveKit Cloud SFU room and Krisp AI processor
+    // Clean up LiveKit Cloud SFU room
     if (livekitRoomRef.current) {
       try {
         livekitRoomRef.current.disconnect();
       } catch {}
       livekitRoomRef.current = null;
     }
-    krispProcessorRef.current = null;
-    setIsKrispActive(false);
     mediaTransportRef.current = 'none';
 
     // Clean up GCP Studio DSP noise cancellation pipeline
@@ -1362,7 +1356,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           noiseSuppression: audioSettings.noiseSuppression ?? true,
         },
         isNoiseSuppressionEnabled: isNoiseSuppressionEnabled,
-        isKrispActive: isKrispActive,
         videoPublishing: {
           isPublishingCamera: false,
           cameraResolution: null,
@@ -1531,7 +1524,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             noiseSuppression: audioSettings.noiseSuppression ?? true,
           },
           isNoiseSuppressionEnabled: isNoiseSuppressionEnabled,
-          isKrispActive: isKrispActive,
           videoPublishing: {
             isPublishingCamera: isCamActive,
             cameraResolution: isCamActive && camSettings.width ? `${camSettings.width}x${camSettings.height}` : null,
@@ -1547,7 +1539,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     return () => {
       clearInterval(interval);
     };
-  }, [callStatus, isLiveKitActive, isCameraOn, isScreenSharing, isNoiseSuppressionEnabled, isKrispActive]);
+  }, [callStatus, isLiveKitActive, isCameraOn, isScreenSharing, isNoiseSuppressionEnabled]);
 
   // Acquire local microphone with studio-grade Web Audio DSP noise cancellation and optional camera
   const getMedia = async (video: boolean): Promise<MediaStream | null> => {
@@ -4416,7 +4408,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       isVideoCall,
       isGroupCall,
       isLiveKitActive,
-      isKrispActive,
       isMicMuted,
       isDeafened,
       isCameraOn,
@@ -4438,7 +4429,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       isVideoCall,
       isGroupCall,
       isLiveKitActive,
-      isKrispActive,
       isMicMuted,
       isDeafened,
       isCameraOn,

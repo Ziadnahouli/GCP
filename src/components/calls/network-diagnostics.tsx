@@ -73,7 +73,6 @@ export interface DiagnosticsStats {
   // Audio device & processing
   audioDevice?: AudioDeviceInfo;
   isNoiseSuppressionEnabled?: boolean;
-  isKrispActive?: boolean;
 
   // Video publishing
   videoPublishing?: VideoPublishingInfo;
@@ -345,7 +344,6 @@ export function generateSanitizedReport(stats: DiagnosticsStats, extra?: { platf
     `- Hardware Noise Suppression: ${stats.audioDevice?.noiseSuppression ? 'Enabled' : 'Disabled'}`,
     `- GCP Neural Speech Enhancement: ${stats.isNoiseSuppressionEnabled ? 'Active (RNNoise WebAssembly, 10ms frame delay, 80Hz rumble cut, transparent compressor)' : 'Bypassed'}`,
     `- Voice Processing Engine: ${stats.isNoiseSuppressionEnabled ? 'RNNoise WebAssembly (Client-side WASM, 0ms Cloud Latency)' : 'Raw Pass-Through'}`,
-    `- Krisp AI Noise Filtering: ${stats.isKrispActive ? 'Active' : 'Inactive'}`,
     `- Microphone Input Level: ${stats.isMicMuted ? 'Muted (0%)' : `${stats.micLevel ?? 0}%`}`,
     '',
     '[5. VIDEO & SCREEN PUBLISHING STATUS]',
@@ -506,7 +504,6 @@ export function NetworkDiagnostics({
       lastFailureTimestamp: stats?.lastFailureTimestamp ?? null,
       audioDevice: effectiveAudioDevice,
       isNoiseSuppressionEnabled: isNoiseSuppressionProp ?? stats?.isNoiseSuppressionEnabled ?? true,
-      isKrispActive: stats?.isKrispActive ?? false,
       videoPublishing: effectiveVideoPublishing,
     };
   }, [

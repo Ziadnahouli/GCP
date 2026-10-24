@@ -41,7 +41,6 @@ export interface ServerVoiceContextType {
   isVoiceConnected: boolean;
   isConnecting: boolean;
   isLiveKitActive: boolean;
-  isKrispActive: boolean;
   isMicMuted: boolean;
   isDeafened: boolean;
   isCameraOn: boolean;
@@ -103,9 +102,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const [isVoiceConnected, setIsVoiceConnected] = React.useState(false);
   const [isConnecting, setIsConnecting] = React.useState(false);
   const [isLiveKitActive, setIsLiveKitActive] = React.useState(false);
-  const [isKrispActive, setIsKrispActive] = React.useState(false);
   const livekitRoomRef = React.useRef<Room | null>(null);
-  const krispProcessorRef = React.useRef<any>(null);
   const mediaTransportRef = React.useRef<'livekit' | 'webrtc' | 'none'>('none');
   const currentVoiceSessionIdRef = React.useRef<string | null>(null);
   const [isMicMuted, setIsMicMuted] = React.useState(false);
@@ -758,7 +755,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       } catch {}
       livekitRoomRef.current = null;
     }
-    krispProcessorRef.current = null;
     setIsLiveKitActive(false);
 
     if (localStreamRef.current) {
@@ -880,8 +876,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         } catch {}
         livekitRoomRef.current = null;
       }
-      krispProcessorRef.current = null;
-      setIsKrispActive(false);
       setIsLiveKitActive(false);
       mediaTransportRef.current = 'none';
 
@@ -971,7 +965,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             lkRoom.on(RoomEvent.Disconnected, (reason) => {
               console.log('[LiveKit Voice] Disconnected from LiveKit Cloud SFU, reason:', reason);
               setIsLiveKitActive(false);
-              setIsKrispActive(false);
               if (mediaTransportRef.current === 'livekit') {
                 mediaTransportRef.current = 'none';
               }
@@ -1395,7 +1388,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               const existingAudioTrack = stream?.getAudioTracks()[0] || localStreamRef.current?.getAudioTracks()[0];
               const { LocalAudioTrack, createLocalAudioTrack } = await import('livekit-client');
 
-              // Obtain an active AudioContext strictly for LocalAudioTrack processor / Krisp support
+              // Obtain an active AudioContext strictly for LocalAudioTrack processor / Web Audio DSP support
               // Note: Never assign audioContext to lkRoom, as that forces connectWebAudio on remote tracks which mutes them
               const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
               const audioCtx =
@@ -1798,8 +1791,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   const disconnectVoice = React.useCallback(() => {
     currentVoiceSessionIdRef.current = null;
     mediaTransportRef.current = 'none';
-    setIsKrispActive(false);
-    krispProcessorRef.current = null;
     stopAllMediaStreams();
 
     if (heartbeatIntervalRef.current) {
@@ -2468,7 +2459,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
     isVoiceConnected,
     isConnecting,
     isLiveKitActive,
-    isKrispActive,
     isMicMuted,
     isDeafened,
     isCameraOn,

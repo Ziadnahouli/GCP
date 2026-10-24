@@ -189,7 +189,6 @@ describe('Smart Network and Voice Diagnostics Tests', () => {
           noiseSuppression: true,
         },
         isNoiseSuppressionEnabled: true,
-        isKrispActive: true,
         videoPublishing: {
           isPublishingCamera: true,
           cameraResolution: '1920x1080',
@@ -212,7 +211,7 @@ describe('Smart Network and Voice Diagnostics Tests', () => {
       expect(report).toContain('48,000 Hz');
       expect(report).toContain('Active (1920x1080 @ 30fps)');
       expect(report).toContain('Microphone Input Level: 42%');
-      expect(report).toContain('Krisp AI Noise Filtering: Active');
+      expect(report).toContain('GCP Neural Speech Enhancement: Active');
 
       // Verifies strict exclusion of secrets
       expect(report).not.toContain('Bearer');
@@ -300,7 +299,6 @@ describe('Smart Network and Voice Diagnostics Tests', () => {
         incomingBitrateKbps: 64,
         outgoingBitrateKbps: 48,
         transportPath: 'livekit_sfu',
-        isKrispActive: true,
       };
 
       const diagnoses = generateDiagnoses(stats);
@@ -312,7 +310,6 @@ describe('Smart Network and Voice Diagnostics Tests', () => {
       const report = generateSanitizedReport(stats);
       expect(report).toContain('LiveKit SFU (Multi-Party Audio Router)');
       expect(report).toContain('28 ms');
-      expect(report).toContain('Krisp AI Noise Filtering: Active');
     });
 
     it('prevents flickering loop by retaining active state if heartbeat was received within 10 seconds', () => {

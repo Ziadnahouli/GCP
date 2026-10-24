@@ -5,6 +5,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/toast';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { addBoundedSet } from '@/lib/utils';
 import type { UserSettings } from '@/lib/types/profile';
 
 export interface NotificationItem {
@@ -27,6 +28,7 @@ export interface NotificationItem {
 }
 
 const LOCAL_NOTIFS_KEY = 'nexus_notifications_v1';
+const MAX_SEEN_NOTIFICATIONS = 1000;
 
 export function isNotificationCategoryEnabled(
   type: NotificationItem['type'],
@@ -141,7 +143,7 @@ export function useNotifications() {
         if (stored) {
           const parsed: NotificationItem[] = JSON.parse(stored);
           setNotifications(parsed);
-          parsed.forEach((n) => seenIdsRef.current.add(n.id));
+          parsed.forEach((n) => addBoundedSet(seenIdsRef.current, n.id, MAX_SEEN_NOTIFICATIONS));
         } else {
           setNotifications([]);
         }
@@ -164,7 +166,7 @@ export function useNotifications() {
         console.warn('[Notifications] Fetch notice:', error.message);
       } else if (data) {
         setNotifications(data as NotificationItem[]);
-        data.forEach((n: any) => seenIdsRef.current.add(n.id));
+        data.forEach((n: any) => addBoundedSet(seenIdsRef.current, n.id, MAX_SEEN_NOTIFICATIONS));
       }
     } catch (err) {
       console.warn('[Notifications] Load error:', err);
@@ -207,7 +209,9 @@ export function useNotifications() {
       },
       (payload: any) => {
         const newItem = payload.new as NotificationItem;
-        if (newItem) {
+        if (newItem?.id) {
+          if (seenIdsRef.current.has(newItem.id)) return;
+          addBoundedSet(seenIdsRef.current, newItem.id, MAX_SEEN_NOTIFICATIONS);
           setNotifications((prev) => [newItem, ...prev.filter((item) => item.id !== newItem.id)]);
           if (isCategoryEnabled(newItem.type)) {
             playNotificationChime();
@@ -393,7 +397,7 @@ export function useNotifications() {
         created_at: new Date().toISOString(),
       };
 
-      seenIdsRef.current.add(newItem.id);
+      addBoundedSet(seenIdsRef.current, newItem.id, MAX_SEEN_NOTIFICATIONS);
       setNotifications((prev) => {
         const next = [newItem, ...prev.filter((p) => p.id !== newItem.id)];
         if (!isConfigured) {

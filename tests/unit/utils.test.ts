@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cn, formatInitials, truncate } from '@/lib/utils';
+import { cn, formatInitials, truncate, addBoundedSet, setBoundedMap } from '@/lib/utils';
 
 describe('Utility Functions', () => {
   describe('formatInitials', () => {
@@ -34,6 +34,42 @@ describe('Utility Functions', () => {
   describe('cn', () => {
     it('merges tailwind class names properly', () => {
       expect(cn('p-2', 'p-4', 'text-white')).toBe('p-4 text-white');
+    });
+  });
+
+  describe('Bounded Collections', () => {
+    it('addBoundedSet enforces maxSize with FIFO eviction', () => {
+      const set = new Set<string>();
+      addBoundedSet(set, 'a', 3);
+      addBoundedSet(set, 'b', 3);
+      addBoundedSet(set, 'c', 3);
+      expect(Array.from(set)).toEqual(['a', 'b', 'c']);
+
+      // Adding duplicate should not evict
+      addBoundedSet(set, 'b', 3);
+      expect(Array.from(set)).toEqual(['a', 'b', 'c']);
+
+      // Adding 4th element should evict 'a' (FIFO)
+      addBoundedSet(set, 'd', 3);
+      expect(Array.from(set)).toEqual(['b', 'c', 'd']);
+    });
+
+    it('setBoundedMap enforces maxSize with FIFO eviction', () => {
+      const map = new Map<string, number>();
+      setBoundedMap(map, 'k1', 1, 3);
+      setBoundedMap(map, 'k2', 2, 3);
+      setBoundedMap(map, 'k3', 3, 3);
+      expect(Array.from(map.keys())).toEqual(['k1', 'k2', 'k3']);
+
+      // Updating existing key does not evict
+      setBoundedMap(map, 'k2', 20, 3);
+      expect(map.get('k2')).toBe(20);
+      expect(Array.from(map.keys())).toEqual(['k1', 'k2', 'k3']);
+
+      // Adding new key evicts 'k1' (FIFO)
+      setBoundedMap(map, 'k4', 4, 3);
+      expect(Array.from(map.keys())).toEqual(['k2', 'k3', 'k4']);
+      expect(map.has('k1')).toBe(false);
     });
   });
 });

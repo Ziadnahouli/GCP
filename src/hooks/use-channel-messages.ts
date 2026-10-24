@@ -7,10 +7,12 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
 import { debugLogger } from '@/lib/logger/debug-logger';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { addBoundedSet } from '@/lib/utils';
 
 const STORAGE_KEY_PREFIX = 'nexus_channel_msgs_';
 const PAGE_SIZE = 50;
 const MAX_CONTENT_LENGTH = 4000;
+const MAX_SEEN_CHANNEL_MESSAGES = 1000;
 
 const getCachedChannelMessages = (chanId: string | null): ChannelMessage[] => {
   if (!chanId || typeof window === 'undefined') return [];
@@ -39,6 +41,7 @@ export function useChannelMessages(channelId: string | null) {
   const isFetchingRef = React.useRef<boolean>(false);
   const generationRef = React.useRef<number>(0);
   const fallbackPollTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const seenIdsRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     activeChannelIdRef.current = channelId;
@@ -123,6 +126,8 @@ export function useChannelMessages(channelId: string | null) {
               status: 'sent' as const,
               profile: (m.profile as unknown as UserProfile) || undefined,
             }));
+
+            parsed.forEach((m) => addBoundedSet(seenIdsRef.current, m.id, MAX_SEEN_CHANNEL_MESSAGES));
 
             setMessages((prev) => {
               // Exact ID deduplication: keep optimistic and failed messages (M3)
@@ -215,6 +220,8 @@ export function useChannelMessages(channelId: string | null) {
           profile: (m.profile as unknown as UserProfile) || undefined,
         }));
 
+        olderChronological.forEach((m) => addBoundedSet(seenIdsRef.current, m.id, MAX_SEEN_CHANNEL_MESSAGES));
+
         setMessages((prev) => {
           const existingIds = new Set(prev.map((m) => m.id));
           const filteredOlder = olderChronological.filter((m) => !existingIds.has(m.id));
@@ -235,6 +242,7 @@ export function useChannelMessages(channelId: string | null) {
   React.useEffect(() => {
     if (prevChannelIdRef.current !== channelId) {
       prevChannelIdRef.current = channelId;
+      seenIdsRef.current.clear();
       const cached = getCachedChannelMessages(channelId);
       setMessages(cached);
       setIsLoading(cached.length === 0);
@@ -266,6 +274,7 @@ export function useChannelMessages(channelId: string | null) {
         if (payload?.message?.id && channelId) {
           const incoming = payload.message as ChannelMessage;
           if (incoming.channel_id !== channelId) return;
+          if (seenIdsRef.current.has(incoming.id)) return;
           // Verify authenticity and content by fetching row from DB (A2)
           try {
             const { data, error } = await supabase
@@ -282,6 +291,7 @@ export function useChannelMessages(channelId: string | null) {
               .maybeSingle();
 
             if (!error && data && activeChannelIdRef.current === channelId) {
+              addBoundedSet(seenIdsRef.current, data.id, MAX_SEEN_CHANNEL_MESSAGES);
               setMessages((prev) => {
                 if (prev.some((m) => m.id === data.id)) return prev;
                 const verifiedMsg: ChannelMessage = {
@@ -316,6 +326,7 @@ export function useChannelMessages(channelId: string | null) {
             const newRow = payload.new as any;
             if (!newRow?.id) return;
             if (newRow.channel_id && newRow.channel_id !== channelId) return;
+            addBoundedSet(seenIdsRef.current, newRow.id, MAX_SEEN_CHANNEL_MESSAGES);
 
             setMessages((prev) => {
               const existingIdx = prev.findIndex((m) => m.id === newRow.id);

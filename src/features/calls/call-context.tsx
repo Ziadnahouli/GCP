@@ -22,6 +22,7 @@ import {
   unmaskCandidate,
   synthesizeZeroTierCandidate,
 } from '@/lib/webrtc/ice-config';
+import { addBoundedSet, setBoundedMap } from '@/lib/utils';
 
 export type CallStatus = 'idle' | 'outgoing_ringing' | 'incoming_ringing' | 'in_call' | 'reconnecting' | 'ended';
 
@@ -1674,7 +1675,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           sdpMLineIndex: unmasked.sdpMLineIndex,
         });
         if (!seenCandidatesRef.current.has(unmaskedKey)) {
-          seenCandidatesRef.current.add(unmaskedKey);
+          addBoundedSet(seenCandidatesRef.current, unmaskedKey, 1000);
           try {
             if (pc.remoteDescription && pc.remoteDescription.type) {
               await pc.addIceCandidate(new RTCIceCandidate(unmasked));
@@ -1695,7 +1696,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       sdpMLineIndex: candidate.sdpMLineIndex,
     });
     if (seenCandidatesRef.current.has(candStr)) return;
-    seenCandidatesRef.current.add(candStr);
+    addBoundedSet(seenCandidatesRef.current, candStr, 1000);
 
     try {
       if (pc.remoteDescription && pc.remoteDescription.type) {
@@ -1836,7 +1837,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     async (payload: any) => {
       if (!payload?.sdp || payload.senderId === user?.id) return;
       if (payload.messageId && seenSignalIdsRef.current.has(payload.messageId)) return;
-      if (payload.messageId) seenSignalIdsRef.current.add(payload.messageId);
+      if (payload.messageId) addBoundedSet(seenSignalIdsRef.current, payload.messageId, 1000);
 
       const activePc = pcRef.current;
       if (!activePc) return;
@@ -1892,7 +1893,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     async (payload: any) => {
       if (!payload?.sdp || payload.senderId === user?.id) return;
       if (payload.messageId && seenSignalIdsRef.current.has(payload.messageId)) return;
-      if (payload.messageId) seenSignalIdsRef.current.add(payload.messageId);
+      if (payload.messageId) addBoundedSet(seenSignalIdsRef.current, payload.messageId, 1000);
 
       const activePc = pcRef.current;
       if (!activePc) return;
@@ -2027,15 +2028,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         // If user has recently declined this exact call session/conversation, suppress beacons and re-signal rejection
         const sessionKey = `${payload.callerId}_${payload.conversationId}`;
         const declinedExpiry = recentlyDeclinedCallsRef.current.get(sessionKey);
-        if (declinedExpiry && Date.now() < declinedExpiry) {
-          console.log('[CallSignaling] Suppressing incoming_call beacon for recently declined call:', sessionKey);
-          if (!payload.isGroup) {
-            sendDirectSignalRef.current(`user-signals-${payload.callerId}`, 'call_rejected', {
-              conversationId: payload.conversationId,
-              calleeId: user.id,
-            });
+        if (declinedExpiry) {
+          if (Date.now() < declinedExpiry) {
+            console.log('[CallSignaling] Suppressing incoming_call beacon for recently declined call:', sessionKey);
+            if (!payload.isGroup) {
+              sendDirectSignalRef.current(`user-signals-${payload.callerId}`, 'call_rejected', {
+                conversationId: payload.conversationId,
+                calleeId: user.id,
+              });
+            }
+            return;
+          } else {
+            recentlyDeclinedCallsRef.current.delete(sessionKey);
           }
-          return;
         }
 
         // If user is ALREADY ringing for this exact incoming call, deduplicate and do NOT re-trigger ringtone
@@ -3567,7 +3572,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (callerId) {
         // Mark as rejected in recent cooldown cache to suppress stray in-flight beacons
         const key = `${callerId}_${convId || ''}`;
-        recentlyDeclinedCallsRef.current.set(key, Date.now() + 15000);
+        setBoundedMap(recentlyDeclinedCallsRef.current, key, Date.now() + 15000, 200);
 
         // Send guaranteed direct signal to caller's personal channel
         sendDirectSignal(`user-signals-${callerId}`, 'call_rejected', {

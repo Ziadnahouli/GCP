@@ -7,6 +7,9 @@ import { UserStatus } from '@/lib/types/profile';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { resolveMultiSourcePresence } from '@/features/presence/presence-resolver';
+import { setBoundedMap } from '@/lib/utils';
+
+const MAX_PRESENCE_ENTRIES = 1000;
 
 interface PresenceContextType {
   onlineUsers: Map<string, UserStatus>;
@@ -80,7 +83,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         }
       });
 
-      // Retain peers from active pings within the last 30s
+      // Retain peers from active pings within the last 30s and prune stale pings
       const now = Date.now();
       pingsRef.current.forEach((timestamp, peerId) => {
         if (now - timestamp < 30000) {
@@ -89,6 +92,9 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
             userPresences.set(peerId, []);
           }
           userPresences.get(peerId)!.push({ status: st, timestamp });
+        } else {
+          pingsRef.current.delete(peerId);
+          pingsStatusRef.current.delete(peerId);
         }
       });
 
@@ -117,8 +123,8 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           const st = (latest?.status as UserStatus) || 'online';
           const targetId = latest?.user_id || key;
           if (targetId && targetId !== userId) {
-            pingsRef.current.set(targetId, Date.now());
-            pingsStatusRef.current.set(targetId, st);
+            setBoundedMap(pingsRef.current, targetId, Date.now(), MAX_PRESENCE_ENTRIES);
+            setBoundedMap(pingsStatusRef.current, targetId, st, MAX_PRESENCE_ENTRIES);
           }
         }
         updatePresenceState();
@@ -146,8 +152,8 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           pingsRef.current.delete(payload.userId);
           pingsStatusRef.current.delete(payload.userId);
         } else {
-          pingsRef.current.set(payload.userId, Date.now());
-          pingsStatusRef.current.set(payload.userId, st);
+          setBoundedMap(pingsRef.current, payload.userId, Date.now(), MAX_PRESENCE_ENTRIES);
+          setBoundedMap(pingsStatusRef.current, payload.userId, st, MAX_PRESENCE_ENTRIES);
         }
         updatePresenceState();
       })
@@ -158,8 +164,8 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           pingsRef.current.delete(payload.userId);
           pingsStatusRef.current.delete(payload.userId);
         } else {
-          pingsRef.current.set(payload.userId, Date.now());
-          pingsStatusRef.current.set(payload.userId, st);
+          setBoundedMap(pingsRef.current, payload.userId, Date.now(), MAX_PRESENCE_ENTRIES);
+          setBoundedMap(pingsStatusRef.current, payload.userId, st, MAX_PRESENCE_ENTRIES);
         }
         updatePresenceState();
       })

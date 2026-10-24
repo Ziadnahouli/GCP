@@ -9,9 +9,12 @@ import { uploadAttachmentFile } from '@/lib/storage/upload';
 import { debugLogger } from '@/lib/logger/debug-logger';
 import { useToast } from '@/components/ui/toast';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { addBoundedSet, setBoundedMap } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
 const MAX_CONTENT_LENGTH = 4000;
+const MAX_SEEN_MESSAGES = 1000;
+const MAX_SIGNED_URL_CACHE = 1000;
 
 export function useMessages(conversationId: string | null) {
   const { user, profile, isConfigured } = useAuth();
@@ -63,6 +66,7 @@ export function useMessages(conversationId: string | null) {
   const isFetchingRef = React.useRef(false);
   const generationRef = React.useRef(0);
   const createdBlobUrlsRef = React.useRef<Set<string>>(new Set());
+  const seenIdsRef = React.useRef<Set<string>>(new Set());
   const typingTimersRef = React.useRef<Map<string, NodeJS.Timeout>>(new Map());
   const fallbackPollTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const signedUrlCacheRef = React.useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
@@ -146,10 +150,15 @@ export function useMessages(conversationId: string | null) {
             signedData.forEach((s: any) => {
               if (s.signedUrl && s.path) {
                 signedMap.set(s.path, s.signedUrl);
-                signedUrlCacheRef.current.set(s.path, {
-                  url: s.signedUrl,
-                  expiresAt: now + 3500 * 1000,
-                });
+                setBoundedMap(
+                  signedUrlCacheRef.current,
+                  s.path,
+                  {
+                    url: s.signedUrl,
+                    expiresAt: now + 3500 * 1000,
+                  },
+                  MAX_SIGNED_URL_CACHE
+                );
               }
             });
           }
@@ -328,6 +337,8 @@ export function useMessages(conversationId: string | null) {
           };
         });
 
+        parsed.forEach((m) => addBoundedSet(seenIdsRef.current, m.id, MAX_SEEN_MESSAGES));
+
         setMessages((prev) => {
           // Retain pending optimistic and failed drafts (M3)
           const pending = prev.filter(
@@ -455,6 +466,8 @@ export function useMessages(conversationId: string | null) {
           };
         });
 
+        chronologicalOlder.forEach((m) => addBoundedSet(seenIdsRef.current, m.id, MAX_SEEN_MESSAGES));
+
         setMessages((prev) => {
           const existingIds = new Set(prev.map((m) => m.id));
           const filteredOlder = chronologicalOlder.filter((m) => !existingIds.has(m.id));
@@ -476,6 +489,7 @@ export function useMessages(conversationId: string | null) {
     if (prevConversationIdRef.current !== conversationId) {
       prevConversationIdRef.current = conversationId;
       clearTypingTimers();
+      seenIdsRef.current.clear();
       let cached: Message[] = [];
       try {
         const raw = localStorage.getItem(cacheKey);
@@ -522,6 +536,7 @@ export function useMessages(conversationId: string | null) {
           const newRow = payload.new as any;
           if (!newRow?.id) return;
           if (newRow.conversation_id && newRow.conversation_id !== conversationId) return;
+          addBoundedSet(seenIdsRef.current, newRow.id, MAX_SEEN_MESSAGES);
 
           setMessages((prev) => {
             const existingIdx = prev.findIndex((m) => m.id === newRow.id);
@@ -598,6 +613,7 @@ export function useMessages(conversationId: string | null) {
         if (payload?.message?.id && conversationId) {
           const incomingMsg = payload.message as Message;
           if (incomingMsg.conversation_id !== conversationId) return;
+          if (seenIdsRef.current.has(incomingMsg.id)) return;
           // Verify authenticity and content by fetching row from DB (A2)
           try {
             const { data, error } = await supabase
@@ -608,6 +624,7 @@ export function useMessages(conversationId: string | null) {
               .maybeSingle();
 
             if (!error && data && activeConversationIdRef.current === conversationId) {
+              addBoundedSet(seenIdsRef.current, data.id, MAX_SEEN_MESSAGES);
               setMessages((prev) => {
                 if (prev.some((m) => m.id === data.id)) return prev;
                 return [

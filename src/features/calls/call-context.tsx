@@ -404,6 +404,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const incomingCallRef = React.useRef<IncomingCallData | null>(null);
   incomingCallRef.current = incomingCall;
   const seenSignalIdsRef = React.useRef<Set<string>>(new Set());
+  const pendingAnswerSdpRef = React.useRef<RTCSessionDescriptionInit | null>(null);
+  const isAcceptingOrInCallRef = React.useRef<boolean>(false);
 
   // Web Audio Studio-Grade DSP Noise Suppression references
   const rawMicStreamRef = React.useRef<MediaStream | null>(null);
@@ -973,6 +975,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     peerUserIdRef.current = null;
     incomingCallRef.current = null;
     callStatusRef.current = 'idle';
+    isAcceptingOrInCallRef.current = false;
+    pendingAnswerSdpRef.current = null;
     prevStatsRef.current = null;
 
     // Reset all React call states
@@ -1812,7 +1816,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const applyAnswerSdp = React.useCallback(
     async (sdp: RTCSessionDescriptionInit) => {
       const pc = pcRef.current;
-      if (!pc || !sdp) return;
+      if (!sdp) return;
 
       RingtonePlayer.stopAll();
       if (ringtoneRef.current) {
@@ -1829,6 +1833,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
       activeCallPayloadRef.current = null;
       callStatusRef.current = 'in_call';
+      setCallStatus('in_call');
+
+      if (!pc) {
+        pendingAnswerSdpRef.current = sdp;
+        return;
+      }
 
       try {
         if (pc.signalingState === 'have-local-offer') {
@@ -1849,6 +1859,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             description: 'Connected via direct WebRTC stream with NAT traversal.',
             type: 'success',
           });
+        } else {
+          pendingAnswerSdpRef.current = sdp;
         }
       } catch (e) {
         console.warn('[CallSignaling] Error applying answer SDP:', e);
@@ -1857,7 +1869,77 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     [drainPendingRemoteCandidates, sendSignalToRoom, sendSignalToUser, peerUserId, toast, user?.id]
   );
 
+  // Helper to apply incoming offer SDP and return answer SDP on callee
+  const applyIncomingOfferAndAnswer = React.useCallback(
+    async (sdp: RTCSessionDescriptionInit, callerId: string, convId: string) => {
+      const pc = pcRef.current;
+      if (!pc || !sdp) return;
+      try {
+        if (pc.remoteDescription) {
+          return;
+        }
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        await drainPendingRemoteCandidates();
+
+        pc.getTransceivers().forEach((t) => {
+          if (t.direction !== 'sendrecv') {
+            t.direction = 'sendrecv';
+          }
+          const recTrack = t.receiver?.track;
+          if (recTrack) {
+            recTrack.onunmute = () => {
+              recTrack.enabled = true;
+              attachRemoteTrack(recTrack);
+            };
+            if (recTrack.readyState === 'live' && !recTrack.muted) {
+              recTrack.enabled = true;
+              attachRemoteTrack(recTrack);
+            }
+          }
+        });
+
+        const answer = await pc.createAnswer();
+        if (answer.sdp) answer.sdp = tuneOpusSdp(answer.sdp);
+        await pc.setLocalDescription(answer);
+
+        const localZtIp = getLocalZeroTierIp();
+        const answerPayload = {
+          sdp: answer,
+          conversationId: convId,
+          calleeId: user?.id,
+          calleeZeroTierIp: localZtIp,
+        };
+
+        // Broadcast answer on room channel
+        if (roomChannelRef.current && roomChannelRef.current.state === 'joined') {
+          roomChannelRef.current.send({
+            type: 'broadcast',
+            event: 'call_answer',
+            payload: answerPayload,
+          }).catch(() => {});
+        } else {
+          sendSignalToRoom('call_answer', answerPayload);
+        }
+
+        // Send directly to caller's mailbox
+        sendSignalToUser(callerId, 'call_answer', answerPayload);
+        sendDirectSignal(`user-signals-${callerId}`, 'call_answer', answerPayload);
+
+        // Flush all gathered local candidates to room & caller
+        localIceCandidatesRef.current.forEach((candidate) => {
+          sendSignalToRoom('ice_candidate', { candidate, senderId: user?.id, senderZeroTierIp: localZtIp });
+          sendSignalToUser(callerId, 'ice_candidate', { candidate, senderId: user?.id, senderZeroTierIp: localZtIp });
+        });
+      } catch (err) {
+        console.warn('[CallSignaling] Error in applyIncomingOfferAndAnswer:', err);
+      }
+    },
+    [user?.id, drainPendingRemoteCandidates, sendSignalToRoom, sendSignalToUser, sendDirectSignal, attachRemoteTrack]
+  );
+
   // Stable reference wrappers for global signaling callbacks to avoid channel reconnect churn
+  const applyIncomingOfferAndAnswerRef = React.useRef(applyIncomingOfferAndAnswer);
+  applyIncomingOfferAndAnswerRef.current = applyIncomingOfferAndAnswer;
   const applyAnswerSdpRef = React.useRef(applyAnswerSdp);
   applyAnswerSdpRef.current = applyAnswerSdp;
   const applyRemoteCandidateRef = React.useRef(applyRemoteCandidate);
@@ -1887,6 +1969,26 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     myChannel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
         if (!payload || payload.callerId === user.id) return;
+
+        const isCurrentCall =
+          (activeConversationIdRef.current && activeConversationIdRef.current === payload.conversationId) ||
+          (peerUserIdRef.current && peerUserIdRef.current === payload.callerId) ||
+          (incomingCallRef.current?.conversationId === payload.conversationId);
+
+        // If callee has accepted this call or is currently connecting in this call, apply incoming offer SDP directly
+        if (isCurrentCall && (callStatusRef.current === 'in_call' || isAcceptingOrInCallRef.current)) {
+          if (payload.sdp) {
+            incomingCallRef.current = { ...(incomingCallRef.current || {}), ...payload };
+            setIncomingCall((prev) => (prev ? { ...prev, sdp: payload.sdp } : (payload as IncomingCallData)));
+            applyIncomingOfferAndAnswerRef.current(payload.sdp, payload.callerId, payload.conversationId);
+          }
+          if (payload.callerZeroTierIp && !peerZeroTierIpRef.current) {
+            peerZeroTierIpRef.current = payload.callerZeroTierIp;
+            setPeerZeroTierIpState(payload.callerZeroTierIp);
+            setPeerZeroTierIp(payload.callerZeroTierIp);
+          }
+          return;
+        }
 
         // C5: If user is already in active call or dialing, or in server voice channel, respond with busy!
         const isBusy =
@@ -2130,6 +2232,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current && activeCallPayloadRef.current.targetUserId === payload?.calleeId) {
           console.log('[CallSignaling] Re-dispatching active call offer beacon on demand:', payload);
           sendSignalToUserRef.current(activeCallPayloadRef.current.targetUserId, 'incoming_call', activeCallPayloadRef.current);
+          sendDirectSignalRef.current(`user-signals-${activeCallPayloadRef.current.targetUserId}`, 'incoming_call', activeCallPayloadRef.current);
         }
       })
       .on('broadcast', { event: 'call_ended' }, () => {
@@ -2148,28 +2251,32 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           if (!row || row.status !== 'ringing' || row.caller_id === user.id) return;
           if (callStatusRef.current !== 'idle' || activeConversationIdRef.current) return;
 
-          // Check if current user is a member of this conversation
+          // Check if current user is a member of this conversation and fetch details in parallel
           try {
-            const { data: member } = await supabase
-              .from('conversation_members')
-              .select('conversation_id')
-              .eq('conversation_id', row.conversation_id)
-              .eq('user_id', user.id)
-              .maybeSingle();
-
-            if (member && row.caller_id && row.conversation_id) {
-              const { data: callerProf } = await supabase
+            const [memberRes, callerProfRes, convRes] = await Promise.all([
+              supabase
+                .from('conversation_members')
+                .select('conversation_id')
+                .eq('conversation_id', row.conversation_id)
+                .eq('user_id', user.id)
+                .maybeSingle(),
+              supabase
                 .from('profiles')
                 .select('id, display_name, username, avatar_url')
                 .eq('id', row.caller_id)
-                .maybeSingle();
-
-              const { data: conv } = await supabase
+                .maybeSingle(),
+              supabase
                 .from('conversations')
                 .select('name, is_group, type')
                 .eq('id', row.conversation_id)
-                .maybeSingle();
+                .maybeSingle(),
+            ]);
 
+            const member = memberRes.data;
+            const callerProf = callerProfRes.data;
+            const conv = convRes.data;
+
+            if (member && row.caller_id && row.conversation_id) {
               const isGroup = conv?.type === 'group' || (conv as any)?.is_group;
 
               const payload: IncomingCallData = {
@@ -2236,6 +2343,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                     callerId: call.caller_id,
                     conversationId: call.conversation_id,
                   });
+                  sendDirectSignalRef.current(`user-signals-${call.caller_id}`, 'request_incoming_call_beacon', {
+                    calleeId: user.id,
+                    callerId: call.caller_id,
+                    conversationId: call.conversation_id,
+                  });
                 }
               }
             } catch (e) {
@@ -2279,32 +2391,32 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Check if this conversation is a group
     let isGroup = false;
     let groupName = 'Squad';
+    let members: Array<{ user_id: string }> | null = null;
     try {
-      const { data: convData } = await supabase
-        .from('conversations')
-        .select('type, name, is_group')
-        .eq('id', conversationId)
-        .maybeSingle();
+      const [convRes, membersRes] = await Promise.all([
+        supabase
+          .from('conversations')
+          .select('type, name, is_group')
+          .eq('id', conversationId)
+          .maybeSingle(),
+        supabase
+          .from('conversation_members')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .neq('user_id', user.id),
+      ]);
+      const convData = convRes.data;
       if (convData?.type === 'group' || (convData as any)?.is_group) {
         isGroup = true;
       }
       if (convData?.name) {
         groupName = convData.name;
       }
-    } catch {}
-
-    // Fetch all other conversation members
-    const { data: members } = await supabase
-      .from('conversation_members')
-      .select('user_id')
-      .eq('conversation_id', conversationId)
-      .neq('user_id', user.id);
-
-    if (!isGroup) {
-      if (members && members.length > 1) {
+      members = membersRes.data;
+      if (!isGroup && members && members.length > 1) {
         isGroup = true;
       }
-    }
+    } catch {}
 
     setIsGroupCall(isGroup);
     isGroupCallRef.current = isGroup;
@@ -2528,6 +2640,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       // Send immediate incoming_call signal so callee rings instantly
       sendSignalToUser(recipientId, 'incoming_call', initialCallPayload);
+      sendDirectSignal(`user-signals-${recipientId}`, 'incoming_call', initialCallPayload);
+
+      // Fast-burst pulses (250ms & 750ms) to ensure callee starts ringing with zero noticeable delay
+      setTimeout(() => {
+        if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
+          sendSignalToUser(recipientId, 'incoming_call', activeCallPayloadRef.current);
+          sendDirectSignal(`user-signals-${recipientId}`, 'incoming_call', activeCallPayloadRef.current);
+        }
+      }, 250);
+      setTimeout(() => {
+        if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
+          sendSignalToUser(recipientId, 'incoming_call', activeCallPayloadRef.current);
+          sendDirectSignal(`user-signals-${recipientId}`, 'incoming_call', activeCallPayloadRef.current);
+        }
+      }, 750);
 
       // Persist call session to database
       try {
@@ -2579,6 +2706,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 console.log('[CallSignaling] Instant call_ended from Postgres call_sessions update');
                 toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
                 stopMediaTracks();
+              } else if (newStatus === 'active') {
+                if (isGroupCallRef.current) return;
+                RingtonePlayer.stopAll();
+                if (ringtoneRef.current) {
+                  ringtoneRef.current.stop();
+                  ringtoneRef.current = null;
+                }
+                if (ringingTimerRef.current) {
+                  clearTimeout(ringingTimerRef.current);
+                  ringingTimerRef.current = null;
+                }
+                if (ringingBeaconRef.current) {
+                  clearInterval(ringingBeaconRef.current);
+                  ringingBeaconRef.current = null;
+                }
+                callStatusRef.current = 'in_call';
+                setCallStatus('in_call');
               }
             }
           );
@@ -2607,12 +2751,31 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 toast({ title: 'Call Declined', description: 'Squadmate was unable to answer.', type: 'info' });
                 stopMediaTracks();
                 return;
+              } else if (currentSession && currentSession.status === 'active') {
+                if (isGroupCallRef.current) return;
+                RingtonePlayer.stopAll();
+                if (ringtoneRef.current) {
+                  ringtoneRef.current.stop();
+                  ringtoneRef.current = null;
+                }
+                if (ringingTimerRef.current) {
+                  clearTimeout(ringingTimerRef.current);
+                  ringingTimerRef.current = null;
+                }
+                if (ringingBeaconRef.current) {
+                  clearInterval(ringingBeaconRef.current);
+                  ringingBeaconRef.current = null;
+                }
+                callStatusRef.current = 'in_call';
+                setCallStatus('in_call');
+                return;
               }
             } catch {}
           }
 
           if (callStatusRef.current === 'outgoing_ringing' && activeCallPayloadRef.current) {
             sendSignalToUser(recipientId, 'incoming_call', activeCallPayloadRef.current);
+            sendDirectSignal(`user-signals-${recipientId}`, 'incoming_call', activeCallPayloadRef.current);
             const room = roomChannelRef.current;
             if (room && room.state === 'joined') {
               room.send({
@@ -3025,6 +3188,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             if (offer.sdp) offer.sdp = tuneOpusSdp(offer.sdp);
             await pc.setLocalDescription(offer);
 
+            // Apply any answer SDP that arrived early while local offer was being generated
+            if (pendingAnswerSdpRef.current) {
+              const bufferedAns = pendingAnswerSdpRef.current;
+              pendingAnswerSdpRef.current = null;
+              await pc.setRemoteDescription(new RTCSessionDescription(bufferedAns));
+              await drainPendingRemoteCandidates();
+              localIceCandidatesRef.current.forEach((candidate) => {
+                sendSignalToRoom('ice_candidate', { candidate, senderId: user.id });
+                sendSignalToUser(recipientId, 'ice_candidate', { candidate, senderId: user.id });
+              });
+            }
+
             const callPayload: IncomingCallData = {
               callerId: user.id,
               callerName: profile?.display_name || profile?.username || 'Squad Member',
@@ -3040,6 +3215,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
             // Notify recipient directly via persistent user mailbox with SDP
             sendSignalToUser(recipientId, 'incoming_call', callPayload);
+            sendDirectSignal(`user-signals-${recipientId}`, 'incoming_call', callPayload);
 
             // Also broadcast on the shared room channel
             roomChannel.send({
@@ -3081,11 +3257,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       calleeId: user.id,
       calleeName: profile?.display_name || user.email?.split('@')[0] || 'Squadmate',
     };
+    isAcceptingOrInCallRef.current = true;
     sendSignalToUser(callerId, 'call_accepted', acceptPayload);
+    sendDirectSignal(`user-signals-${callerId}`, 'call_accepted', acceptPayload);
     try {
       supabase
         .from('call_sessions')
-        .update({ status: 'in_call' })
+        .update({ status: 'active' })
         .eq('conversation_id', conversationId)
         .then(() => {}, () => {});
     } catch {}
@@ -3413,68 +3591,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               payload: acceptPayload,
             }).catch(() => {});
 
-            if (sdp) {
-              await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-              await drainPendingRemoteCandidates();
-
-              pc.getTransceivers().forEach((t) => {
-                if (t.direction !== 'sendrecv') {
-                  t.direction = 'sendrecv';
-                }
-                const recTrack = t.receiver?.track;
-                if (recTrack) {
-                  recTrack.onunmute = () => {
-                    console.log('[CallSignaling] Callee transceiver track unmuted:', recTrack.kind);
-                    recTrack.enabled = true;
-                    attachRemoteTrack(recTrack);
-                    if (recTrack.kind === 'video') {
-                      setParticipants((prev) =>
-                        prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
-                      );
-                    }
-                  };
-                  if (recTrack.readyState === 'live' && !recTrack.muted) {
-                    recTrack.enabled = true;
-                    attachRemoteTrack(recTrack);
-                    if (recTrack.kind === 'video') {
-                      setParticipants((prev) =>
-                        prev.map((p) => (p.id !== user.id ? { ...p, isCameraOn: true } : p))
-                      );
-                    }
-                  }
-                }
-              });
-
-              const answer = await pc.createAnswer();
-              if (answer.sdp) answer.sdp = tuneOpusSdp(answer.sdp);
-              await pc.setLocalDescription(answer);
-
-              const localZtIp = getLocalZeroTierIp();
-              const answerPayload = {
-                sdp: answer,
-                conversationId,
-                calleeId: user.id,
-                calleeZeroTierIp: localZtIp,
-              };
-
-              // Broadcast answer on room channel
-              roomChannel.send({
-                type: 'broadcast',
-                event: 'call_answer',
-                payload: answerPayload,
-              }).catch(() => {});
-
-              // Also send directly to caller's mailbox
-              sendSignalToUser(callerId, 'call_answer', answerPayload);
-
-              // Flush all gathered local candidates to room & caller
-              localIceCandidatesRef.current.forEach((candidate) => {
-                sendSignalToRoom('ice_candidate', { candidate, senderId: user.id, senderZeroTierIp: localZtIp });
-                sendSignalToUser(callerId, 'ice_candidate', { candidate, senderId: user.id, senderZeroTierIp: localZtIp });
-              });
+            const effectiveSdp = sdp || incomingCallRef.current?.sdp;
+            if (effectiveSdp) {
+              await applyIncomingOfferAndAnswer(effectiveSdp, callerId, conversationId);
+            } else {
+              sendSignalToUser(callerId, 'request_incoming_call_beacon', { calleeId: user.id });
+              sendDirectSignal(`user-signals-${callerId}`, 'request_incoming_call_beacon', { calleeId: user.id });
             }
           } catch (e) {
-            console.warn('[CallSignaling] Error creating answer:', e);
+            console.warn('[CallSignaling] Error in callee room subscribe:', e);
           }
         }
       });

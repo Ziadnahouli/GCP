@@ -67,6 +67,21 @@ export function dispatchSignalToUser(
     const ch = realtimeHub.acquire(`user-signals-${targetUserId}`, { config: { private: true } }, supabase);
     outboundChannels.set(targetUserId, ch);
 
+    if (ch.state === 'joined') {
+      const pending = outboundQueue.get(targetUserId) || [];
+      while (pending.length > 0) {
+        const msg = pending.shift();
+        if (msg) {
+          ch.send({
+            type: 'broadcast',
+            event: msg.event,
+            payload: msg.payload,
+          }).catch(() => {});
+        }
+      }
+      return;
+    }
+
     ch.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         const pending = outboundQueue.get(targetUserId) || [];

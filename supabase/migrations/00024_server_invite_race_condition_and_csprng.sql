@@ -6,6 +6,7 @@
 -- ==============================================================================
 
 -- 1. Atomic join_server_with_invite with row locking
+DROP FUNCTION IF EXISTS public.join_server_with_invite(TEXT);
 CREATE OR REPLACE FUNCTION public.join_server_with_invite(p_code TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -79,6 +80,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.join_server_with_invite(TEXT) TO authenticated;
 
 -- 2. Hardened create_server_invite using CSPRNG with >= 64 bits of entropy
+DROP FUNCTION IF EXISTS public.create_server_invite(UUID, INT, INT);
 CREATE OR REPLACE FUNCTION public.create_server_invite(
     p_server_id UUID,
     p_max_uses INT DEFAULT 0,

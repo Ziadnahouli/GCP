@@ -1,35 +1,49 @@
 -- Migration: 00025_realtime_authorization_policies.sql
 -- Description: Enforce Supabase Realtime Authorization on realtime.messages for private channels (A2)
 
--- 1. Ensure realtime schema and messages table exist
-CREATE SCHEMA IF NOT EXISTS realtime;
-
-CREATE TABLE IF NOT EXISTS realtime.messages (
-    id BIGSERIAL PRIMARY KEY,
-    topic TEXT NOT NULL,
-    extension TEXT NOT NULL,
-    inserted_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Ensure realtime.topic() helper exists if not already provided by Supabase platform
+-- 1. Ensure realtime schema and messages table exist (for local/testing environments; in Supabase hosted, managed by supabase_admin)
 DO $$
 BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'realtime' AND table_name = 'messages'
+    ) THEN
+        BEGIN
+            CREATE SCHEMA IF NOT EXISTS realtime;
+            CREATE TABLE IF NOT EXISTS realtime.messages (
+                id BIGSERIAL PRIMARY KEY,
+                topic TEXT NOT NULL,
+                extension TEXT NOT NULL,
+                inserted_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        EXCEPTION
+            WHEN OTHERS THEN
+                NULL;
+        END;
+    END IF;
+
+    -- Ensure realtime.topic() helper exists if not already provided by Supabase platform
     IF NOT EXISTS (
         SELECT 1
         FROM pg_proc p
         JOIN pg_namespace n ON p.pronamespace = n.oid
         WHERE n.nspname = 'realtime' AND p.proname = 'topic'
     ) THEN
-        EXECUTE $fn$
-            CREATE FUNCTION realtime.topic()
-            RETURNS TEXT
-            LANGUAGE sql
-            STABLE
-            AS $body$
-                SELECT NULLIF(current_setting('realtime.topic', true), '');
-            $body$;
-        $fn$;
+        BEGIN
+            EXECUTE $fn$
+                CREATE FUNCTION realtime.topic()
+                RETURNS TEXT
+                LANGUAGE sql
+                STABLE
+                AS $body$
+                    SELECT NULLIF(current_setting('realtime.topic', true), '');
+                $body$;
+            $fn$;
+        EXCEPTION
+            WHEN OTHERS THEN
+                NULL;
+        END;
     END IF;
 END $$;
 
@@ -119,8 +133,16 @@ BEGIN
 END;
 $$;
 
--- 4. Enable RLS on realtime.messages
-ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+-- 4. Enable RLS on realtime.messages (if not already enabled)
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL;
+    END;
+END $$;
 
 -- 5. Drop existing policies if any
 DROP POLICY IF EXISTS "realtime_messages_select_authorized" ON realtime.messages;
@@ -144,13 +166,22 @@ WITH CHECK (
 );
 
 -- 7. Grant permissions
-GRANT USAGE ON SCHEMA realtime TO authenticated, service_role;
-REVOKE USAGE ON SCHEMA realtime FROM anon;
-GRANT SELECT, INSERT ON realtime.messages TO authenticated;
-GRANT ALL ON realtime.messages TO service_role;
-REVOKE ALL ON realtime.messages FROM anon;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA realtime TO authenticated;
+DO $$
+BEGIN
+    BEGIN
+        GRANT USAGE ON SCHEMA realtime TO authenticated, service_role;
+        REVOKE USAGE ON SCHEMA realtime FROM anon;
+        GRANT SELECT, INSERT ON realtime.messages TO authenticated;
+        GRANT ALL ON realtime.messages TO service_role;
+        REVOKE ALL ON realtime.messages FROM anon;
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA realtime TO authenticated;
+        GRANT EXECUTE ON FUNCTION realtime.topic() TO authenticated, service_role;
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL;
+    END;
+END $$;
 
 GRANT EXECUTE ON FUNCTION public.realtime_topic_authorized(TEXT, UUID) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.is_channel_server_member(UUID, UUID) TO authenticated, service_role;
-GRANT EXECUTE ON FUNCTION realtime.topic() TO authenticated, service_role;
+

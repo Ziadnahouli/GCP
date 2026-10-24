@@ -36,11 +36,16 @@ AS $$
   );
 $$;
 
--- 2. Storage Objects RLS Enforcement
+-- 2. Storage Objects RLS Enforcement (RLS is enabled by default on hosted Supabase, catch permission error if not table owner)
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'objects') THEN
-        ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+        BEGIN
+            ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+        EXCEPTION
+            WHEN OTHERS THEN
+                NULL;
+        END;
     END IF;
 END $$;
 

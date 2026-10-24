@@ -15,7 +15,7 @@ vi.mock('@/lib/supabase/config', () => ({
 }));
 
 import { updateSession } from '@/lib/supabase/middleware';
-import { middleware } from '@/middleware';
+import { middleware } from '@/lib/middleware';
 
 describe('A1: Root middleware route protection and session refresh', () => {
   beforeEach(() => {

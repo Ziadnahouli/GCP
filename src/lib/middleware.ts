@@ -58,12 +58,10 @@ export const config = {
      * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization files)
-     * - favicon.ico, sitemap.xml, robots.txt
-     * - worklets (audio worklet processor scripts in /public/worklets)
-     * - callback (auth exchange callback)
-     * - api/desktop-telemetry
-     * - static asset extensions (.svg, .png, .jpg, .wasm, etc.)
+     * - favicon.ico (favicon file)
+     * - worklets (audio worklet processors)
+     * - static extensions (svg, png, jpg, jpeg, gif, webp, wasm, mp3, wav)
      */
-    '/((?!_next/static|_next/image|favicon.ico|callback|worklets|api/desktop-telemetry|.*\\.(?:svg|png|jpg|jpeg|gif|webp|wasm|ico|css|js)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|worklets/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|wasm|mp3|wav|ogg)$).*)',
   ],
 };

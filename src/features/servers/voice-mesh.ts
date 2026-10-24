@@ -185,6 +185,17 @@ export function setupRemoteAudioElement(
     if (playPromise !== undefined) {
       playPromise.catch((err) => {
         console.warn('[VoiceMesh] Audio autoplay awaiting user interaction:', err);
+        if (typeof window !== 'undefined') {
+          const unlock = () => {
+            audioEl?.play().catch(() => {});
+            window.removeEventListener('click', unlock);
+            window.removeEventListener('keydown', unlock);
+            window.removeEventListener('touchstart', unlock);
+          };
+          window.addEventListener('click', unlock, { once: true, passive: true });
+          window.addEventListener('keydown', unlock, { once: true, passive: true });
+          window.addEventListener('touchstart', unlock, { once: true, passive: true });
+        }
       });
     }
   }

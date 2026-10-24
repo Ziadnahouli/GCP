@@ -302,76 +302,132 @@ export async function POST(request: Request) {
       } else if (roomName.startsWith('nexus-voice-')) {
         const candidateChanId = roomName.replace('nexus-voice-', '');
         if (!UUID_REGEX.test(candidateChanId)) {
-          return NextResponse.json(
-            { error: 'Invalid room format: Channel ID must be a valid UUID' },
-            { status: 400 }
-          );
+          if (roomName === 'nexus-voice-lounge' || candidateChanId === 'lounge' || candidateChanId.startsWith('lounge')) {
+            if (serverId) {
+              const { data: ban } = await supabase
+                .from('server_bans')
+                .select('id')
+                .eq('server_id', serverId)
+                .eq('user_id', targetUserId)
+                .maybeSingle();
+
+              if (ban) {
+                return NextResponse.json(
+                  { error: 'Forbidden: You are banned from this server' },
+                  { status: 403 }
+                );
+              }
+
+              const { data: srvMem } = await supabase
+                .from('server_members')
+                .select('id, timeout_until')
+                .eq('server_id', serverId)
+                .eq('user_id', targetUserId)
+                .maybeSingle();
+
+              if (!srvMem) {
+                const { data: srv } = await supabase
+                  .from('servers')
+                  .select('owner_id')
+                  .eq('id', serverId)
+                  .maybeSingle();
+
+                if (srv?.owner_id !== targetUserId) {
+                  return NextResponse.json(
+                    { error: 'Forbidden: You are not a member of this voice channel server' },
+                    { status: 403 }
+                  );
+                }
+              }
+
+              if (srvMem?.timeout_until && new Date(srvMem.timeout_until).getTime() > Date.now()) {
+                return NextResponse.json(
+                  { error: 'Forbidden: You are currently timed out in this server' },
+                  { status: 403 }
+                );
+              }
+            }
+            finalRoomName = roomName;
+          } else {
+            return NextResponse.json(
+              { error: 'Invalid room format: Channel ID must be a valid UUID' },
+              { status: 400 }
+            );
+          }
+        } else {
+          const { data: channel } = await supabase
+            .from('channels')
+            .select('id, server_id, type')
+            .eq('id', candidateChanId)
+            .maybeSingle();
+
+          if (!channel || channel.type !== 'voice') {
+            return NextResponse.json(
+              { error: 'Voice channel not found or is not a voice channel' },
+              { status: 404 }
+            );
+          }
+
+          const targetServerId = channel.server_id;
+          if (!targetServerId) {
+            return NextResponse.json(
+              { error: 'Voice channel is not associated with a server' },
+              { status: 400 }
+            );
+          }
+
+          if (serverId && serverId !== targetServerId) {
+            return NextResponse.json(
+              { error: 'Bad Request: Mismatched server ID and voice channel' },
+              { status: 400 }
+            );
+          }
+
+          const { data: ban } = await supabase
+            .from('server_bans')
+            .select('id')
+            .eq('server_id', targetServerId)
+            .eq('user_id', targetUserId)
+            .maybeSingle();
+
+          if (ban) {
+            return NextResponse.json(
+              { error: 'Forbidden: You are banned from this server' },
+              { status: 403 }
+            );
+          }
+
+          const { data: srvMem } = await supabase
+            .from('server_members')
+            .select('id, timeout_until')
+            .eq('server_id', targetServerId)
+            .eq('user_id', targetUserId)
+            .maybeSingle();
+
+          if (!srvMem) {
+            const { data: srv } = await supabase
+              .from('servers')
+              .select('owner_id')
+              .eq('id', targetServerId)
+              .maybeSingle();
+
+            if (srv?.owner_id !== targetUserId) {
+              return NextResponse.json(
+                { error: 'Forbidden: You are not a member of this voice channel server' },
+                { status: 403 }
+              );
+            }
+          }
+
+          if (srvMem?.timeout_until && new Date(srvMem.timeout_until).getTime() > Date.now()) {
+            return NextResponse.json(
+              { error: 'Forbidden: You are currently timed out in this server' },
+              { status: 403 }
+            );
+          }
+
+          finalRoomName = roomName;
         }
-
-        const { data: channel } = await supabase
-          .from('channels')
-          .select('id, server_id, type')
-          .eq('id', candidateChanId)
-          .maybeSingle();
-
-        if (!channel || channel.type !== 'voice') {
-          return NextResponse.json(
-            { error: 'Voice channel not found or is not a voice channel' },
-            { status: 404 }
-          );
-        }
-
-        const targetServerId = channel.server_id;
-        if (!targetServerId) {
-          return NextResponse.json(
-            { error: 'Voice channel is not associated with a server' },
-            { status: 400 }
-          );
-        }
-
-        if (serverId && serverId !== targetServerId) {
-          return NextResponse.json(
-            { error: 'Bad Request: Mismatched server ID and voice channel' },
-            { status: 400 }
-          );
-        }
-
-        const { data: ban } = await supabase
-          .from('server_bans')
-          .select('id')
-          .eq('server_id', targetServerId)
-          .eq('user_id', targetUserId)
-          .maybeSingle();
-
-        if (ban) {
-          return NextResponse.json(
-            { error: 'Forbidden: You are banned from this server' },
-            { status: 403 }
-          );
-        }
-
-        const { data: srvMem } = await supabase
-          .from('server_members')
-          .select('id, timeout_until')
-          .eq('server_id', targetServerId)
-          .eq('user_id', targetUserId)
-          .maybeSingle();
-
-        if (!srvMem) {
-          return NextResponse.json(
-            { error: 'Forbidden: You are not a member of this voice channel server' },
-            { status: 403 }
-          );
-        }
-
-        if (srvMem.timeout_until && new Date(srvMem.timeout_until).getTime() > Date.now()) {
-          return NextResponse.json(
-            { error: 'Forbidden: You are currently timed out in this server' },
-            { status: 403 }
-          );
-        }
-
-        finalRoomName = roomName;
       } else if (roomName.startsWith('nexus-server-')) {
         const candidateSrvId = roomName.replace('nexus-server-', '');
         if (!UUID_REGEX.test(candidateSrvId)) {
@@ -403,13 +459,21 @@ export async function POST(request: Request) {
           .maybeSingle();
 
         if (!srvMem) {
-          return NextResponse.json(
-            { error: 'Forbidden: You are not a member of this server' },
-            { status: 403 }
-          );
+          const { data: srv } = await supabase
+            .from('servers')
+            .select('owner_id')
+            .eq('id', candidateSrvId)
+            .maybeSingle();
+
+          if (srv?.owner_id !== targetUserId) {
+            return NextResponse.json(
+              { error: 'Forbidden: You are not a member of this server' },
+              { status: 403 }
+            );
+          }
         }
 
-        if (srvMem.timeout_until && new Date(srvMem.timeout_until).getTime() > Date.now()) {
+        if (srvMem?.timeout_until && new Date(srvMem.timeout_until).getTime() > Date.now()) {
           return NextResponse.json(
             { error: 'Forbidden: You are currently timed out in this server' },
             { status: 403 }

@@ -2232,10 +2232,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .eq('conversation_id', conversationId)
       .neq('user_id', user.id);
 
-    if (members && members.length > 1) {
-      isGroup = true;
-    } else if (members && members.length <= 1) {
-      isGroup = false;
+    if (!isGroup) {
+      if (members && members.length > 1) {
+        isGroup = true;
+      }
     }
 
     setIsGroupCall(isGroup);

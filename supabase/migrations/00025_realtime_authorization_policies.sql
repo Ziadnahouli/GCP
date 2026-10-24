@@ -58,9 +58,16 @@ AS $$
     SELECT EXISTS (
         SELECT 1
         FROM public.channels c
-        JOIN public.server_members sm ON sm.server_id = c.server_id
+        JOIN public.servers s ON s.id = c.server_id
+        LEFT JOIN public.server_members sm ON sm.server_id = s.id AND sm.user_id = p_user_id
         WHERE c.id = p_channel_id
-          AND sm.user_id = p_user_id
+          AND (s.owner_id = p_user_id OR sm.id IS NOT NULL)
+    ) OR EXISTS (
+        SELECT 1
+        FROM public.servers s
+        LEFT JOIN public.server_members sm ON sm.server_id = s.id AND sm.user_id = p_user_id
+        WHERE s.id = p_channel_id
+          AND (s.owner_id = p_user_id OR sm.id IS NOT NULL)
     );
 $$;
 
@@ -84,7 +91,7 @@ BEGIN
     clean_topic := regexp_replace(p_topic, '^realtime:', '');
 
     -- Public / global authenticated channels (e.g. social status changes)
-    IF clean_topic = 'social-realtime' THEN
+    IF clean_topic IN ('social-realtime', 'system') THEN
         RETURN TRUE;
     END IF;
 
@@ -98,8 +105,14 @@ BEGIN
         END;
     END IF;
 
-    -- 2. User-private topics: user:<id>:*, user-signals-<id>, user_notifications_[0-9a-f-]{36}, devices_sync_[0-9a-f-]{36}
-    IF clean_topic ~* '^(user:[0-9a-f-]{36}|user-signals-[0-9a-f-]{36}|user_notifications_[0-9a-f-]{36}|devices_sync_[0-9a-f-]{36})' THEN
+    -- 2. User signaling inboxes: user-signals-<id>
+    -- Allow any authenticated user to broadcast / subscribe to user-signals channels for incoming/outgoing call signaling
+    IF clean_topic ~* '^user-signals-[0-9a-f-]{36}' THEN
+        RETURN p_user_id IS NOT NULL;
+    END IF;
+
+    -- 3. User-private topics: user:<id>:*, user_notifications_[0-9a-f-]{36}, devices_sync_[0-9a-f-]{36}
+    IF clean_topic ~* '^(user:[0-9a-f-]{36}|user_notifications_[0-9a-f-]{36}|devices_sync_[0-9a-f-]{36})' THEN
         BEGIN
             matched_id := (regexp_match(clean_topic, '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'i'))[1]::uuid;
             RETURN p_user_id = matched_id;
@@ -108,7 +121,7 @@ BEGIN
         END;
     END IF;
 
-    -- 3. Server topics: server:<id>:*, server_voice_<id>
+    -- 4. Server topics: server:<id>:*, server_voice_[0-9a-f-]{36}
     IF clean_topic ~* '^(server:[0-9a-f-]{36}|server_voice_[0-9a-f-]{36})' THEN
         BEGIN
             matched_id := (regexp_match(clean_topic, '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'i'))[1]::uuid;
@@ -118,7 +131,7 @@ BEGIN
         END;
     END IF;
 
-    -- 4. Channel topics: channel:<id>:*, chan-room-<id>, voice_room_<id>, voice_room-<id>
+    -- 5. Channel topics: channel:<id>:*, chan-room-<id>, voice_room_<id>, voice_room-<id>
     IF clean_topic ~* '^(channel:[0-9a-f-]{36}|chan-room-[0-9a-f-]{36}|voice_room_[0-9a-f-]{36}|voice_room-[0-9a-f-]{36})' THEN
         BEGIN
             matched_id := (regexp_match(clean_topic, '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'i'))[1]::uuid;
@@ -126,6 +139,11 @@ BEGIN
         EXCEPTION WHEN OTHERS THEN
             RETURN FALSE;
         END;
+    END IF;
+
+    -- 6. Generic voice room topics (e.g. voice_room_lounge, voice_room_*)
+    IF clean_topic ~* '^voice_room_' THEN
+        RETURN p_user_id IS NOT NULL;
     END IF;
 
     -- Deny any unlisted/unknown private topic by default

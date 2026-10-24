@@ -770,7 +770,159 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       if (serverName) setActiveServerName(serverName);
       if (channelName) setActiveChannelName(channelName);
 
-      // 1. Immediately request LiveKit token and connect to LiveKit Cloud SFU
+      // 1. Immediately acquire local microphone & setup studio audio pipeline if not already active
+      let stream = localStreamRef.current;
+      const isExistingStreamLive =
+        stream &&
+        stream.active &&
+        stream.getAudioTracks().some((t) => t.readyState === 'live');
+
+      if (!isExistingStreamLive) {
+        try {
+          if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+            const savedMicId = (typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null) || settings?.input_device_id || null;
+            const policy = noiseSuppressionMode === 'off' ? 'off' : 'rnnoise';
+            const audioConstraints = getUserMediaAudioConstraints(policy, savedMicId);
+            let rawStream: MediaStream;
+            try {
+              rawStream = await navigator.mediaDevices.getUserMedia({
+                audio: audioConstraints,
+                video: false,
+              });
+            } catch (exactErr) {
+              console.warn('[ServerVoice] Exact mic device failed or unplugged, falling back to default:', exactErr);
+              rawStream = await navigator.mediaDevices.getUserMedia({
+                audio: getUserMediaAudioConstraints(policy, null),
+                video: false,
+              });
+            }
+
+            if (currentVoiceSessionIdRef.current !== voiceSessionId) {
+              rawStream.getTracks().forEach((t) => t.stop());
+              return;
+            }
+
+            let streamToUse = rawStream;
+            try {
+              if (dspPipelineRef.current) {
+                try { dspPipelineRef.current.cleanup(); } catch {}
+                dspPipelineRef.current = null;
+              }
+              const pipeline = await createGcpNoisePipeline(rawStream, noiseSuppressionMode);
+              if (currentVoiceSessionIdRef.current !== voiceSessionId) {
+                rawStream.getTracks().forEach((t) => t.stop());
+                if (pipeline) pipeline.cleanup();
+                return;
+              }
+              if (pipeline) {
+                dspPipelineRef.current = pipeline;
+                streamToUse = pipeline.outputStream;
+              }
+            } catch (dspErr) {
+              console.warn('[ServerVoice] Error initializing GCP noise pipeline for lounge:', dspErr);
+            }
+
+            setLocalStream(streamToUse);
+            localStreamRef.current = streamToUse;
+            stream = streamToUse;
+
+            const pttActive = isPushToTalkEnabled(settingsRef.current);
+            if (pttActive || disconnectGateRef.current || isMicMutedRef.current) {
+              stream.getAudioTracks().forEach((track) => {
+                track.enabled = false;
+              });
+              setIsMicMuted(true);
+              isMicMutedRef.current = true;
+            } else {
+              setIsMicMuted(false);
+              isMicMutedRef.current = false;
+            }
+          }
+        } catch (micErr) {
+          console.warn('[VoiceLounge] Mic setup notice (joining muted):', micErr);
+          setIsMicMuted(true);
+          isMicMutedRef.current = true;
+        }
+      }
+
+      // Start speech analyzer for RMS meter (never close audioContextRef if active)
+      if (stream) {
+        try {
+          if (animFrameRef.current) {
+            cancelAnimationFrame(animFrameRef.current);
+            animFrameRef.current = null;
+          }
+          const AudioCtx =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+          if (AudioCtx) {
+            let audioCtx = audioContextRef.current;
+            if (!audioCtx || audioCtx.state === 'closed') {
+              audioCtx = new AudioCtx();
+              audioContextRef.current = audioCtx;
+            }
+            if (audioCtx.state === 'suspended') {
+              audioCtx.resume().catch(() => {});
+            }
+
+            const source = audioCtx.createMediaStreamSource(stream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.smoothingTimeConstant = 0.3;
+            source.connect(analyser);
+
+            const silentGain = audioCtx.createGain();
+            silentGain.gain.value = 0;
+            source.connect(silentGain);
+            silentGain.connect(audioCtx.destination);
+
+            const pcmData = new Uint8Array(analyser.frequencyBinCount);
+            let speakingCounter = 0;
+
+            const checkSpeaking = () => {
+              if (!analyser) return;
+              analyser.getByteFrequencyData(pcmData);
+
+              let sum = 0;
+              for (let i = 0; i < pcmData.length; i++) {
+                sum += pcmData[i];
+              }
+              const avg = sum / pcmData.length;
+              const normalized = Math.min(100, Math.round((avg / 128) * 100));
+
+              if (normalized !== audioLevelRef.current) {
+                audioLevelRef.current = normalized;
+                setAudioLevel(normalized);
+              }
+
+              const speakingThreshold = 14;
+              if (normalized > speakingThreshold && !isMicMutedRef.current && !isDeafenedRef.current) {
+                speakingCounter = 6;
+                if (!isSpeakingRef.current) {
+                  isSpeakingRef.current = true;
+                  setIsSpeaking(true);
+                  broadcastMyVoiceState({ is_speaking: true });
+                }
+              } else if (speakingCounter > 0) {
+                speakingCounter--;
+              } else if (isSpeakingRef.current) {
+                isSpeakingRef.current = false;
+                setIsSpeaking(false);
+                broadcastMyVoiceState({ is_speaking: false });
+              }
+
+              animFrameRef.current = requestAnimationFrame(checkSpeaking);
+            };
+
+            animFrameRef.current = requestAnimationFrame(checkSpeaking);
+          }
+        } catch (audioCtxErr) {
+          console.warn('[VoiceLounge] Audio analyser setup notice:', audioCtxErr);
+        }
+      }
+
+      // 2. Immediately request LiveKit token and connect to LiveKit Cloud SFU
       const cleanChanId = String(channelId || 'lounge').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
       const roomName = `nexus-voice-${cleanChanId}`;
       const participantName = profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate';
@@ -1110,160 +1262,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             setRemoteParticipants(initialRemotes);
             updateChannelOccupantsMap(channelId, [getMyVoiceState(), ...initialRemotes]);
 
-            // Acquire local microphone & setup studio audio pipeline if not already active
-            let stream = localStreamRef.current;
-            const isExistingStreamLive =
-              stream &&
-              stream.active &&
-              stream.getAudioTracks().some((t) => t.readyState === 'live');
-
-            if (!isExistingStreamLive) {
-              try {
-                if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-                  const savedMicId = (typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null) || settings?.input_device_id || null;
-                  const policy = noiseSuppressionMode === 'off' ? 'off' : 'rnnoise';
-                  const audioConstraints = getUserMediaAudioConstraints(policy, savedMicId);
-                  let rawStream: MediaStream;
-                  try {
-                    rawStream = await navigator.mediaDevices.getUserMedia({
-                      audio: audioConstraints,
-                      video: false,
-                    });
-                  } catch (exactErr) {
-                    console.warn('[ServerVoice] Exact mic device failed or unplugged, falling back to default:', exactErr);
-                    rawStream = await navigator.mediaDevices.getUserMedia({
-                      audio: getUserMediaAudioConstraints(policy, null),
-                      video: false,
-                    });
-                  }
-
-                  if (currentVoiceSessionIdRef.current !== voiceSessionId) {
-                    rawStream.getTracks().forEach((t) => t.stop());
-                    return;
-                  }
-
-                  let streamToUse = rawStream;
-                  try {
-                    if (dspPipelineRef.current) {
-                      try { dspPipelineRef.current.cleanup(); } catch {}
-                      dspPipelineRef.current = null;
-                    }
-                    const pipeline = await createGcpNoisePipeline(rawStream, noiseSuppressionMode);
-                    if (currentVoiceSessionIdRef.current !== voiceSessionId) {
-                      rawStream.getTracks().forEach((t) => t.stop());
-                      if (pipeline) pipeline.cleanup();
-                      return;
-                    }
-                    if (pipeline) {
-                      dspPipelineRef.current = pipeline;
-                      streamToUse = pipeline.outputStream;
-                    }
-                  } catch (dspErr) {
-                    console.warn('[ServerVoice] Error initializing GCP noise pipeline for lounge:', dspErr);
-                  }
-
-                  setLocalStream(streamToUse);
-                  localStreamRef.current = streamToUse;
-                  stream = streamToUse;
-
-                  const pttActive = isPushToTalkEnabled(settingsRef.current);
-                  if (pttActive || disconnectGateRef.current || isMicMutedRef.current) {
-                    stream.getAudioTracks().forEach((track) => {
-                      track.enabled = false;
-                    });
-                    setIsMicMuted(true);
-                    isMicMutedRef.current = true;
-                    if (livekitRoomRef.current?.localParticipant) {
-                      livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
-                    }
-                  } else {
-                    setIsMicMuted(false);
-                    isMicMutedRef.current = false;
-                  }
-                }
-              } catch (micErr) {
-                console.warn('[VoiceLounge] Mic setup notice (joining muted):', micErr);
-                setIsMicMuted(true);
-                isMicMutedRef.current = true;
-              }
-            }
-
-            // Start speech analyzer for RMS meter (never close audioContextRef if active)
-            if (stream) {
-              try {
-                if (animFrameRef.current) {
-                  cancelAnimationFrame(animFrameRef.current);
-                  animFrameRef.current = null;
-                }
-                const AudioCtx =
-                  window.AudioContext ||
-                  (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-
-                if (AudioCtx) {
-                  let audioCtx = audioContextRef.current;
-                  if (!audioCtx || audioCtx.state === 'closed') {
-                    audioCtx = new AudioCtx();
-                    audioContextRef.current = audioCtx;
-                  }
-                  if (audioCtx.state === 'suspended') {
-                    audioCtx.resume().catch(() => {});
-                  }
-
-                  const source = audioCtx.createMediaStreamSource(stream);
-                  const analyser = audioCtx.createAnalyser();
-                  analyser.fftSize = 512;
-                  analyser.smoothingTimeConstant = 0.3;
-                  source.connect(analyser);
-
-                  const silentGain = audioCtx.createGain();
-                  silentGain.gain.value = 0;
-                  source.connect(silentGain);
-                  silentGain.connect(audioCtx.destination);
-
-                  const pcmData = new Uint8Array(analyser.frequencyBinCount);
-                  let speakingCounter = 0;
-
-                  const checkSpeaking = () => {
-                    if (!analyser) return;
-                    analyser.getByteFrequencyData(pcmData);
-
-                    let sum = 0;
-                    for (let i = 0; i < pcmData.length; i++) {
-                      sum += pcmData[i];
-                    }
-                    const avg = sum / pcmData.length;
-                    const normalized = Math.min(100, Math.round((avg / 128) * 100));
-
-                    if (normalized !== audioLevelRef.current) {
-                      audioLevelRef.current = normalized;
-                      setAudioLevel(normalized);
-                    }
-
-                    const speakingThreshold = 14;
-                    if (normalized > speakingThreshold && !isMicMutedRef.current && !isDeafenedRef.current) {
-                      speakingCounter = 6;
-                      if (!isSpeakingRef.current) {
-                        isSpeakingRef.current = true;
-                        setIsSpeaking(true);
-                        broadcastMyVoiceState({ is_speaking: true });
-                      }
-                    } else if (speakingCounter > 0) {
-                      speakingCounter--;
-                    } else if (isSpeakingRef.current) {
-                      isSpeakingRef.current = false;
-                      setIsSpeaking(false);
-                      broadcastMyVoiceState({ is_speaking: false });
-                    }
-
-                    animFrameRef.current = requestAnimationFrame(checkSpeaking);
-                  };
-
-                  animFrameRef.current = requestAnimationFrame(checkSpeaking);
-                }
-              } catch (audioCtxErr) {
-                console.warn('[VoiceLounge] Audio analyser setup notice:', audioCtxErr);
-              }
-            }
+            // Microphone and audio pipeline already active
 
             // Publish local audio track to LiveKit Cloud SFU
             try {
@@ -1639,6 +1638,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 payload: myState,
               });
             } catch {}
+
+            if (mediaTransportRef.current === 'webrtc') {
+              peersMapRef.current.forEach((peer, peerId) => {
+                if (currentUser.id < peerId) {
+                  getOrCreatePeerConnection(peerId, true);
+                }
+              });
+            }
           }
         });
       }

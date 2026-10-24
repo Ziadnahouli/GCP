@@ -461,7 +461,6 @@ export function ServerSidebar({
               const isSelected = activeChannelId === channel.id;
               const isVoiceConnectedToThis =
                 serverVoice.isVoiceConnected &&
-                serverVoice.isLiveKitActive &&
                 serverVoice.activeChannelId?.toLowerCase().trim() === channel.id.toLowerCase().trim();
 
               return (

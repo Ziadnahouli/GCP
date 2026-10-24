@@ -5,8 +5,19 @@
 --              Calls, Soundboard, and Servers with Row Level Security (RLS).
 -- ==============================================================================
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Enable UUID extension with fallback for environments where uuid-ossp is not bundled
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+EXCEPTION
+    WHEN OTHERS THEN
+        NULL;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.uuid_generate_v4()
+RETURNS UUID LANGUAGE sql AS $$
+    SELECT gen_random_uuid();
+$$;
 
 -- ==============================================================================
 -- 1. PROFILES TABLE & STATUS ENUM

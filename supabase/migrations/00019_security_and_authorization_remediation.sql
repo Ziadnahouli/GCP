@@ -42,35 +42,132 @@ CREATE POLICY "Conversation owners and admins can update members"
     USING (public.is_conversation_creator_or_admin(conversation_id, auth.uid()))
     WITH CHECK (public.is_conversation_creator_or_admin(conversation_id, auth.uid()));
 
+CREATE OR REPLACE FUNCTION public.is_conversation_owner(p_conv_id UUID, p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.conversations
+    WHERE id = p_conv_id AND created_by = p_user_id
+  ) OR EXISTS (
+    SELECT 1 FROM public.conversation_members
+    WHERE conversation_id = p_conv_id AND user_id = p_user_id AND role = 'owner'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_conversation_admin(p_conv_id UUID, p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.conversation_members
+    WHERE conversation_id = p_conv_id AND user_id = p_user_id AND role = 'admin'
+  );
+$$;
+
 CREATE OR REPLACE FUNCTION public.trg_conversation_members_immutability()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+    v_caller UUID := auth.uid();
+    v_is_owner BOOLEAN;
+    v_is_admin BOOLEAN;
+    v_owner_count INT;
 BEGIN
-    IF NEW.id <> OLD.id THEN
-        RAISE EXCEPTION 'conversation_members.id is immutable';
-    END IF;
-    IF NEW.conversation_id <> OLD.conversation_id THEN
-        RAISE EXCEPTION 'conversation_members.conversation_id is immutable';
-    END IF;
-    IF NEW.user_id <> OLD.user_id THEN
-        RAISE EXCEPTION 'conversation_members.user_id is immutable';
-    END IF;
-    -- If role is modified, caller must be owner or admin of the conversation
-    IF NEW.role IS DISTINCT FROM OLD.role THEN
-        IF NOT public.is_conversation_creator_or_admin(OLD.conversation_id, auth.uid()) THEN
-            RAISE EXCEPTION 'Only conversation owners or admins can modify member roles';
+    IF TG_OP = 'UPDATE' THEN
+        IF NEW.id <> OLD.id THEN
+            RAISE EXCEPTION 'conversation_members.id is immutable';
         END IF;
+        IF NEW.conversation_id <> OLD.conversation_id THEN
+            RAISE EXCEPTION 'conversation_members.conversation_id is immutable';
+        END IF;
+        IF NEW.user_id <> OLD.user_id THEN
+            RAISE EXCEPTION 'conversation_members.user_id is immutable';
+        END IF;
+
+        IF NEW.role IS DISTINCT FROM OLD.role THEN
+            IF v_caller IS NOT NULL THEN
+                v_is_owner := public.is_conversation_owner(OLD.conversation_id, v_caller);
+                v_is_admin := public.is_conversation_admin(OLD.conversation_id, v_caller);
+
+                -- Caller must be owner or admin
+                IF NOT (v_is_owner OR v_is_admin) THEN
+                    RAISE EXCEPTION 'Only conversation owners or admins can modify member roles';
+                END IF;
+
+                -- Admins cannot change their own role
+                IF NOT v_is_owner AND v_caller = OLD.user_id THEN
+                    RAISE EXCEPTION 'Admins cannot change their own role';
+                END IF;
+
+                -- Admins cannot modify owner roles
+                IF NOT v_is_owner AND OLD.role = 'owner' THEN
+                    RAISE EXCEPTION 'Admins cannot modify owner roles';
+                END IF;
+
+                -- Only owner can grant owner role
+                IF NEW.role = 'owner' AND NOT v_is_owner THEN
+                    RAISE EXCEPTION 'Only conversation owner can grant owner role';
+                END IF;
+
+                -- Admins can only change role between member and admin
+                IF NOT v_is_owner AND NEW.role NOT IN ('member', 'admin') THEN
+                    RAISE EXCEPTION 'Admins can only change role between member and admin';
+                END IF;
+            END IF;
+
+            -- The last owner cannot be demoted
+            IF OLD.role = 'owner' AND NEW.role <> 'owner' THEN
+                SELECT COUNT(*) INTO v_owner_count
+                FROM public.conversation_members
+                WHERE conversation_id = OLD.conversation_id AND role = 'owner';
+
+                IF v_owner_count <= 1 THEN
+                    RAISE EXCEPTION 'Cannot demote the last owner of a conversation';
+                END IF;
+            END IF;
+        END IF;
+        RETURN NEW;
     END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        IF v_caller IS NOT NULL THEN
+            v_is_owner := public.is_conversation_owner(OLD.conversation_id, v_caller);
+            IF NOT v_is_owner AND OLD.role = 'owner' THEN
+                RAISE EXCEPTION 'Admins cannot remove conversation owners';
+            END IF;
+        END IF;
+
+        -- Protect last owner from removal / self-leave
+        IF OLD.role = 'owner' THEN
+            SELECT COUNT(*) INTO v_owner_count
+            FROM public.conversation_members
+            WHERE conversation_id = OLD.conversation_id AND role = 'owner';
+
+            IF v_owner_count <= 1 THEN
+                RAISE EXCEPTION 'Cannot remove the last owner of a conversation';
+            END IF;
+        END IF;
+
+        RETURN OLD;
+    END IF;
+
     RETURN NEW;
 END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_conversation_members_immutability ON public.conversation_members;
 CREATE TRIGGER trg_conversation_members_immutability
-    BEFORE UPDATE ON public.conversation_members
+    BEFORE UPDATE OR DELETE ON public.conversation_members
     FOR EACH ROW
     EXECUTE FUNCTION public.trg_conversation_members_immutability();
 
@@ -501,6 +598,7 @@ END $$;
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'objects') THEN
+        ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
         DROP POLICY IF EXISTS "Authenticated users can upload avatars" ON storage.objects;
         CREATE POLICY "Authenticated users can upload avatars"
             ON storage.objects FOR INSERT

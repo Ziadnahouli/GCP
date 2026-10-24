@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
+import * as fs from 'fs';
+import * as path from 'path';
 
 describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
   let db: PGlite;
@@ -43,10 +45,11 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
     db = new PGlite();
     await db.ready;
 
-    // 1. Setup Supabase auth schema and helper functions
+    // Minimal stubs required for real Supabase migrations in PGlite
     await db.exec(`
       CREATE SCHEMA IF NOT EXISTS auth;
       CREATE SCHEMA IF NOT EXISTS storage;
+      CREATE SCHEMA IF NOT EXISTS realtime;
 
       DO $$
       BEGIN
@@ -56,7 +59,20 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
           CREATE ROLE anon NOINHERIT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+          CREATE ROLE service_role NOINHERIT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+          CREATE PUBLICATION supabase_realtime;
+        END IF;
       END $$;
+
+      CREATE TABLE IF NOT EXISTS auth.users (
+        id UUID PRIMARY KEY,
+        email TEXT,
+        raw_user_meta_data JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
 
       CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$
         SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::UUID;
@@ -66,124 +82,10 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
         SELECT COALESCE(NULLIF(current_setting('request.jwt.claim.role', true), ''), 'anon');
       $$ LANGUAGE sql STABLE;
 
-      -- Base tables
-      CREATE TABLE IF NOT EXISTS public.profiles (
-        id UUID PRIMARY KEY,
-        username TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS public.user_settings (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE UNIQUE,
-        allow_direct_messages TEXT DEFAULT 'everyone',
-        allow_friend_requests TEXT DEFAULT 'everyone'
-      );
-
-      CREATE TABLE IF NOT EXISTS public.blocks (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        blocker_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        blocked_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        CONSTRAINT unique_block UNIQUE(blocker_id, blocked_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS public.friendships (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        friend_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        CONSTRAINT unique_friendship UNIQUE(user_id, friend_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS public.friend_requests (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        sender_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        receiver_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        status TEXT DEFAULT 'pending'
-      );
-
-      CREATE TABLE IF NOT EXISTS public.servers (
-        id UUID PRIMARY KEY,
-        name TEXT NOT NULL,
-        owner_id UUID NOT NULL REFERENCES public.profiles(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS public.server_members (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        server_id UUID NOT NULL REFERENCES public.servers(id) ON DELETE CASCADE,
-        user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'moderator', 'member')),
-        timeout_until TIMESTAMPTZ,
-        CONSTRAINT unique_member UNIQUE(server_id, user_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS public.server_invites (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        server_id UUID NOT NULL REFERENCES public.servers(id) ON DELETE CASCADE,
-        code TEXT NOT NULL UNIQUE,
-        created_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        max_uses INT DEFAULT 0,
-        uses INT DEFAULT 0 NOT NULL,
-        expires_at TIMESTAMPTZ,
-        is_revoked BOOLEAN DEFAULT FALSE NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS public.server_bans (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        server_id UUID NOT NULL REFERENCES public.servers(id) ON DELETE CASCADE,
-        user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        banned_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        reason TEXT,
-        CONSTRAINT unique_server_ban UNIQUE(server_id, user_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS public.channels (
-        id UUID PRIMARY KEY,
-        server_id UUID NOT NULL REFERENCES public.servers(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        type TEXT NOT NULL DEFAULT 'text'
-      );
-
-      CREATE TABLE IF NOT EXISTS public.channel_messages (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        channel_id UUID NOT NULL REFERENCES public.channels(id) ON DELETE CASCADE,
-        user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        content TEXT NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        is_edited BOOLEAN DEFAULT FALSE,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS public.conversations (
-        id UUID PRIMARY KEY,
-        type TEXT NOT NULL DEFAULT 'direct',
-        created_by UUID NOT NULL REFERENCES public.profiles(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS public.conversation_members (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
-        user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        role TEXT DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member')),
-        last_read_at TIMESTAMPTZ,
-        CONSTRAINT unique_conv_member UNIQUE(conversation_id, user_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS public.messages (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
-        sender_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-        content TEXT NOT NULL,
-        reply_to_id UUID,
-        is_pinned BOOLEAN DEFAULT FALSE,
-        is_edited BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-
-      -- Storage schema mockup
       CREATE TABLE IF NOT EXISTS storage.buckets (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        public BOOLEAN DEFAULT FALSE,
+        public BOOLEAN DEFAULT false,
         file_size_limit BIGINT,
         allowed_mime_types TEXT[]
       );
@@ -192,8 +94,12 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         bucket_id TEXT NOT NULL REFERENCES storage.buckets(id),
         name TEXT NOT NULL,
-        owner UUID
+        owner UUID,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
       CREATE OR REPLACE FUNCTION storage.foldername(name TEXT)
       RETURNS TEXT[] LANGUAGE plpgsql AS $$
@@ -202,332 +108,31 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
       END;
       $$;
 
-      -- Helper functions
-      CREATE OR REPLACE FUNCTION public.is_server_owner(p_server_id UUID, p_user_id UUID)
-      RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER STABLE AS $$
-        SELECT EXISTS (
-          SELECT 1 FROM public.servers
-          WHERE id = p_server_id AND owner_id = p_user_id
-        );
-      $$;
+      CREATE TABLE IF NOT EXISTS realtime.messages (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        topic TEXT NOT NULL,
+        extension TEXT,
+        inserted_at TIMESTAMPTZ DEFAULT NOW()
+      );
 
-      CREATE OR REPLACE FUNCTION public.is_server_member(p_server_id UUID, p_user_id UUID)
-      RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER STABLE AS $$
-        SELECT EXISTS (
-          SELECT 1 FROM public.server_members
-          WHERE server_id = p_server_id AND user_id = p_user_id
-        );
-      $$;
+      CREATE OR REPLACE FUNCTION realtime.topic() RETURNS TEXT AS $$
+        SELECT NULLIF(current_setting('request.realtime.topic', true), '');
+      $$ LANGUAGE sql STABLE;
+    `);
 
-      CREATE OR REPLACE FUNCTION public.is_server_owner_or_admin(p_server_id UUID, p_user_id UUID)
-      RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER STABLE AS $$
-        SELECT EXISTS (
-          SELECT 1 FROM public.servers s
-          LEFT JOIN public.server_members sm ON sm.server_id = s.id AND sm.user_id = p_user_id
-          WHERE s.id = p_server_id
-          AND (s.owner_id = p_user_id OR sm.role IN ('owner', 'admin'))
-        );
-      $$;
+    // Dynamically load and execute all migrations in alphanumeric order
+    const migrationsDir = path.resolve(process.cwd(), 'supabase/migrations');
+    const migrationFiles = fs.readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
 
-      CREATE OR REPLACE FUNCTION public.is_conversation_member(p_conv_id UUID, p_user_id UUID)
-      RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER STABLE AS $$
-        SELECT EXISTS (
-          SELECT 1 FROM public.conversation_members
-          WHERE conversation_id = p_conv_id AND user_id = p_user_id
-        );
-      $$;
+    for (const file of migrationFiles) {
+      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+      await db.exec(sql);
+    }
 
-      CREATE OR REPLACE FUNCTION public.is_conversation_creator_or_admin(p_conv_id UUID, p_user_id UUID)
-      RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
-        SELECT EXISTS (
-          SELECT 1 FROM public.conversations WHERE id = p_conv_id AND created_by = p_user_id
-        ) OR EXISTS (
-          SELECT 1 FROM public.conversation_members WHERE conversation_id = p_conv_id AND user_id = p_user_id AND role IN ('owner', 'admin')
-        );
-      $$;
-
-      -- Enable RLS
-      ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.servers ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.server_members ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.conversation_members ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.channel_messages ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-
-      -- user_settings policies
-      CREATE POLICY "Users can view their own settings"
-        ON public.user_settings FOR SELECT
-        USING (auth.uid() = user_id);
-
-      CREATE POLICY "Users can update their own settings"
-        ON public.user_settings FOR UPDATE
-        USING (auth.uid() = user_id);
-
-      CREATE POLICY "Users can insert their own settings"
-        ON public.user_settings FOR INSERT
-        WITH CHECK (auth.uid() = user_id);
-
-      -- -----------------------------------------------------------------------
-      -- APPLY 00019 POLICIES & TRIGGERS
-      -- -----------------------------------------------------------------------
-
-      -- S1: conversation_members UPDATE & immutability trigger
-      CREATE POLICY "Conversation members can update their own read state"
-        ON public.conversation_members FOR UPDATE
-        USING (auth.uid() = user_id)
-        WITH CHECK (auth.uid() = user_id);
-
-      CREATE POLICY "Conversation owners and admins can update members"
-        ON public.conversation_members FOR UPDATE
-        USING (public.is_conversation_creator_or_admin(conversation_id, auth.uid()))
-        WITH CHECK (public.is_conversation_creator_or_admin(conversation_id, auth.uid()));
-
-      CREATE POLICY "Conversation members can view members"
-        ON public.conversation_members FOR SELECT
-        USING (public.is_conversation_member(conversation_id, auth.uid()));
-
-      CREATE POLICY "Conversation admins and creators can add members"
-        ON public.conversation_members FOR INSERT
-        WITH CHECK (public.is_conversation_creator_or_admin(conversation_id, auth.uid()));
-
-      CREATE OR REPLACE FUNCTION public.trg_conversation_members_immutability()
-      RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-      BEGIN
-        IF NEW.id <> OLD.id THEN RAISE EXCEPTION 'conversation_members.id is immutable'; END IF;
-        IF NEW.conversation_id <> OLD.conversation_id THEN RAISE EXCEPTION 'conversation_members.conversation_id is immutable'; END IF;
-        IF NEW.user_id <> OLD.user_id THEN RAISE EXCEPTION 'conversation_members.user_id is immutable'; END IF;
-        IF NEW.role IS DISTINCT FROM OLD.role THEN
-          IF NOT public.is_conversation_creator_or_admin(OLD.conversation_id, auth.uid()) THEN
-            RAISE EXCEPTION 'Only conversation owners or admins can modify member roles';
-          END IF;
-        END IF;
-        RETURN NEW;
-      END;
-      $$;
-
-      DROP TRIGGER IF EXISTS trg_conversation_members_immutability ON public.conversation_members;
-      CREATE TRIGGER trg_conversation_members_immutability
-        BEFORE UPDATE ON public.conversation_members
-        FOR EACH ROW EXECUTE FUNCTION public.trg_conversation_members_immutability();
-
-      -- S2: conversations policy & immutability trigger
-      CREATE POLICY "Users can create conversations as creator"
-        ON public.conversations FOR INSERT
-        WITH CHECK (auth.uid() = created_by);
-
-      CREATE POLICY "Group owners and admins can update conversations"
-        ON public.conversations FOR UPDATE
-        USING (public.is_conversation_creator_or_admin(id, auth.uid()))
-        WITH CHECK (public.is_conversation_creator_or_admin(id, auth.uid()));
-
-      CREATE POLICY "Conversation members can view conversations"
-        ON public.conversations FOR SELECT
-        USING (created_by = auth.uid() OR public.is_conversation_member(id, auth.uid()));
-
-      CREATE OR REPLACE FUNCTION public.trg_conversations_immutability()
-      RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-      BEGIN
-        IF NEW.id <> OLD.id THEN RAISE EXCEPTION 'conversations.id is immutable'; END IF;
-        IF NEW.created_by <> OLD.created_by THEN RAISE EXCEPTION 'conversations.created_by is immutable'; END IF;
-        IF NEW.type <> OLD.type THEN RAISE EXCEPTION 'conversations.type is immutable'; END IF;
-        RETURN NEW;
-      END;
-      $$;
-
-      DROP TRIGGER IF EXISTS trg_conversations_immutability ON public.conversations;
-      CREATE TRIGGER trg_conversations_immutability
-        BEFORE UPDATE ON public.conversations
-        FOR EACH ROW EXECUTE FUNCTION public.trg_conversations_immutability();
-
-      -- S3: messages policy & immutability trigger
-      CREATE POLICY "Members can read conversation messages" ON public.messages
-        FOR SELECT USING (public.is_conversation_member(conversation_id, auth.uid()));
-
-      CREATE POLICY "Members can insert conversation messages" ON public.messages
-        FOR INSERT WITH CHECK (auth.uid() = sender_id AND public.is_conversation_member(conversation_id, auth.uid()));
-
-      CREATE POLICY "Authors can update their own messages" ON public.messages
-        FOR UPDATE USING (auth.uid() = sender_id) WITH CHECK (auth.uid() = sender_id);
-
-      CREATE OR REPLACE FUNCTION public.trg_messages_immutability()
-      RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-      BEGIN
-        IF NEW.id <> OLD.id THEN RAISE EXCEPTION 'messages.id is immutable'; END IF;
-        IF NEW.conversation_id <> OLD.conversation_id THEN RAISE EXCEPTION 'messages.conversation_id is immutable'; END IF;
-        IF NEW.sender_id <> OLD.sender_id THEN RAISE EXCEPTION 'messages.sender_id is immutable'; END IF;
-        IF NEW.created_at <> OLD.created_at THEN RAISE EXCEPTION 'messages.created_at is immutable'; END IF;
-        IF NEW.reply_to_id IS DISTINCT FROM OLD.reply_to_id THEN RAISE EXCEPTION 'messages.reply_to_id is immutable'; END IF;
-        IF NEW.is_pinned IS DISTINCT FROM OLD.is_pinned THEN
-          IF NOT public.is_conversation_member(OLD.conversation_id, auth.uid()) THEN
-            RAISE EXCEPTION 'Only conversation members can pin or unpin messages';
-          END IF;
-        END IF;
-        IF NEW.content IS DISTINCT FROM OLD.content THEN
-          NEW.is_edited := true;
-          NEW.updated_at := NOW();
-        END IF;
-        RETURN NEW;
-      END;
-      $$;
-
-      DROP TRIGGER IF EXISTS trg_messages_immutability ON public.messages;
-      CREATE TRIGGER trg_messages_immutability
-        BEFORE UPDATE ON public.messages
-        FOR EACH ROW EXECUTE FUNCTION public.trg_messages_immutability();
-
-      -- S4: channel_messages policy & immutability trigger
-      CREATE POLICY "Users can insert their own channel messages" ON public.channel_messages
-        FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-      CREATE POLICY "Users can view channel messages" ON public.channel_messages
-        FOR SELECT USING (true);
-
-      CREATE POLICY "Users can update their own channel messages" ON public.channel_messages
-        FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
-      CREATE OR REPLACE FUNCTION public.trg_channel_messages_immutability()
-      RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-      BEGIN
-        IF NEW.id <> OLD.id THEN RAISE EXCEPTION 'channel_messages.id is immutable'; END IF;
-        IF NEW.channel_id <> OLD.channel_id THEN RAISE EXCEPTION 'channel_messages.channel_id is immutable'; END IF;
-        IF NEW.user_id <> OLD.user_id THEN RAISE EXCEPTION 'channel_messages.user_id is immutable'; END IF;
-        IF NEW.created_at <> OLD.created_at THEN RAISE EXCEPTION 'channel_messages.created_at is immutable'; END IF;
-        IF NEW.content IS DISTINCT FROM OLD.content THEN
-          NEW.is_edited := true;
-          NEW.updated_at := NOW();
-        END IF;
-        RETURN NEW;
-      END;
-      $$;
-
-      DROP TRIGGER IF EXISTS trg_channel_messages_immutability ON public.channel_messages;
-      CREATE TRIGGER trg_channel_messages_immutability
-        BEFORE UPDATE ON public.channel_messages
-        FOR EACH ROW EXECUTE FUNCTION public.trg_channel_messages_immutability();
-
-      -- S5: server_members & servers policies + join RPC
-      CREATE POLICY "Owners and admins can add server members" ON public.server_members
-        FOR INSERT WITH CHECK (
-          public.is_server_owner(server_id, auth.uid()) OR
-          (public.is_server_owner_or_admin(server_id, auth.uid()) AND role = 'member')
-        );
-
-      CREATE POLICY "Server members can view member lists" ON public.server_members
-        FOR SELECT USING (
-          public.is_server_owner(server_id, auth.uid()) OR
-          public.is_server_member(server_id, auth.uid())
-        );
-
-      CREATE POLICY "Members and owners can view servers" ON public.servers
-        FOR SELECT USING (
-          public.is_server_owner(id, auth.uid()) OR
-          public.is_server_member(id, auth.uid())
-        );
-
-      CREATE OR REPLACE FUNCTION public.join_server_with_invite(p_code TEXT)
-      RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-      DECLARE
-        caller_id UUID := auth.uid();
-        inv RECORD;
-        v_server_id UUID;
-      BEGIN
-        IF caller_id IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
-        SELECT * INTO inv FROM public.server_invites WHERE code = trim(p_code);
-        IF inv.id IS NULL THEN RAISE EXCEPTION 'Invalid invite code'; END IF;
-        IF inv.is_revoked THEN RAISE EXCEPTION 'Invite code has been revoked'; END IF;
-        IF inv.expires_at IS NOT NULL AND inv.expires_at <= NOW() THEN RAISE EXCEPTION 'Invite code has expired'; END IF;
-        IF inv.max_uses > 0 AND inv.uses >= inv.max_uses THEN RAISE EXCEPTION 'Invite code has reached its maximum uses'; END IF;
-
-        v_server_id := inv.server_id;
-        IF EXISTS (SELECT 1 FROM public.server_bans WHERE server_id = v_server_id AND user_id = caller_id) THEN
-          RAISE EXCEPTION 'You are banned from this server';
-        END IF;
-
-        IF NOT EXISTS (SELECT 1 FROM public.server_members WHERE server_id = v_server_id AND user_id = caller_id) THEN
-          INSERT INTO public.server_members (server_id, user_id, role) VALUES (v_server_id, caller_id, 'member');
-          UPDATE public.server_invites SET uses = uses + 1 WHERE id = inv.id;
-        END IF;
-
-        RETURN jsonb_build_object('success', true, 'server_id', v_server_id);
-      END;
-      $$;
-
-      -- S6: Blocklist and DM privacy triggers
-      CREATE OR REPLACE FUNCTION public.trg_check_dm_message_privacy()
-      RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-      DECLARE
-        v_conv_type TEXT;
-        v_recipient_id UUID;
-        v_policy TEXT;
-      BEGIN
-        SELECT type INTO v_conv_type FROM public.conversations WHERE id = NEW.conversation_id;
-        IF v_conv_type = 'direct' THEN
-          SELECT user_id INTO v_recipient_id FROM public.conversation_members
-          WHERE conversation_id = NEW.conversation_id AND user_id <> NEW.sender_id LIMIT 1;
-
-          IF v_recipient_id IS NOT NULL THEN
-            IF EXISTS (
-              SELECT 1 FROM public.blocks
-              WHERE (blocker_id = NEW.sender_id AND blocked_id = v_recipient_id)
-                 OR (blocker_id = v_recipient_id AND blocked_id = NEW.sender_id)
-            ) THEN
-              RAISE EXCEPTION 'Cannot send message to this user (blocked)';
-            END IF;
-
-            SELECT allow_direct_messages INTO v_policy FROM public.user_settings WHERE user_id = v_recipient_id;
-            IF v_policy = 'none' THEN
-              RAISE EXCEPTION 'Recipient does not accept direct messages';
-            ELSIF v_policy = 'friends' THEN
-              IF NOT EXISTS (
-                SELECT 1 FROM public.friendships
-                WHERE (user_id = NEW.sender_id AND friend_id = v_recipient_id)
-                   OR (user_id = v_recipient_id AND friend_id = NEW.sender_id)
-              ) THEN
-                RAISE EXCEPTION 'Recipient only accepts direct messages from friends';
-              END IF;
-            END IF;
-          END IF;
-        END IF;
-        RETURN NEW;
-      END;
-      $$;
-
-      DROP TRIGGER IF EXISTS trg_check_dm_message_privacy ON public.messages;
-      CREATE TRIGGER trg_check_dm_message_privacy
-        BEFORE INSERT ON public.messages
-        FOR EACH ROW EXECUTE FUNCTION public.trg_check_dm_message_privacy();
-
-      -- S8: user_communication_privacy view & profiles policy
-      CREATE OR REPLACE VIEW public.user_communication_privacy WITH (security_invoker = true) AS
-      SELECT user_id, allow_direct_messages, allow_friend_requests FROM public.user_settings;
-
-      REVOKE ALL ON public.user_communication_privacy FROM anon;
-      GRANT SELECT ON public.user_communication_privacy TO authenticated;
-
-      CREATE POLICY "Authenticated users can view profiles" ON public.profiles
-        FOR SELECT TO authenticated USING (true);
-
-      -- S9: Storage objects policy
-      CREATE POLICY "Authenticated users can upload avatars" ON storage.objects
-        FOR INSERT WITH CHECK (
-          bucket_id = 'avatars' AND
-          auth.role() = 'authenticated' AND
-          (storage.foldername(name))[1] = auth.uid()::text
-        );
-
-      -- 00020 constraints: 4000 char length checks
-      ALTER TABLE public.messages
-        ADD CONSTRAINT messages_content_length_check
-        CHECK (char_length(content) <= 4000);
-
-      ALTER TABLE public.channel_messages
-        ADD CONSTRAINT channel_messages_content_length_check
-        CHECK (char_length(content) <= 4000);
-
-      -- Grants
+    // Standard grants for test roles
+    await db.exec(`
       GRANT USAGE ON SCHEMA public, auth, storage TO authenticated, anon;
       GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
       GRANT SELECT ON public.profiles TO anon;
@@ -535,13 +140,19 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
       GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
     `);
 
-    // Seed test profiles and servers as superuser
+    // Seed test auth users, profiles, and servers as superuser
     await db.exec(`
       RESET ROLE;
-      INSERT INTO public.profiles (id, username) VALUES
-        ('${ALICE_ID}', 'alice'),
-        ('${BOB_ID}', 'bob'),
-        ('${CHARLIE_ID}', 'charlie')
+      INSERT INTO auth.users (id, email) VALUES
+        ('${ALICE_ID}', 'alice@nexus.gg'),
+        ('${BOB_ID}', 'bob@nexus.gg'),
+        ('${CHARLIE_ID}', 'charlie@nexus.gg')
+      ON CONFLICT DO NOTHING;
+
+      INSERT INTO public.profiles (id, username, display_name) VALUES
+        ('${ALICE_ID}', 'alice', 'Alice Gamer'),
+        ('${BOB_ID}', 'bob', 'Bob Player'),
+        ('${CHARLIE_ID}', 'charlie', 'Charlie Master')
       ON CONFLICT DO NOTHING;
 
       INSERT INTO public.servers (id, name, owner_id) VALUES
@@ -561,7 +172,8 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
 
       INSERT INTO storage.buckets (id, name, public) VALUES
         ('avatars', 'avatars', true),
-        ('attachments', 'attachments', false)
+        ('attachments', 'attachments', false),
+        ('soundboard', 'soundboard', true)
       ON CONFLICT DO NOTHING;
     `);
   });
@@ -627,6 +239,87 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
         WHERE conversation_id = '${CONV_ID}' AND user_id = '${BOB_ID}'
       `);
       expect(res.affectedRows).toBe(1);
+    });
+
+    it('rejects admin attempting to self-promote to owner in conversation', async () => {
+      // Setup Bob as an admin
+      await asSuperuser();
+      await db.query(`
+        UPDATE public.conversation_members
+        SET role = 'admin'
+        WHERE conversation_id = '${CONV_ID}' AND user_id = '${BOB_ID}'
+      `);
+
+      // As Bob (admin), attempt to self-promote to owner
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          UPDATE public.conversation_members
+          SET role = 'owner'
+          WHERE conversation_id = '${CONV_ID}' AND user_id = '${BOB_ID}'
+        `)
+      ).rejects.toThrow(/Admins cannot change their own role|Only conversation owner can grant owner role/);
+    });
+
+    it('rejects admin attempting to change their own role in conversation', async () => {
+      // Setup Bob as an admin
+      await asSuperuser();
+      await db.query(`
+        UPDATE public.conversation_members
+        SET role = 'admin'
+        WHERE conversation_id = '${CONV_ID}' AND user_id = '${BOB_ID}'
+      `);
+
+      // As Bob (admin), attempt to demote self to member
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          UPDATE public.conversation_members
+          SET role = 'member'
+          WHERE conversation_id = '${CONV_ID}' AND user_id = '${BOB_ID}'
+        `)
+      ).rejects.toThrow(/Admins cannot change their own role/);
+    });
+
+    it('rejects admin attempting to demote conversation owner', async () => {
+      // Setup Bob as an admin
+      await asSuperuser();
+      await db.query(`
+        UPDATE public.conversation_members
+        SET role = 'admin'
+        WHERE conversation_id = '${CONV_ID}' AND user_id = '${BOB_ID}'
+      `);
+
+      // As Bob (admin), attempt to demote Alice (owner) to member
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          UPDATE public.conversation_members
+          SET role = 'member'
+          WHERE conversation_id = '${CONV_ID}' AND user_id = '${ALICE_ID}'
+        `)
+      ).rejects.toThrow(/Admins cannot modify owner roles/);
+    });
+
+    it('rejects demoting or removing the last owner of a conversation', async () => {
+      await asUser(ALICE_ID);
+
+      // Attempt to demote the sole owner
+      await expect(
+        db.query(`
+          UPDATE public.conversation_members
+          SET role = 'member'
+          WHERE conversation_id = '${CONV_ID}' AND user_id = '${ALICE_ID}'
+        `)
+      ).rejects.toThrow(/Cannot demote the last owner/);
+
+      // Attempt to delete/leave as the sole owner
+      await expect(
+        db.query(`
+          DELETE FROM public.conversation_members
+          WHERE conversation_id = '${CONV_ID}' AND user_id = '${ALICE_ID}'
+        `)
+      ).rejects.toThrow(/Cannot remove the last owner/);
     });
   });
 
@@ -890,6 +583,72 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
         db.query(`SELECT public.join_server_with_invite('active123')`)
       ).rejects.toThrow(/You are banned from this server/);
     });
+
+    it('rejects server admin attempting to self-promote to owner or demote server owner', async () => {
+      // Setup Bob as an admin on SERVER_ID
+      await asSuperuser();
+      await db.query(`
+        INSERT INTO public.server_members (server_id, user_id, role)
+        VALUES ('${SERVER_ID}', '${BOB_ID}', 'admin')
+        ON CONFLICT (server_id, user_id) DO UPDATE SET role = 'admin'
+      `);
+
+      // 1. Bob attempts to self-promote to owner - rejected by RLS (0 rows updated)
+      await asUser(BOB_ID);
+      const promoteRes = await db.query(`
+        UPDATE public.server_members
+        SET role = 'owner'
+        WHERE server_id = '${SERVER_ID}' AND user_id = '${BOB_ID}'
+      `);
+      expect(promoteRes.affectedRows).toBe(0);
+
+      // Verify Bob is still admin
+      const checkBob = await db.query<{ role: string }>(`
+        SELECT role FROM public.server_members WHERE server_id = '${SERVER_ID}' AND user_id = '${BOB_ID}'
+      `);
+      expect(checkBob.rows[0].role).toBe('admin');
+
+      // 2. Bob attempts to demote Alice (server owner) - rejected by RLS (0 rows updated)
+      const demoteRes = await db.query(`
+        UPDATE public.server_members
+        SET role = 'member'
+        WHERE server_id = '${SERVER_ID}' AND user_id = '${ALICE_ID}'
+      `);
+      expect(demoteRes.affectedRows).toBe(0);
+
+      const checkAlice = await db.query<{ role: string }>(`
+        SELECT role FROM public.server_members WHERE server_id = '${SERVER_ID}' AND user_id = '${ALICE_ID}'
+      `);
+      expect(checkAlice.rows[0].role).toBe('owner');
+    });
+
+    it('rejects demoting or removing the server owner without transfer', async () => {
+      // 1. Alice attempts to demote her own server_members role - rejected by trigger
+      await asUser(ALICE_ID);
+      await expect(
+        db.query(`
+          UPDATE public.server_members
+          SET role = 'member'
+          WHERE server_id = '${SERVER_ID}' AND user_id = '${ALICE_ID}'
+        `)
+      ).rejects.toThrow(/Cannot demote server owner/);
+
+      // 2. Alice attempts to delete her membership while still servers.owner_id - blocked by RLS
+      const delRes = await db.query(`
+        DELETE FROM public.server_members
+        WHERE server_id = '${SERVER_ID}' AND user_id = '${ALICE_ID}'
+      `);
+      expect(delRes.affectedRows).toBe(0);
+
+      // 3. Defense-in-depth: even if executed by superuser, trigger rejects deleting server owner
+      await asSuperuser();
+      await expect(
+        db.query(`
+          DELETE FROM public.server_members
+          WHERE server_id = '${SERVER_ID}' AND user_id = '${ALICE_ID}'
+        `)
+      ).rejects.toThrow(/Cannot delete server owner membership/);
+    });
   });
 
   describe('S6: Block List & Direct Message Privacy Enforced in DB Triggers', () => {
@@ -967,11 +726,13 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
         `)
       ).rejects.toThrow(/Recipient only accepts direct messages from friends/);
 
-      // Now establish friendship
+      // Now establish friendship as superuser (since 00012 drops direct user INSERT)
+      await asSuperuser();
       await db.query(`
         INSERT INTO public.friendships (user_id, friend_id)
         VALUES ('${ALICE_ID}', '${BOB_ID}')
       `);
+      await asUser(ALICE_ID);
 
       // Now sending DM succeeds
       const res = await db.query(`

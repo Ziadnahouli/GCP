@@ -28,6 +28,11 @@ export interface LogEntry {
 const MAX_LOGS = 600;
 const SESSION_STORAGE_KEY = 'nexus_debug_logs';
 
+export const isDebugEnabled = (): boolean => {
+  if (process.env.NODE_ENV === 'test') return true;
+  return process.env.NEXT_PUBLIC_DEBUG === 'true';
+};
+
 class DebugLoggerService {
   private logs: LogEntry[] = [];
   private listeners: Set<(entry: LogEntry) => void> = new Set();
@@ -40,6 +45,7 @@ class DebugLoggerService {
   }
 
   public init() {
+    if (!isDebugEnabled()) return;
     if (this.isInitialized) return;
     this.isInitialized = true;
 
@@ -138,6 +144,7 @@ class DebugLoggerService {
   }
 
   private logEntry(entryData: Omit<LogEntry, 'id' | 'timestamp' | 'timeFormatted'>) {
+    if (!isDebugEnabled()) return;
     const now = new Date();
     const entry: LogEntry = {
       ...entryData,

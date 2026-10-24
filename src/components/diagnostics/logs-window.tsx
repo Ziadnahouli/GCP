@@ -29,14 +29,21 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useDiagnosticsLogs } from '@/hooks/use-diagnostics-logs';
 import { useModalEscape } from '@/hooks/use-modal-escape';
-import { LogEntry } from '@/lib/logger/debug-logger';
+import { LogEntry, isDebugEnabled } from '@/lib/logger/debug-logger';
 
 interface LogsWindowProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
 
-export function LogsWindow({ open: controlledOpen, onOpenChange }: LogsWindowProps) {
+export function LogsWindow(props: LogsWindowProps) {
+  if (!isDebugEnabled()) {
+    return null;
+  }
+  return <LogsWindowInternal {...props} />;
+}
+
+function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowProps) {
   const {
     logs,
     rawLogsCount,

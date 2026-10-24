@@ -419,7 +419,15 @@ export interface Database {
         };
       };
     };
-    Views: Record<string, never>;
+    Views: {
+      user_communication_privacy: {
+        Row: {
+          user_id: string;
+          allow_direct_messages: 'everyone' | 'friends' | 'none';
+          allow_friend_requests: 'everyone' | 'friends_of_friends' | 'none';
+        };
+      };
+    };
     Functions: {
       create_or_get_direct_conversation: {
         Args: {
@@ -432,6 +440,93 @@ export interface Database {
           request_id: string;
         };
         Returns: Json;
+      };
+      delete_user_account: {
+        Args: Record<string, never>;
+        Returns: void;
+      };
+      join_server_with_invite: {
+        Args: {
+          p_code: string;
+        };
+        Returns: Json;
+      };
+      get_server_preview: {
+        Args: {
+          p_code: string;
+        };
+        Returns: Json;
+      };
+      create_server_invite: {
+        Args: {
+          p_server_id: string;
+          p_max_uses?: number | null;
+          p_expires_in_seconds?: number | null;
+        };
+        Returns: Json;
+      };
+      revoke_server_invite: {
+        Args: {
+          p_invite_id: string;
+        };
+        Returns: void;
+      };
+      realtime_topic_authorized: {
+        Args: {
+          p_topic: string;
+          p_user_id: string;
+        };
+        Returns: boolean;
+      };
+      mark_conversation_as_read: {
+        Args: {
+          p_conversation_id: string;
+        };
+        Returns: void;
+      };
+      transfer_server_ownership: {
+        Args: {
+          p_server_id: string;
+          p_new_owner_id: string;
+        };
+        Returns: void;
+      };
+      create_group_conversation: {
+        Args: {
+          p_name: string;
+          p_member_ids: string[];
+        };
+        Returns: string;
+      };
+      ban_server_member: {
+        Args: {
+          p_server_id: string;
+          p_user_id: string;
+          p_reason?: string;
+        };
+        Returns: void;
+      };
+      unban_server_member: {
+        Args: {
+          p_server_id: string;
+          p_user_id: string;
+        };
+        Returns: void;
+      };
+      timeout_server_member: {
+        Args: {
+          p_server_id: string;
+          p_user_id: string;
+          p_duration_minutes: number;
+        };
+        Returns: void;
+      };
+      kick_server_member: {
+        Args: {
+          p_server_id: string;
+          p_user_id: string;
+        };
+        Returns: void;
       };
     };
   };

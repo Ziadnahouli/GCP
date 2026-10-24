@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { debugLogger, LogEntry, LogLevel, LogCategory } from '@/lib/logger/debug-logger';
+import { debugLogger, LogEntry, LogLevel, LogCategory, isDebugEnabled } from '@/lib/logger/debug-logger';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/toast';
 
@@ -237,7 +237,7 @@ export function useDiagnosticsLogs() {
 }
 
 export function triggerOpenLogsWindow() {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && isDebugEnabled()) {
     window.dispatchEvent(new CustomEvent('nexus:open-logs'));
   }
 }

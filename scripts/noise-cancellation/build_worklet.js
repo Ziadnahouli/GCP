@@ -41,11 +41,16 @@ function build() {
   const targetPath = path.join(rootDir, 'public/worklets/gcp-rnnoise-processor.js');
   fs.writeFileSync(targetPath, fullWorklet, 'utf8');
 
-  // Maintain identical backup file for any cached browser clients
+  // Deduplicated forwarding stub for legacy worklet filename
+  const legacyStub =
+    '// Deduplicated forwarder to canonical gcp-rnnoise-processor.js\n' +
+    '// AudioWorkletGlobalScope supports importScripts for module aggregation\n' +
+    "importScripts('/worklets/gcp-rnnoise-processor.js');\n";
   const backupPath = path.join(rootDir, 'public/worklets/gcp-noise-processor.js');
-  fs.writeFileSync(backupPath, fullWorklet, 'utf8');
+  fs.writeFileSync(backupPath, legacyStub, 'utf8');
 
   console.log(`[build:worklet] Generated ${targetPath} (${Buffer.byteLength(fullWorklet, 'utf8')} bytes)`);
+  console.log(`[build:worklet] Generated deduplicated stub ${backupPath} (${Buffer.byteLength(legacyStub, 'utf8')} bytes)`);
 }
 
 build();

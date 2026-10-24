@@ -29,24 +29,9 @@ function findBestLag(reference, testSignal, maxLag = 1440) { // Up to 30ms searc
   let bestLag = 0;
   let maxCorr = -Infinity;
 
-  for (let lag = 0; lag <= maxLag; lag += 4) {
+  const count = Math.min(len - maxLag, 48000);
+  for (let lag = 0; lag <= maxLag; lag++) {
     let corr = 0;
-    const count = Math.min(len - lag, 48000); // Check 1 second
-    for (let i = 0; i < count; i += 2) {
-      corr += reference[i] * testSignal[i + lag];
-    }
-    if (corr > maxCorr) {
-      maxCorr = corr;
-      bestLag = lag;
-    }
-  }
-
-  // Refine lag to single sample precision
-  const startRefine = Math.max(0, bestLag - 6);
-  const endRefine = Math.min(maxLag, bestLag + 6);
-  for (let lag = startRefine; lag <= endRefine; lag++) {
-    let corr = 0;
-    const count = Math.min(len - lag, 48000);
     for (let i = 0; i < count; i++) {
       corr += reference[i] * testSignal[i + lag];
     }
@@ -61,18 +46,29 @@ function findBestLag(reference, testSignal, maxLag = 1440) { // Up to 30ms searc
 
 /**
  * Scale-Invariant Signal-to-Distortion Ratio (SI-SDR)
+ * Reference: Le Roux et al., ICASSP 2019 / torchmetrics equivalent
  */
 function calculateSiSdr(target, estimated, lag = null) {
   const actualLag = lag !== null ? lag : findBestLag(target, estimated);
   const len = Math.min(target.length, estimated.length - actualLag);
   if (len <= 0) return { siSdr: 0, lag: 0 };
 
+  // Zero-mean normalization
+  let sumT = 0;
+  let sumE = 0;
+  for (let i = 0; i < len; i++) {
+    sumT += target[i];
+    sumE += estimated[i + actualLag];
+  }
+  const meanT = sumT / len;
+  const meanE = sumE / len;
+
   let dotTargetEst = 0;
   let energyTarget = 0;
 
   for (let i = 0; i < len; i++) {
-    const t = target[i];
-    const e = estimated[i + actualLag];
+    const t = target[i] - meanT;
+    const e = estimated[i + actualLag] - meanE;
     dotTargetEst += t * e;
     energyTarget += t * t;
   }
@@ -84,8 +80,10 @@ function calculateSiSdr(target, estimated, lag = null) {
   let eNoiseEnergy = 0;
 
   for (let i = 0; i < len; i++) {
-    const sTarget = alpha * target[i];
-    const eNoise = estimated[i + actualLag] - sTarget;
+    const t = target[i] - meanT;
+    const e = estimated[i + actualLag] - meanE;
+    const sTarget = alpha * t;
+    const eNoise = e - sTarget;
     sTargetEnergy += sTarget * sTarget;
     eNoiseEnergy += eNoise * eNoise;
   }

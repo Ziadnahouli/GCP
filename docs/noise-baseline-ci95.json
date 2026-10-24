@@ -1,0 +1,270 @@
+{
+  "off": {
+    "utteranceCount": 50,
+    "stoi": {
+      "mean": 1,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": 1,
+      "ciHigh": 1,
+      "formatted": "1.000 ± 0.000 [1.000, 1.000]"
+    },
+    "cleanSiSdr": {
+      "mean": 99,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": 99,
+      "ciHigh": 99,
+      "formatted": "99.000 ± 0.000 [99.000, 99.000]"
+    },
+    "onsetPreservation": {
+      "mean": 100,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": 100,
+      "ciHigh": 100,
+      "formatted": "100.000 ± 0.000 [100.000, 100.000]"
+    },
+    "gateFalseClose": {
+      "mean": 0,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": 0,
+      "ciHigh": 0,
+      "formatted": "0.000 ± 0.000 [0.000, 0.000]"
+    },
+    "mix10dbSiSdrImprovement": {
+      "mean": 0,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": 0,
+      "ciHigh": 0,
+      "formatted": "0.000 ± 0.000 [0.000, 0.000]"
+    },
+    "fanAttenuation": {
+      "mean": 0,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": 0,
+      "ciHigh": 0,
+      "formatted": "0.000 ± 0.000 [0.000, 0.000]"
+    },
+    "keyboardPeakCut": {
+      "mean": 0,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": 0,
+      "ciHigh": 0,
+      "formatted": "0.000 ± 0.000 [0.000, 0.000]"
+    },
+    "cpuTimeMs": {
+      "mean": 0.001,
+      "stdDev": 0.001,
+      "margin": 0,
+      "ciLow": 0.001,
+      "ciHigh": 0.002,
+      "formatted": "0.001 ± 0.000 [0.001, 0.002]"
+    }
+  },
+  "light": {
+    "utteranceCount": 50,
+    "stoi": {
+      "mean": 0.935,
+      "stdDev": 0.068,
+      "margin": 0.019,
+      "ciLow": 0.916,
+      "ciHigh": 0.954,
+      "formatted": "0.935 ± 0.019 [0.916, 0.954]"
+    },
+    "cleanSiSdr": {
+      "mean": 1.985,
+      "stdDev": 3.605,
+      "margin": 0.999,
+      "ciLow": 0.986,
+      "ciHigh": 2.984,
+      "formatted": "1.985 ± 0.999 [0.986, 2.984]"
+    },
+    "onsetPreservation": {
+      "mean": 88.306,
+      "stdDev": 9.864,
+      "margin": 2.734,
+      "ciLow": 85.572,
+      "ciHigh": 91.04,
+      "formatted": "88.306 ± 2.734 [85.572, 91.040]"
+    },
+    "gateFalseClose": {
+      "mean": 20.95,
+      "stdDev": 13.567,
+      "margin": 3.761,
+      "ciLow": 17.189,
+      "ciHigh": 24.71,
+      "formatted": "20.950 ± 3.761 [17.189, 24.710]"
+    },
+    "mix10dbSiSdrImprovement": {
+      "mean": -8.617,
+      "stdDev": 3.446,
+      "margin": 0.955,
+      "ciLow": -9.573,
+      "ciHigh": -7.662,
+      "formatted": "-8.617 ± 0.955 [-9.573, -7.662]"
+    },
+    "fanAttenuation": {
+      "mean": -26.85,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": -26.85,
+      "ciHigh": -26.85,
+      "formatted": "-26.850 ± 0.000 [-26.850, -26.850]"
+    },
+    "keyboardPeakCut": {
+      "mean": -19.783,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": -19.783,
+      "ciHigh": -19.783,
+      "formatted": "-19.783 ± 0.000 [-19.783, -19.783]"
+    },
+    "cpuTimeMs": {
+      "mean": 0.494,
+      "stdDev": 0.047,
+      "margin": 0.013,
+      "ciLow": 0.48,
+      "ciHigh": 0.507,
+      "formatted": "0.494 ± 0.013 [0.480, 0.507]"
+    }
+  },
+  "balanced": {
+    "utteranceCount": 50,
+    "stoi": {
+      "mean": 0.933,
+      "stdDev": 0.072,
+      "margin": 0.02,
+      "ciLow": 0.913,
+      "ciHigh": 0.953,
+      "formatted": "0.933 ± 0.020 [0.913, 0.953]"
+    },
+    "cleanSiSdr": {
+      "mean": 1.979,
+      "stdDev": 3.614,
+      "margin": 1.002,
+      "ciLow": 0.977,
+      "ciHigh": 2.98,
+      "formatted": "1.979 ± 1.002 [0.977, 2.980]"
+    },
+    "onsetPreservation": {
+      "mean": 88.134,
+      "stdDev": 10.027,
+      "margin": 2.779,
+      "ciLow": 85.355,
+      "ciHigh": 90.914,
+      "formatted": "88.134 ± 2.779 [85.355, 90.914]"
+    },
+    "gateFalseClose": {
+      "mean": 21.019,
+      "stdDev": 13.824,
+      "margin": 3.832,
+      "ciLow": 17.188,
+      "ciHigh": 24.851,
+      "formatted": "21.019 ± 3.832 [17.188, 24.851]"
+    },
+    "mix10dbSiSdrImprovement": {
+      "mean": -8.665,
+      "stdDev": 3.469,
+      "margin": 0.961,
+      "ciLow": -9.626,
+      "ciHigh": -7.703,
+      "formatted": "-8.665 ± 0.961 [-9.626, -7.703]"
+    },
+    "fanAttenuation": {
+      "mean": -26.928,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": -26.928,
+      "ciHigh": -26.928,
+      "formatted": "-26.928 ± 0.000 [-26.928, -26.928]"
+    },
+    "keyboardPeakCut": {
+      "mean": -19.849,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": -19.849,
+      "ciHigh": -19.849,
+      "formatted": "-19.849 ± 0.000 [-19.849, -19.849]"
+    },
+    "cpuTimeMs": {
+      "mean": 0.499,
+      "stdDev": 0.061,
+      "margin": 0.017,
+      "ciLow": 0.482,
+      "ciHigh": 0.516,
+      "formatted": "0.499 ± 0.017 [0.482, 0.516]"
+    }
+  },
+  "strong": {
+    "utteranceCount": 50,
+    "stoi": {
+      "mean": 0.93,
+      "stdDev": 0.077,
+      "margin": 0.021,
+      "ciLow": 0.909,
+      "ciHigh": 0.952,
+      "formatted": "0.930 ± 0.021 [0.909, 0.952]"
+    },
+    "cleanSiSdr": {
+      "mean": 1.962,
+      "stdDev": 3.628,
+      "margin": 1.006,
+      "ciLow": 0.957,
+      "ciHigh": 2.968,
+      "formatted": "1.962 ± 1.006 [0.957, 2.968]"
+    },
+    "onsetPreservation": {
+      "mean": 87.483,
+      "stdDev": 10.457,
+      "margin": 2.899,
+      "ciLow": 84.584,
+      "ciHigh": 90.381,
+      "formatted": "87.483 ± 2.899 [84.584, 90.381]"
+    },
+    "gateFalseClose": {
+      "mean": 21.192,
+      "stdDev": 14.012,
+      "margin": 3.884,
+      "ciLow": 17.308,
+      "ciHigh": 25.076,
+      "formatted": "21.192 ± 3.884 [17.308, 25.076]"
+    },
+    "mix10dbSiSdrImprovement": {
+      "mean": -8.733,
+      "stdDev": 3.51,
+      "margin": 0.973,
+      "ciLow": -9.706,
+      "ciHigh": -7.76,
+      "formatted": "-8.733 ± 0.973 [-9.706, -7.760]"
+    },
+    "fanAttenuation": {
+      "mean": -26.98,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": -26.98,
+      "ciHigh": -26.98,
+      "formatted": "-26.980 ± 0.000 [-26.980, -26.980]"
+    },
+    "keyboardPeakCut": {
+      "mean": -19.952,
+      "stdDev": 0,
+      "margin": 0,
+      "ciLow": -19.952,
+      "ciHigh": -19.952,
+      "formatted": "-19.952 ± 0.000 [-19.952, -19.952]"
+    },
+    "cpuTimeMs": {
+      "mean": 0.496,
+      "stdDev": 0.049,
+      "margin": 0.014,
+      "ciLow": 0.483,
+      "ciHigh": 0.51,
+      "formatted": "0.496 ± 0.014 [0.483, 0.510]"
+    }
+  }
+}

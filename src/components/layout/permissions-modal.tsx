@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { soundboardEngine } from '@/lib/soundboard/audio-engine';
 import { useModalEscape } from '@/hooks/use-modal-escape';
+import { getUserMediaAudioConstraints } from '@/lib/webrtc/audio-processing-policy';
 
 const PERMISSIONS_STORAGE_KEY = 'nexus_permissions_configured_v1';
 
@@ -160,7 +161,10 @@ export function PermissionsModal({
     if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
       try {
         // Attempt to request both audio and video
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: getUserMediaAudioConstraints('browser', null),
+          video: true,
+        });
         stream.getTracks().forEach((track) => track.stop());
         updated.mic = 'granted';
         updated.camera = 'granted';
@@ -168,7 +172,9 @@ export function PermissionsModal({
         console.warn('Dual media request notice, falling back to audio only:', err);
         // Fallback: If camera is absent or rejected, request microphone only
         try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: getUserMediaAudioConstraints('browser', null),
+          });
           audioStream.getTracks().forEach((track) => track.stop());
           updated.mic = 'granted';
         } catch {

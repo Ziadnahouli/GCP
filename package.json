@@ -12,10 +12,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "ratchet": "node scripts/quality-ratchet.mjs",
-    "eval:noise": "node scripts/noise-cancellation/eval/run-eval.js"
+    "eval:noise": "node scripts/noise-cancellation/eval/run-eval.js",
+    "eval:batch": "node scripts/noise-cancellation/eval/batch-eval.js",
+    "fetch:fixtures": "node scripts/noise-cancellation/eval/fetch-fixtures.mjs",
+    "validate:dsp": "python scripts/noise-cancellation/eval/validate-dsp-reference.py"
   },
   "dependencies": {
-    "@jitsi/rnnoise-wasm": "^0.2.1",
     "@livekit/components-react": "^2.9.24",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.48.1",
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.10",
+    "@jitsi/rnnoise-wasm": "^0.2.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@types/node": "^20.17.19",

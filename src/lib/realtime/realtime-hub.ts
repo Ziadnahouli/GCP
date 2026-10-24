@@ -6,11 +6,18 @@ export interface ScopedChannelHandle {
   release: (gracePeriodMs?: number) => void;
 }
 
+export type RealtimeListenerSpec =
+  | { type: 'broadcast'; event: string }
+  | { type: 'postgres_changes'; event: string; schema?: string; table: string; filter?: string }
+  | { type: 'presence'; event: 'sync' | 'join' | 'leave' }
+  | { [key: string]: any };
+
 interface HubChannelEntry {
   channel: RealtimeChannel;
   refCount: number;
   unmountTimer?: NodeJS.Timeout | null;
   client?: any;
+  isSubscribed?: boolean;
 }
 
 export class RealtimeHub {
@@ -52,13 +59,15 @@ export class RealtimeHub {
       throw new Error('Supabase client unavailable for RealtimeHub');
     }
 
-    const effectiveOptions = {
-      ...options,
-      config: {
-        private: true,
-        ...options?.config,
-      },
-    };
+    const effectiveOptions = options
+      ? {
+          ...options,
+          config: {
+            private: true,
+            ...options?.config,
+          },
+        }
+      : undefined;
 
     const channel = client.channel(topic, effectiveOptions);
     this.channels.set(topic, {
@@ -66,6 +75,7 @@ export class RealtimeHub {
       refCount: 1,
       unmountTimer: null,
       client,
+      isSubscribed: false,
     });
 
     return channel;
@@ -117,6 +127,96 @@ export class RealtimeHub {
   }
 
   /**
+   * Hub-managed event registration (B1):
+   * Callers register listeners via hub.on(topic, spec, handler) which returns an unsubscribe function.
+   * The hub owns the subscription lifecycle: hub.subscribe() is called once when the first listener registers,
+   * and the channel is torn down when the last listener unregisters.
+   */
+  on(
+    topic: string,
+    spec: RealtimeListenerSpec | string,
+    handlerOrFilter: any,
+    maybeHandlerOrOptions?: any,
+    maybeOptions?: any
+  ): () => void {
+    let type: string;
+    let filter: any;
+    let handler: (payload: any) => void;
+    let options: any;
+
+    if (typeof spec === 'string') {
+      type = spec;
+      filter = handlerOrFilter;
+      handler = maybeHandlerOrOptions;
+      options = maybeOptions;
+    } else {
+      type = (spec as any).type || ((spec as any).table ? 'postgres_changes' : 'broadcast');
+      filter = spec;
+      handler = handlerOrFilter;
+      options = maybeHandlerOrOptions;
+    }
+
+    const channel = this.acquire(topic, options);
+    const entry = this.channels.get(topic);
+
+    // Hub owns subscription lifecycle: subscribe once when the first listener registers
+    if (entry && !entry.isSubscribed) {
+      entry.isSubscribed = true;
+      try {
+        channel.subscribe();
+      } catch {}
+    }
+
+    let active = true;
+    const safeHandler = (...args: any[]) => {
+      if (active && typeof handler === 'function') {
+        (handler as any)(...args);
+      }
+    };
+
+    channel.on(type as any, filter, safeHandler);
+
+    return () => {
+      if (!active) return;
+      active = false;
+      this.release(topic, options?.gracePeriodMs ?? 0);
+    };
+  }
+
+  /**
+   * Hub-managed broadcast sender.
+   */
+  async send(topic: string, event: string, payload: any, options?: any): Promise<any> {
+    const channel = this.acquire(topic, options);
+    try {
+      return await channel.send({
+        type: 'broadcast',
+        event,
+        payload,
+      });
+    } finally {
+      this.release(topic);
+    }
+  }
+
+  /**
+   * Hub-managed presence tracker.
+   */
+  async track(topic: string, payload: any, options?: any): Promise<any> {
+    const channel = this.getChannel(topic) || this.acquire(topic, options);
+    return await channel.track(payload);
+  }
+
+  /**
+   * Hub-managed presence state accessor.
+   */
+  presenceState(topic: string): any {
+    const channel = this.getChannel(topic);
+    if (!channel) return {};
+    return channel.presenceState();
+  }
+
+  /**
    * Returns current refCount for a topic.
    */
   getRefCount(topic: string): number {
@@ -146,18 +246,16 @@ export class RealtimeHub {
       entry.unmountTimer = null;
     }
 
-    // Only teardown if refCount is still 0
     if (entry.refCount <= 0) {
       this.channels.delete(topic);
       const client = entry.client || this.getClient();
       if (client && entry.channel) {
         try {
+          entry.channel.unsubscribe();
+        } catch {}
+        try {
           client.removeChannel(entry.channel);
-        } catch (e) {
-          try {
-            entry.channel.unsubscribe();
-          } catch {}
-        }
+        } catch {}
       }
     }
   }
@@ -171,6 +269,9 @@ export class RealtimeHub {
       const client = entry.client || this.getClient();
       if (client && entry.channel) {
         try {
+          entry.channel.unsubscribe();
+        } catch {}
+        try {
           client.removeChannel(entry.channel);
         } catch {}
       }
@@ -180,5 +281,4 @@ export class RealtimeHub {
   }
 }
 
-// Singleton instance for application-wide channel sharing
 export const realtimeHub = new RealtimeHub();

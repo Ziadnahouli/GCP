@@ -47,6 +47,7 @@ import { useToast } from '@/components/ui/toast';
 import { useCallContext } from '@/features/calls/call-context';
 import { usePresence } from '@/features/presence/presence-context';
 import { getBrowserClient } from '@/lib/supabase/client';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
 import { MessageContent } from '@/components/chat/message-content';
@@ -256,49 +257,48 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     checkCallSession();
 
     // 1. Database level postgres changes
-    const dbChannel = supabase
-      .channel(`active_call_session_${conversationId}`, { config: { private: true } })
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'call_sessions',
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        () => {
-          checkCallSession();
-        }
-      )
-      .subscribe();
+    const unsubDb = realtimeHub.on(
+      `active_call_session_${conversationId}`,
+      {
+        type: 'postgres_changes',
+        event: '*',
+        schema: 'public',
+        table: 'call_sessions',
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      () => {
+        checkCallSession();
+      }
+    );
 
     // 2. Real-time WebRTC broadcast channel for instant banner updates
-    const roomChannel = supabase
-      .channel(`call-room-${conversationId}`, { config: { private: true } })
-      .on('broadcast', { event: 'squad_call_active' }, (payload: any) => {
+    const roomTopic = `call-room-${conversationId}`;
+    const unsubActive = realtimeHub.on(
+      roomTopic,
+      { type: 'broadcast', event: 'squad_call_active' },
+      (payload: any) => {
         lastHeartbeatTimeRef.current = Date.now();
         const sessData = payload.payload || { status: 'active', started_at: new Date().toISOString() };
         setActiveCallSession(sessData);
         if (call.registerSquadCallActive) {
           call.registerSquadCallActive(conversationId, sessData);
         }
-      })
-      .on('broadcast', { event: 'squad_call_ended' }, () => {
+      }
+    );
+
+    const unsubEnded = realtimeHub.on(
+      roomTopic,
+      { type: 'broadcast', event: 'squad_call_ended' },
+      () => {
         lastHeartbeatTimeRef.current = 0;
         setActiveCallSession(null);
         if (call.unregisterSquadCall) {
           call.unregisterSquadCall(conversationId);
         }
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          roomChannel.send({
-            type: 'broadcast',
-            event: 'query_squad_call',
-            payload: { conversation_id: conversationId },
-          }).catch(() => {});
-        }
-      });
+      }
+    );
+
+    realtimeHub.send(roomTopic, 'query_squad_call', { conversation_id: conversationId }).catch(() => {});
 
     // Periodic poll for active squad call sessions every 4s
     const pollTimer = setInterval(() => {
@@ -309,10 +309,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     return () => {
       lastHeartbeatTimeRef.current = 0;
       clearInterval(pollTimer);
-      supabase.removeChannel(dbChannel);
-      supabase.removeChannel(roomChannel);
+      unsubDb();
+      unsubActive();
+      unsubEnded();
     };
-  }, [conversationId, supabase, call.registerSquadCallActive, call.unregisterSquadCall]);
+  }, [conversationId, call.registerSquadCallActive, call.unregisterSquadCall]);
 
   const isSquadCallActive = Boolean(
     activeCallSession ||

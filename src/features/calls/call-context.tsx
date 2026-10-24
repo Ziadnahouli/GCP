@@ -513,7 +513,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       queue.push({ event, payload });
 
       if (!channelToUse) {
-        const ch = supabase.channel(`user-signals-${targetUserId}`, { config: { private: true } });
+        const ch = realtimeHub.acquire(`user-signals-${targetUserId}`, { config: { private: true } }, supabase);
         outboundChannelsRef.current.set(targetUserId, ch);
 
         ch.subscribe((status) => {
@@ -541,7 +541,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     (channelTopic: string, event: string, payload: unknown) => {
       if (!supabase || !channelTopic) return;
       try {
-        const ch = supabase.channel(channelTopic, { config: { private: true } });
+        const ch = realtimeHub.acquire(channelTopic, { config: { private: true } }, supabase);
         if (ch.state === 'joined') {
           ch.send({ type: 'broadcast', event, payload }).catch(() => {});
           return;
@@ -2494,7 +2494,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       // Broadcast real-time active squad call event for instant banner display in chat
       try {
-        const roomBroadcastChannel = supabase.channel(`call-room-${conversationId}`, { config: { private: true } });
+        const roomBroadcastChannel = realtimeHub.acquire(`call-room-${conversationId}`, { config: { private: true } }, supabase);
         roomBroadcastChannel.subscribe((subStatus) => {
           if (subStatus === 'SUBSCRIBED') {
             const initialMembers = [
@@ -2598,8 +2598,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             supabase.removeChannel(sessionStatusChannelRef.current);
           } catch {}
         }
-        const sessionChan = supabase
-          .channel(`call-status-sync-${conversationId}-${Date.now()}`, { config: { private: true } })
+        const sessionChan = realtimeHub
+          .acquire(`call-status-sync-${conversationId}-${Date.now()}`, { config: { private: true } }, supabase)
           .on(
             'postgres_changes',
             {
@@ -2881,7 +2881,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
 
     // Connect to shared room channel for in-call signaling
-    const roomChannel = supabase.channel(`call-room-${conversationId}`, { config: { private: true } });
+    const roomChannel = realtimeHub.acquire(`call-room-${conversationId}`, { config: { private: true } }, supabase);
     roomChannelRef.current = roomChannel;
 
     roomChannel
@@ -3201,8 +3201,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           supabase.removeChannel(sessionStatusChannelRef.current);
         } catch {}
       }
-      const sessionChan = supabase
-        .channel(`call-status-sync-${conversationId}-${Date.now()}`, { config: { private: true } })
+      const sessionChan = realtimeHub
+        .acquire(`call-status-sync-${conversationId}-${Date.now()}`, { config: { private: true } }, supabase)
         .on(
           'postgres_changes',
           {
@@ -3351,7 +3351,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     };
 
     // Connect to shared room channel
-    const roomChannel = supabase.channel(`call-room-${conversationId}`, { config: { private: true } });
+    const roomChannel = realtimeHub.acquire(`call-room-${conversationId}`, { config: { private: true } }, supabase);
     roomChannelRef.current = roomChannel;
 
     roomChannel
@@ -3739,7 +3739,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       if (isGroup) {
         try {
-          const roomBroadcastChannel = supabase.channel(`call-room-${convId}`, { config: { private: true } });
+          const roomBroadcastChannel = realtimeHub.acquire(`call-room-${convId}`, { config: { private: true } }, supabase);
           roomBroadcastChannel.subscribe((subStatus) => {
             if (subStatus === 'SUBSCRIBED') {
               roomBroadcastChannel.send({

@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/toast';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import type { UserSettings } from '@/lib/types/profile';
 
 export interface NotificationItem {
@@ -192,67 +193,72 @@ export function useNotifications() {
 
   // Realtime subscription for incoming notifications
   React.useEffect(() => {
-    if (!user || !isConfigured || !supabase) return;
+    if (!user || !isConfigured) return;
 
-    const channel = supabase
-      .channel(`user_notifications_${user.id}`, { config: { private: true } })
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload: any) => {
-          const newItem = payload.new as NotificationItem;
-          if (newItem) {
-            setNotifications((prev) => [newItem, ...prev.filter((item) => item.id !== newItem.id)]);
-            if (isCategoryEnabled(newItem.type)) {
-              playNotificationChime();
-              displayDesktopNotification(newItem);
-            }
+    const topic = `user_notifications_${user.id}`;
+    const unsubInsert = realtimeHub.on(
+      topic,
+      {
+        type: 'postgres_changes',
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${user.id}`,
+      },
+      (payload: any) => {
+        const newItem = payload.new as NotificationItem;
+        if (newItem) {
+          setNotifications((prev) => [newItem, ...prev.filter((item) => item.id !== newItem.id)]);
+          if (isCategoryEnabled(newItem.type)) {
+            playNotificationChime();
+            displayDesktopNotification(newItem);
           }
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload: any) => {
-          const updated = payload.new as NotificationItem;
-          if (updated) {
-            setNotifications((prev) =>
-              prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
-            );
-          }
+      }
+    );
+
+    const unsubUpdate = realtimeHub.on(
+      topic,
+      {
+        type: 'postgres_changes',
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${user.id}`,
+      },
+      (payload: any) => {
+        const updated = payload.new as NotificationItem;
+        if (updated) {
+          setNotifications((prev) =>
+            prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
+          );
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload: any) => {
-          const oldItem = payload.old;
-          if (oldItem?.id) {
-            setNotifications((prev) => prev.filter((item) => item.id !== oldItem.id));
-          }
+      }
+    );
+
+    const unsubDelete = realtimeHub.on(
+      topic,
+      {
+        type: 'postgres_changes',
+        event: 'DELETE',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${user.id}`,
+      },
+      (payload: any) => {
+        const oldItem = payload.old;
+        if (oldItem?.id) {
+          setNotifications((prev) => prev.filter((item) => item.id !== oldItem.id));
         }
-      )
-      .subscribe();
+      }
+    );
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubInsert();
+      unsubUpdate();
+      unsubDelete();
     };
-  }, [user, isConfigured, supabase, isCategoryEnabled, playNotificationChime, displayDesktopNotification]);
+  }, [user, isConfigured, isCategoryEnabled, playNotificationChime, displayDesktopNotification]);
 
   // Mark single notification as read
   const markAsRead = React.useCallback(

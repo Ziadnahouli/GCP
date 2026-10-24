@@ -104,6 +104,32 @@ describe('Phase 3: Realtime, Calls, Voice Architecture', () => {
       expect(mockSupabase.removeChannel).toHaveBeenCalledTimes(1);
       vi.useRealTimers();
     });
+
+    it('subscribes channel once when first listener registers via hub.on and unregisters cleanly', () => {
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+
+      const unsub1 = realtimeHub.on('room-sub', { event: 'new_msg' }, handler1);
+      expect(realtimeHub.getRefCount('room-sub')).toBe(1);
+
+      const channel = realtimeHub.getChannel('room-sub');
+      expect(channel?.subscribe).toHaveBeenCalledTimes(1);
+
+      const unsub2 = realtimeHub.on('room-sub', { event: 'typing' }, handler2);
+      expect(realtimeHub.getRefCount('room-sub')).toBe(2);
+      // Subscribe should NOT be called again for second listener on same topic
+      expect(channel?.subscribe).toHaveBeenCalledTimes(1);
+
+      // Unsubscribe first listener
+      unsub1();
+      expect(realtimeHub.getRefCount('room-sub')).toBe(1);
+      expect(mockSupabase.removeChannel).not.toHaveBeenCalled();
+
+      // Unsubscribe second listener -> tears down channel
+      unsub2();
+      expect(realtimeHub.getRefCount('room-sub')).toBe(0);
+      expect(mockSupabase.removeChannel).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('C4 & C5: Call State Machine & Call Collision Handling', () => {

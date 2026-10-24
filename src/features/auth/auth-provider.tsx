@@ -509,27 +509,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Broadcast to social-realtime so all peers see status/presence change instantly
-        try {
-          const channels = supabase.getChannels ? supabase.getChannels() : [];
-          const socialChannel = channels.find((c: any) => c.topic === 'realtime:social-realtime') || supabase.channel('social-realtime');
-          if (socialChannel.state === 'joined') {
-            socialChannel
-              .send({
-                type: 'broadcast',
-                event: 'social_update',
-                payload: { userId: user.id, updates },
-              })
-              .catch(() => {});
-          } else if (typeof (socialChannel as any).httpSend === 'function') {
-            (socialChannel as any)
-              .httpSend({
-                type: 'broadcast',
-                event: 'social_update',
-                payload: { userId: user.id, updates },
-              })
-              .catch(() => {});
-          }
-        } catch {}
+        realtimeHub
+          .send('social-realtime', 'social_update', { userId: user.id, updates })
+          .catch(() => {});
 
         return { error: null };
       } catch (err: unknown) {

@@ -21,6 +21,7 @@ import { Server, Channel, ChannelType, hasServerPermission } from '@/lib/types/s
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServerVoiceContext, VoiceParticipant } from '@/features/servers/server-voice-context';
 import { getBrowserClient } from '@/lib/supabase/client';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -72,9 +73,10 @@ export function ServerSidebar({
     if (!supabase) return;
 
     const cleanServerId = server.id.toLowerCase().trim();
-    const chan = supabase.channel(`server_voice_${cleanServerId}`, {
+    const scoped = realtimeHub.acquireScoped(`server_voice_${cleanServerId}`, {
       config: { private: true, presence: { key: user?.id || 'anon' } },
     });
+    const chan = scoped.channel;
 
     const updateFromPresence = () => {
       const state = chan.presenceState();
@@ -170,9 +172,7 @@ export function ServerSidebar({
 
     return () => {
       window.removeEventListener('nexus_voice_disconnected', handleVoiceDisconnected);
-      try {
-        supabase.removeChannel(chan);
-      } catch {}
+      scoped.release();
     };
   }, [server?.id, user?.id]);
 

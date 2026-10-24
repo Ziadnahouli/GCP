@@ -52,6 +52,7 @@ import {
 } from 'lucide-react';
 import { useAuth, getLocalDeviceId } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { useModalEscape } from '@/hooks/use-modal-escape';
 import { AccentTheme, UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -808,28 +809,24 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   React.useEffect(() => {
     if (!open || activeTab !== 'security' || !user) return;
-    const supabase = getBrowserClient();
     loadDevices();
 
-    if (!supabase) return;
-    const channel = supabase
-      .channel(`devices_sync_${user.id}`, { config: { private: true } })
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_devices',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          loadDevices();
-        }
-      )
-      .subscribe();
+    const unsub = realtimeHub.on(
+      `devices_sync_${user.id}`,
+      {
+        type: 'postgres_changes',
+        event: '*',
+        schema: 'public',
+        table: 'user_devices',
+        filter: `user_id=eq.${user.id}`,
+      },
+      () => {
+        loadDevices();
+      }
+    );
 
     return () => {
-      supabase.removeChannel(channel);
+      unsub();
     };
   }, [open, activeTab, user, loadDevices]);
 

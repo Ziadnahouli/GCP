@@ -4,6 +4,7 @@ import '@/lib/webrtc/safe-constraints';
 import * as React from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { SoundboardClip, soundboardEngine } from '@/lib/soundboard/audio-engine';
 import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
 import { createGcpNoisePipeline, GcpNoisePipeline, NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
@@ -1479,13 +1480,13 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       if (supabase) {
         try {
           const cleanServerId = serverId.toLowerCase().trim();
-          const serverPresenceChannel = supabase.channel(`server_voice_${cleanServerId}`, {
+          const serverPresenceChannel = realtimeHub.acquire(`server_voice_${cleanServerId}`, {
             config: {
               private: true,
               broadcast: { self: false },
               presence: { key: currentUser.id },
             },
-          });
+          }, supabase);
           serverRealtimeChannelRef.current = serverPresenceChannel;
 
           const doTrack = () => {
@@ -1518,13 +1519,13 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       // 4. Connect WebRTC signaling room channel
       const topic = `voice_room_${cleanChanId}`;
 
-      const roomChannel = supabase ? supabase.channel(topic, {
+      const roomChannel = supabase ? realtimeHub.acquire(topic, {
         config: {
           private: true,
           broadcast: { self: false },
           presence: { key: currentUser.id },
         },
-      }) : null;
+      }, supabase) : null;
 
       realtimeChannelRef.current = roomChannel;
 

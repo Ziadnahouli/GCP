@@ -8,6 +8,7 @@ import { useCallContext } from '@/features/calls/call-context';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { getBrowserClient } from '@/lib/supabase/client';
+import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { Server } from '@/lib/types/server';
 import { LinkPreviewCard } from '@/components/chat/link-preview';
 
@@ -76,14 +77,23 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
 
     checkSession();
 
-    const ch = supabase
-      .channel(`call-room-${squadCallConvId}`, { config: { private: true } })
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'call_sessions', filter: `conversation_id=eq.${squadCallConvId}` },
-        () => checkSession()
-      )
-      .on('broadcast', { event: 'squad_call_active' }, ({ payload }: any) => {
+    const topic = `call-room-${squadCallConvId}`;
+    const unsubChanges = realtimeHub.on(
+      topic,
+      {
+        type: 'postgres_changes',
+        event: '*',
+        schema: 'public',
+        table: 'call_sessions',
+        filter: `conversation_id=eq.${squadCallConvId}`,
+      },
+      () => checkSession()
+    );
+
+    const unsubActive = realtimeHub.on(
+      topic,
+      { type: 'broadcast', event: 'squad_call_active' },
+      ({ payload }: any) => {
         if (mounted) {
           lastHeartbeatRef.current = Date.now();
           setSessionActive(true);
@@ -91,22 +101,29 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
             setBroadcastParticipants(payload.participants);
           }
         }
-      })
-      .on('broadcast', { event: 'squad_call_ended' }, () => {
+      }
+    );
+
+    const unsubEnded = realtimeHub.on(
+      topic,
+      { type: 'broadcast', event: 'squad_call_ended' },
+      () => {
         if (mounted) {
           lastHeartbeatRef.current = 0;
           setSessionActive(false);
           setBroadcastParticipants([]);
         }
-      })
-      .subscribe();
+      }
+    );
 
     return () => {
       mounted = false;
       lastHeartbeatRef.current = 0;
-      supabase.removeChannel(ch);
+      unsubChanges();
+      unsubActive();
+      unsubEnded();
     };
-  }, [squadCallConvId, isCallActive, supabase]);
+  }, [squadCallConvId, isCallActive]);
 
   const activeParticipants: Array<{ id: string; name: string; avatar_url?: string | null; isSpeaking?: boolean; isMuted?: boolean }> = React.useMemo(() => {
     if (!squadCallConvId) return [];

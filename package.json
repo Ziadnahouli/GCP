@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run build:worklet && next build",
+    "build:worklet": "node scripts/noise-cancellation/build_worklet.js",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
@@ -15,7 +16,6 @@
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",
     "@livekit/components-react": "^2.9.24",
-    "@livekit/krisp-noise-filter": "^0.4.5",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.48.1",
     "class-variance-authority": "^0.7.1",

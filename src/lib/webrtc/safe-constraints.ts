@@ -1,16 +1,35 @@
 /**
- * Global WebRTC Constraint Hardening
- * Prevents "OverconstrainedError: Cannot satisfy constraints" from unhandled promise rejections
- * when browsers (e.g., Windows WASAPI / macOS CoreAudio) cannot dynamically satisfy sampleRate
- * or audio processing constraints on existing MediaStreamTracks.
+ * WebRTC Constraint Hardening (N6)
+ *
+ * Provides safe constraint application without destructive global monkey-patching.
+ * Preserves deviceId and groupId at all times and avoids global unhandledrejection silencing.
  */
 
+import {
+  applyProcessingPolicy,
+  getUserMediaAudioConstraints,
+  getAudioEngineDiagnostics,
+  updateAudioEngineDiagnostics,
+  subscribeAudioEngineDiagnostics,
+} from './audio-processing-policy';
+
+export {
+  applyProcessingPolicy,
+  getUserMediaAudioConstraints,
+  getAudioEngineDiagnostics,
+  updateAudioEngineDiagnostics,
+  subscribeAudioEngineDiagnostics,
+};
+
+/**
+ * Opt-in helper for legacy test suites requiring MediaStreamTrack.prototype.applyConstraints relaxation.
+ * Note: Never deletes deviceId or groupId, and does not install global rejection swallowers.
+ */
 export function installSafeConstraintsPolyfill(): void {
   if (typeof window === 'undefined') {
     return;
   }
 
-  // 1. Polyfill MediaStreamTrack.prototype.applyConstraints
   if (typeof MediaStreamTrack !== 'undefined') {
     const trackProto = MediaStreamTrack.prototype as any;
     if (trackProto && !trackProto.__safeConstraintsInstalled) {
@@ -24,25 +43,15 @@ export function installSafeConstraintsPolyfill(): void {
               err?.name === 'OverconstrainedError' ||
               String(err?.message || err).toLowerCase().includes('constraint');
 
-            if (isConstraintErr) {
-              console.warn('[WebRTC] applyConstraints overconstrained, retrying with relaxed constraints:', err);
-              if (constraints && typeof constraints === 'object') {
-                try {
-                  const relaxed: any = { ...constraints };
-                  delete relaxed.sampleRate;
-                  delete relaxed.channelCount;
-                  delete relaxed.voiceIsolation;
-                  delete relaxed.latency;
-                  delete relaxed.deviceId;
-                  delete relaxed.groupId;
-                  return await origApplyConstraints.call(this, relaxed);
-                } catch (relaxedErr) {
-                  console.warn('[WebRTC] Relaxed constraints also rejected, preserving existing track state without throwing:', relaxedErr);
-                  return;
-                }
-              }
-              // For tracks without dynamic constraints (e.g., AudioContext destination tracks), resolve cleanly
-              return;
+            if (isConstraintErr && constraints && typeof constraints === 'object') {
+              console.warn('[WebRTC] applyConstraints overconstrained, retrying with relaxed audio processing flags:', err);
+              const relaxed: any = { ...constraints };
+              delete relaxed.sampleRate;
+              delete relaxed.channelCount;
+              delete relaxed.voiceIsolation;
+              delete relaxed.latency;
+              // CRITICAL: NEVER delete deviceId or groupId! (N6)
+              return await origApplyConstraints.call(this, relaxed);
             }
             throw err;
           }
@@ -51,57 +60,24 @@ export function installSafeConstraintsPolyfill(): void {
       }
     }
   }
-
-  // 2. Global unhandledrejection guard to capture any escaped AudioWorklet constraint rejections
-  const win = window as any;
-  if (!win.__safeConstraintsRejectionHandlerInstalled) {
-    win.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
-      const reason = event.reason;
-      const msg = String(reason?.message || reason || '');
-      if (
-        reason?.name === 'OverconstrainedError' ||
-        msg.toLowerCase().includes('cannot satisfy constraints') ||
-        msg.toLowerCase().includes('overconstrained')
-      ) {
-        console.warn('[WebRTC SafeConstraints] Silenced unhandled constraint rejection:', reason);
-        event.preventDefault();
-      }
-    });
-    win.__safeConstraintsRejectionHandlerInstalled = true;
-  }
-}
-
-// Auto-install on client import
-if (typeof window !== 'undefined') {
-  installSafeConstraintsPolyfill();
 }
 
 /**
- * Applies optimal standard constraints for WebRTC audio tracks.
- * Uses native browser echoCancellation, noiseSuppression, and autoGainControl.
+ * Applies optimal standard constraints for WebRTC audio tracks through the unified policy owner (N2).
  */
 export async function applyGcpOptimalConstraints(
   track: MediaStreamTrack | undefined,
   noiseSuppressionActive = true
 ): Promise<void> {
   if (!track || track.kind !== 'audio') return;
-  try {
-    await track.applyConstraints({
-      echoCancellation: true,
-      noiseSuppression: noiseSuppressionActive,
-      autoGainControl: true,
-    });
-  } catch (err) {
-    console.warn('[WebRTC SafeConstraints] applyGcpOptimalConstraints relaxed:', err);
-  }
+  await applyProcessingPolicy(track, noiseSuppressionActive ? 'browser' : 'off');
 }
 
 /**
- * Disables browser native noiseSuppression on an input track for raw microphone pass-through.
+ * Disables browser native noiseSuppression on an input track for raw microphone pass-through (N2).
  */
 export async function killNativeAudioProcessing(
   track: MediaStreamTrack | undefined
 ): Promise<void> {
   return applyGcpOptimalConstraints(track, false);
 }
-

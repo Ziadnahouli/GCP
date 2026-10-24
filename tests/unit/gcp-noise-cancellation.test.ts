@@ -78,6 +78,20 @@ describe('GCP Production Speech Enhancement & Audio DSP Engine', () => {
     expect(header[3]).toBe(0x6d); // 'm'
   });
 
+  it('N1 reproduction: consecutive WASM binary requests must remain valid even if transferred or reused', async () => {
+    const firstBinary = await loadRnnoiseWasmBinary();
+    expect(firstBinary.byteLength).toBeGreaterThan(0);
+
+    // If transferred by AudioWorklet postMessage: postMessage(..., [wasmBinary])
+    const { port1 } = new MessageChannel();
+    port1.postMessage(firstBinary, [firstBinary]);
+    expect(firstBinary.byteLength).toBe(0); // Detached by transfer
+
+    // The second pipeline calls loadRnnoiseWasmBinary() again
+    const secondBinary = await loadRnnoiseWasmBinary();
+    expect(secondBinary.byteLength).toBeGreaterThan(0);
+  });
+
   it('initializes RNNoise WASM module and exports essential neural DSP functions', async () => {
     const wasmBinary = await loadRnnoiseWasmBinary();
     const rnnModule = await createRNNWasmModule({ wasmBinary });

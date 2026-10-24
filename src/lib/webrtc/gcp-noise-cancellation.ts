@@ -16,17 +16,30 @@
  *   → Processed MediaStreamTrack for WebRTC transmission
  */
 
-import { loadRnnoiseWasmBinary } from './rnnoise-wasm-binary';
+import { loadRnnoiseWasmBinary, loadRnnoiseWasmModule } from './rnnoise-wasm-binary';
+import {
+  applyProcessingPolicy,
+  updateAudioEngineDiagnostics,
+  getAudioEngineDiagnostics,
+  subscribeAudioEngineDiagnostics,
+} from './audio-processing-policy';
+import { AudioEngine } from './audio-engine';
+import { tuneTrackForSpeech } from './opus-transport-tuning';
+
+export {
+  getAudioEngineDiagnostics,
+  updateAudioEngineDiagnostics,
+  subscribeAudioEngineDiagnostics,
+};
 
 export type NoiseCancellationMode =
   | 'off'
   | 'light'
   | 'balanced'
-  | 'strong'
-  | 'krisp-max'
-  | 'rnnoise-hybrid';
+  | 'strong';
 
 export type GcpPipelineStatus =
+  | 'uninitialized'
   | 'initializing'
   | 'ready'
   | 'fallback'
@@ -38,6 +51,16 @@ export type GcpActiveEngine =
   | 'browser-native'
   | 'none';
 
+export interface PipelineTelemetryStats {
+  inputRmsDb: number;
+  outputRmsDb: number;
+  vadProb: number;
+  gateGain: number;
+  underruns: number;
+  mode: NoiseCancellationMode;
+  crossfadeGain: number;
+}
+
 export interface GcpNoisePipeline {
   outputStream: MediaStream;
   audioContext: AudioContext | null;
@@ -48,43 +71,8 @@ export interface GcpNoisePipeline {
   getStatus: () => GcpPipelineStatus;
   getActiveEngine: () => GcpActiveEngine;
   getFallbackReason: () => string | null;
+  getStats: () => PipelineTelemetryStats;
   cleanup: () => void;
-}
-
-let workletBlobUrl: string | null = null;
-
-async function ensureWorkletModule(audioContext: AudioContext): Promise<boolean> {
-  if (typeof audioContext.audioWorklet?.addModule !== 'function') {
-    return false;
-  }
-
-  // 1. Try public path
-  try {
-    await audioContext.audioWorklet.addModule('/worklets/gcp-rnnoise-processor.js');
-    return true;
-  } catch (err) {
-    // 2. Try alternate path
-    try {
-      await audioContext.audioWorklet.addModule('/worklets/gcp-noise-processor.js');
-      return true;
-    } catch {}
-  }
-
-  // 3. If running from blob or file protocol, fetch or fallback
-  try {
-    if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
-      const resp = await fetch('/worklets/gcp-rnnoise-processor.js');
-      if (resp.ok) {
-        const text = await resp.text();
-        const blob = new Blob([text], { type: 'application/javascript' });
-        workletBlobUrl = URL.createObjectURL(blob);
-        await audioContext.audioWorklet.addModule(workletBlobUrl);
-        return true;
-      }
-    }
-  } catch {}
-
-  return false;
 }
 
 /**
@@ -116,33 +104,26 @@ export async function createGcpNoisePipeline(
     let fallbackStatus: GcpPipelineStatus = mode === 'off' ? 'disabled' : 'fallback';
     let fallbackEngine: GcpActiveEngine = mode === 'off' ? 'none' : 'browser-native';
 
-    try {
-      if (typeof audioTrack.applyConstraints === 'function') {
-        audioTrack
-          .applyConstraints({
-            echoCancellation: true,
-            noiseSuppression: mode !== 'off',
-            autoGainControl: true,
-          })
-          .catch(() => {});
-      }
-    } catch {}
+    // Apply browser fallback policy: EC true, NS true, AGC true (or EC only if off)
+    applyProcessingPolicy(audioTrack, mode === 'off' ? 'off' : 'browser').catch(() => {});
+    updateAudioEngineDiagnostics({
+      status: fallbackStatus,
+      engine: fallbackEngine,
+      fallbackReason: reason,
+      mode,
+    });
 
     const setMode = (m: NoiseCancellationMode) => {
       currentMode = m;
       fallbackStatus = m === 'off' ? 'disabled' : 'fallback';
       fallbackEngine = m === 'off' ? 'none' : 'browser-native';
-      try {
-        if (typeof audioTrack.applyConstraints === 'function') {
-          audioTrack
-            .applyConstraints({
-              echoCancellation: true,
-              noiseSuppression: m !== 'off',
-              autoGainControl: true,
-            })
-            .catch(() => {});
-        }
-      } catch {}
+      applyProcessingPolicy(audioTrack, m === 'off' ? 'off' : 'browser').catch(() => {});
+      updateAudioEngineDiagnostics({
+        status: fallbackStatus,
+        engine: fallbackEngine,
+        fallbackReason: reason,
+        mode: m,
+      });
     };
 
     return {
@@ -157,21 +138,23 @@ export async function createGcpNoisePipeline(
       getStatus: () => fallbackStatus,
       getActiveEngine: () => fallbackEngine,
       getFallbackReason: () => reason,
+      getStats: () => ({
+        inputRmsDb: -100,
+        outputRmsDb: -100,
+        vadProb: 0,
+        gateGain: 1.0,
+        underruns: 0,
+        mode: currentMode,
+        crossfadeGain: 0,
+      }),
       cleanup: () => {
-        if (ctx) {
-          try {
-            ctx.close();
-          } catch {}
-        }
+        audioEngine.release();
       },
     };
   };
 
-  const AudioContextClass =
-    window.AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-
-  if (!AudioContextClass) {
+  const audioEngine = AudioEngine.getInstance();
+  if (!audioEngine.isSupported()) {
     return createFallbackPipeline(currentMode, 'AudioContext not supported in this browser');
   }
 
@@ -185,22 +168,36 @@ export async function createGcpNoisePipeline(
   let activeEngine: GcpActiveEngine = 'none';
   let fallbackReason: string | null = null;
 
-  try {
-    // Strictly enforce 48 kHz for RNNoise neural speech enhancement
-    audioContext = new AudioContextClass({
-      sampleRate: 48000,
-      latencyHint: 'interactive',
-    });
+  let latestStats: PipelineTelemetryStats = {
+    inputRmsDb: -100,
+    outputRmsDb: -100,
+    vadProb: 0,
+    gateGain: 1.0,
+    underruns: 0,
+    mode: currentMode,
+    crossfadeGain: 1.0,
+  };
 
-    if (audioContext.state === 'suspended') {
-      audioContext.resume().catch(() => {});
+  try {
+    audioContext = await audioEngine.getAudioContext();
+    if (!audioContext) {
+      return createFallbackPipeline(currentMode, 'AudioContext not supported in this browser');
     }
 
-    const moduleLoaded = await ensureWorkletModule(audioContext);
+    // Strictly enforce 48 kHz for RNNoise neural speech enhancement (N8)
+    if (audioContext.sampleRate !== 48000) {
+      const msg = `AudioContext initialized at ${audioContext.sampleRate} Hz (48 kHz required for neural engine)`;
+      console.warn(`[GcpAudio] ${msg}; falling back to browser-native processing.`);
+      return createFallbackPipeline(currentMode, msg, audioContext);
+    }
+
+    const moduleLoaded = await audioEngine.ensureWorkletModuleLoaded(audioContext);
     if (!moduleLoaded) {
       console.warn('[GcpAudio] AudioWorklet module unavailable; falling back to native browser constraints.');
       return createFallbackPipeline(currentMode, 'AudioWorklet module failed to load', audioContext);
     }
+
+    audioEngine.acquire();
 
     sourceNode = audioContext.createMediaStreamSource(rawStream);
     destinationNode = audioContext.createMediaStreamDestination();
@@ -211,8 +208,19 @@ export async function createGcpNoisePipeline(
       outputChannelCount: [1],
     });
 
-    // Load and transfer the RNNoise WASM binary
-    const wasmBinary = await loadRnnoiseWasmBinary();
+    workletNode.onprocessorerror = (err) => {
+      audioEngine.handleProcessorError(err);
+      if (sourceNode && destinationNode) {
+        try { workletNode?.disconnect(); } catch {}
+        try { sourceNode.connect(destinationNode); } catch {}
+      }
+    };
+
+    // Load RNNoise WASM module and binary
+    const [wasmBinary, wasmModule] = await Promise.all([
+      loadRnnoiseWasmBinary(),
+      loadRnnoiseWasmModule().catch(() => null),
+    ]);
 
     // Bounded initialization promise (3000ms max timeout)
     const initPromise = new Promise<void>((resolve, reject) => {
@@ -234,39 +242,49 @@ export async function createGcpNoisePipeline(
           isReadyState = true;
           pipelineStatus = currentMode === 'off' ? 'disabled' : 'ready';
           activeEngine = currentMode === 'off' ? 'none' : 'rnnoise-wasm';
+          fallbackReason = null;
+          updateAudioEngineDiagnostics({
+            status: pipelineStatus,
+            engine: activeEngine,
+            fallbackReason: null,
+            mode: currentMode,
+            sampleRate: audioContext ? audioContext.sampleRate : 48000,
+          });
           resolve();
         } else if (data.type === 'ERROR') {
           clearTimeout(timer);
           reject(new Error(data.error || 'Worklet reported initialization error'));
+        } else if (data.type === 'TELEMETRY') {
+          latestStats = {
+            inputRmsDb: data.inputRmsDb ?? -100,
+            outputRmsDb: data.outputRmsDb ?? -100,
+            vadProb: data.vadProb ?? 0,
+            gateGain: data.gateGain ?? 1.0,
+            underruns: data.underruns ?? 0,
+            mode: data.mode ?? currentMode,
+            crossfadeGain: data.crossfadeGain ?? 1.0,
+          };
+          updateAudioEngineDiagnostics({
+            latencyMs: 28.67,
+            underruns: data.underruns,
+          });
         }
       };
     });
 
-    workletNode.port.postMessage(
-      {
-        type: 'INIT_WASM',
-        wasmBinary,
-        mode: currentMode,
-      },
-      [wasmBinary]
-    );
+    workletNode.port.postMessage({
+      type: 'INIT_WASM',
+      wasmBinary,
+      wasmModule: wasmModule || undefined,
+      mode: currentMode,
+    });
 
     // Wire DSP audio graph: source -> worklet -> destination
     sourceNode.connect(workletNode);
     workletNode.connect(destinationNode);
 
-    // Disable browser's native noise gate so RNNoise receives full raw spectrum
-    try {
-      if (typeof audioTrack.applyConstraints === 'function') {
-        audioTrack
-          .applyConstraints({
-            echoCancellation: true,
-            noiseSuppression: false,
-            autoGainControl: true,
-          })
-          .catch(() => {});
-      }
-    } catch {}
+    // Apply RNNoise constraint policy (EC true, NS false, AGC false) via single policy owner
+    applyProcessingPolicy(audioTrack, currentMode === 'off' ? 'off' : 'rnnoise').catch(() => {});
 
     // Await bounded readiness
     try {
@@ -280,6 +298,10 @@ export async function createGcpNoisePipeline(
     }
 
     const outputStream = destinationNode.stream;
+    const procTrack = outputStream.getAudioTracks()[0];
+    if (procTrack) {
+      tuneTrackForSpeech(procTrack);
+    }
 
     const setMode = (mode: NoiseCancellationMode) => {
       currentMode = mode;
@@ -296,17 +318,13 @@ export async function createGcpNoisePipeline(
           workletNode.port.postMessage({ type: 'SET_MODE', mode });
         } catch {}
       }
-      try {
-        if (typeof audioTrack.applyConstraints === 'function') {
-          audioTrack
-            .applyConstraints({
-              echoCancellation: true,
-              noiseSuppression: mode === 'off',
-              autoGainControl: true,
-            })
-            .catch(() => {});
-        }
-      } catch {}
+      applyProcessingPolicy(audioTrack, mode === 'off' ? 'off' : 'rnnoise').catch(() => {});
+      updateAudioEngineDiagnostics({
+        status: pipelineStatus,
+        engine: activeEngine,
+        fallbackReason: null,
+        mode,
+      });
     };
 
     const setNoiseSuppression = (enabled: boolean) => {
@@ -317,6 +335,8 @@ export async function createGcpNoisePipeline(
       isReadyState = false;
       pipelineStatus = 'disabled';
       activeEngine = 'none';
+      audioEngine.release();
+      updateAudioEngineDiagnostics({ status: 'disabled', engine: 'none' });
 
       if (workletNode) {
         try {
@@ -337,18 +357,6 @@ export async function createGcpNoisePipeline(
         } catch {}
         destinationNode = null;
       }
-      if (audioContext && audioContext.state !== 'closed') {
-        try {
-          audioContext.close();
-        } catch {}
-        audioContext = null;
-      }
-      if (workletBlobUrl) {
-        try {
-          URL.revokeObjectURL(workletBlobUrl);
-        } catch {}
-        workletBlobUrl = null;
-      }
       // CRITICAL: Do NOT call audioTrack.stop()!
       // The original mic stream belongs to the caller and must not be terminated.
     };
@@ -363,6 +371,7 @@ export async function createGcpNoisePipeline(
       getStatus: () => pipelineStatus,
       getActiveEngine: () => activeEngine,
       getFallbackReason: () => fallbackReason,
+      getStats: () => latestStats,
       cleanup,
     };
   } catch (err: unknown) {

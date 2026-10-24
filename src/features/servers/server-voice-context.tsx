@@ -7,6 +7,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { SoundboardClip, soundboardEngine } from '@/lib/soundboard/audio-engine';
 import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
 import { createGcpNoisePipeline, GcpNoisePipeline, NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
+import { getUserMediaAudioConstraints, applyProcessingPolicy } from '@/lib/webrtc/audio-processing-policy';
 import { applyGcpOptimalConstraints } from '@/lib/webrtc/safe-constraints';
 import { audioSessionCoordinator } from '@/lib/webrtc/audio-session-coordinator';
 import {
@@ -1240,25 +1241,18 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               try {
                 if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
                   const savedMicId = (typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null) || settings?.input_device_id || null;
+                  const policy = noiseSuppressionMode === 'off' ? 'off' : 'rnnoise';
+                  const audioConstraints = getUserMediaAudioConstraints(policy, savedMicId);
                   let rawStream: MediaStream;
                   try {
                     rawStream = await navigator.mediaDevices.getUserMedia({
-                      audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                        ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
-                      },
+                      audio: audioConstraints,
                       video: false,
                     });
                   } catch (exactErr) {
                     console.warn('[ServerVoice] Exact mic device failed or unplugged, falling back to default:', exactErr);
                     rawStream = await navigator.mediaDevices.getUserMedia({
-                      audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                      },
+                      audio: getUserMediaAudioConstraints(policy, null),
                       video: false,
                     });
                   }
@@ -1413,13 +1407,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 rawStream = new MediaStream([existingAudioTrack]);
               } else if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
                 const savedMicId = (typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null);
+                const policy = noiseSuppressionMode === 'off' ? 'off' : 'rnnoise';
                 rawStream = await navigator.mediaDevices.getUserMedia({
-                  audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                    ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
-                  },
+                  audio: getUserMediaAudioConstraints(policy, savedMicId),
                 });
               } else {
                 const fallbackTrack = await createLocalAudioTrack({
@@ -2398,21 +2388,11 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
       localStorage.setItem('nexus_noise_suppression', String(mode !== 'off'));
     } catch {}
 
-    if (krispProcessorRef.current) {
-      try {
-        krispProcessorRef.current.setEnabled(mode !== 'off');
-      } catch (krispErr) {
-        console.warn('[Krisp] Error toggling filter state:', krispErr);
-      }
-    }
-
     if (dspPipelineRef.current) {
       dspPipelineRef.current.setMode(mode);
-    }
-
-    if (localStreamRef.current) {
+    } else if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track) => {
-        applyGcpOptimalConstraints(track, mode !== 'off');
+        applyProcessingPolicy(track, mode === 'off' ? 'off' : 'browser').catch(() => {});
       });
     }
   }, []);

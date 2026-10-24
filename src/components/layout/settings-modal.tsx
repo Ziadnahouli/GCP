@@ -1,6 +1,17 @@
 'use client';
 
-import { NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
+import {
+  NoiseCancellationMode,
+  createGcpNoisePipeline,
+  GcpNoisePipeline,
+} from '@/lib/webrtc/gcp-noise-cancellation';
+import { AudioEngine } from '@/lib/webrtc/audio-engine';
+import {
+  subscribeAudioEngineDiagnostics,
+  getAudioEngineDiagnostics,
+  AudioEngineDiagnostics,
+  getUserMediaAudioConstraints,
+} from '@/lib/webrtc/audio-processing-policy';
 
 import * as React from 'react';
 import {
@@ -153,36 +164,18 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [noiseMode, setNoiseMode] = React.useState<NoiseCancellationMode>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('nexus_noise_suppression_mode') as NoiseCancellationMode | null;
-      if (saved === 'off' || saved === 'balanced' || saved === 'strong') return saved;
+      if (saved === 'off' || saved === 'light' || saved === 'balanced' || saved === 'strong') return saved;
       const legacy = localStorage.getItem('nexus_noise_suppression');
       if (legacy === 'false') return 'off';
     }
     return 'balanced';
   });
-  const [liveEngineStatus, setLiveEngineStatus] = React.useState<{
-    engine: 'rnnoise-wasm' | 'browser-native' | 'none';
-    status: 'ready' | 'fallback' | 'disabled' | 'initializing';
-    fallbackReason: string | null;
-  }>(() => ({
-    engine: typeof window !== 'undefined' && localStorage.getItem('nexus_noise_suppression_mode') === 'off' ? 'none' : 'rnnoise-wasm',
-    status: typeof window !== 'undefined' && localStorage.getItem('nexus_noise_suppression_mode') === 'off' ? 'disabled' : 'ready',
-    fallbackReason: null,
-  }));
+  const [liveEngineStatus, setLiveEngineStatus] = React.useState<AudioEngineDiagnostics>(() => getAudioEngineDiagnostics());
 
   React.useEffect(() => {
-    const handleStatusUpdate = (e: CustomEvent) => {
-      if (e.detail) {
-        setLiveEngineStatus({
-          engine: e.detail.activeEngine || (e.detail.mode === 'off' ? 'none' : 'rnnoise-wasm'),
-          status: e.detail.status || (e.detail.mode === 'off' ? 'disabled' : 'ready'),
-          fallbackReason: e.detail.fallbackReason || null,
-        });
-      }
-    };
-    window.addEventListener('gcp_noise_mode_changed' as any, handleStatusUpdate);
-    return () => {
-      window.removeEventListener('gcp_noise_mode_changed' as any, handleStatusUpdate);
-    };
+    return subscribeAudioEngineDiagnostics((diag) => {
+      setLiveEngineStatus({ ...diag });
+    });
   }, []);
   const [noiseSuppression, setNoiseSuppression] = React.useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -200,12 +193,19 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [selectedOutputDevice, setSelectedOutputDevice] = React.useState('');
   const [selectedCamDevice, setSelectedCamDevice] = React.useState('');
 
-  // Live microphone testing state
+  // Live microphone testing state (O2)
   const [isTestingMic, setIsTestingMic] = React.useState(false);
   const [micLevel, setMicLevel] = React.useState(0);
+  const [micLevelClean, setMicLevelClean] = React.useState(0);
+  const [isRecordingSample, setIsRecordingSample] = React.useState(false);
+  const [sampleAudioUrl, setSampleAudioUrl] = React.useState<string | null>(null);
+  const [isPlayingSample, setIsPlayingSample] = React.useState(false);
+  const [roomNoiseAdvice, setRoomNoiseAdvice] = React.useState<string | null>(null);
   const micTestStreamRef = React.useRef<MediaStream | null>(null);
   const micTestAudioCtxRef = React.useRef<AudioContext | null>(null);
+  const micTestPipelineRef = React.useRef<GcpNoisePipeline | null>(null);
   const micTestAnimRef = React.useRef<number | null>(null);
+  const sampleAudioRef = React.useRef<HTMLAudioElement | null>(null);
 
   // Live audio output testing state
   const [isTestingOutput, setIsTestingOutput] = React.useState(false);
@@ -258,12 +258,14 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       micTestStreamRef.current.getTracks().forEach((t) => t.stop());
       micTestStreamRef.current = null;
     }
-    if (micTestAudioCtxRef.current) {
-      micTestAudioCtxRef.current.close().catch(() => {});
-      micTestAudioCtxRef.current = null;
+    if (micTestPipelineRef.current) {
+      try { micTestPipelineRef.current.cleanup(); } catch {}
+      micTestPipelineRef.current = null;
     }
+    micTestAudioCtxRef.current = null;
     setIsTestingMic(false);
     setMicLevel(0);
+    setMicLevelClean(0);
   }, []);
 
   const stopCamTest = React.useCallback(() => {
@@ -364,40 +366,77 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   };
 
-  // Start live mic test
+  // Start live microphone test with AudioWorklet DSP & dual VU meters (O2)
   const startMicTest = async () => {
     if (isTestingMic) {
       stopMicTest();
       return;
     }
     try {
-      const constraints: MediaStreamConstraints = {
-        audio: selectedInputDevice ? { deviceId: { exact: selectedInputDevice } } : true,
-      };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const policy = noiseMode === 'off' ? 'off' : 'rnnoise';
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: getUserMediaAudioConstraints(policy, selectedInputDevice || null),
+      });
       micTestStreamRef.current = stream;
 
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = new AudioCtx();
+      const engine = AudioEngine.getInstance();
+      const ctx = await engine.getAudioContext();
+      if (!ctx) return;
       micTestAudioCtxRef.current = ctx;
 
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
+      const pipeline = await createGcpNoisePipeline(stream, noiseMode);
+      micTestPipelineRef.current = pipeline;
 
-      const buffer = new Uint8Array(analyser.frequencyBinCount);
+      const rawSource = ctx.createMediaStreamSource(stream);
+      const rawAnalyser = ctx.createAnalyser();
+      rawAnalyser.fftSize = 256;
+      rawSource.connect(rawAnalyser);
+
+      const cleanStream = pipeline ? pipeline.outputStream : stream;
+      const cleanSource = ctx.createMediaStreamSource(cleanStream);
+      const cleanAnalyser = ctx.createAnalyser();
+      cleanAnalyser.fftSize = 256;
+      cleanSource.connect(cleanAnalyser);
+
+      const rawBuffer = new Uint8Array(rawAnalyser.frequencyBinCount);
+      const cleanBuffer = new Uint8Array(cleanAnalyser.frequencyBinCount);
       setIsTestingMic(true);
 
+      let roomNoiseAccum = 0;
+      let roomNoiseFrames = 0;
+
       const updateLevel = () => {
-        analyser.getByteFrequencyData(buffer);
-        let sum = 0;
-        for (let i = 0; i < buffer.length; i++) sum += buffer[i];
-        const avg = sum / buffer.length;
-        const normalized = Math.min(100, Math.round((avg / 128) * 100));
-        setMicLevel(normalized);
+        rawAnalyser.getByteFrequencyData(rawBuffer);
+        cleanAnalyser.getByteFrequencyData(cleanBuffer);
+
+        let rawSum = 0;
+        for (let i = 0; i < rawBuffer.length; i++) rawSum += rawBuffer[i];
+        const rawAvg = rawSum / rawBuffer.length;
+        const rawNorm = Math.min(100, Math.round((rawAvg / 128) * 100));
+        setMicLevel(rawNorm);
+
+        let cleanSum = 0;
+        for (let i = 0; i < cleanBuffer.length; i++) cleanSum += cleanBuffer[i];
+        const cleanAvg = cleanSum / cleanBuffer.length;
+        const cleanNorm = Math.min(100, Math.round((cleanAvg / 128) * 100));
+        setMicLevelClean(cleanNorm);
+
+        // Analyze ambient background room noise
+        roomNoiseAccum += rawNorm;
+        roomNoiseFrames++;
+        if (roomNoiseFrames >= 45) {
+          const avgFloor = roomNoiseAccum / roomNoiseFrames;
+          if (avgFloor > 35) {
+            setRoomNoiseAdvice('High ambient noise (fans/typing) detected — Strong mode recommended');
+          } else if (avgFloor > 18) {
+            setRoomNoiseAdvice('Moderate background noise — Balanced mode is optimal');
+          } else {
+            setRoomNoiseAdvice('Quiet room acoustics — Light or Balanced mode recommended');
+          }
+          roomNoiseAccum = 0;
+          roomNoiseFrames = 0;
+        }
+
         micTestAnimRef.current = requestAnimationFrame(updateLevel);
       };
       micTestAnimRef.current = requestAnimationFrame(updateLevel);
@@ -405,6 +444,46 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       console.warn('Microphone test access error:', e);
       toast({ title: 'Microphone Inaccessible', description: 'Could not access the selected microphone device.', type: 'error' });
       stopMicTest();
+    }
+  };
+
+  // Record 5s sample to hear what squadmates will hear (O2)
+  const handleRecordSample = async () => {
+    if (isRecordingSample) return;
+    try {
+      const policy = noiseMode === 'off' ? 'off' : 'rnnoise';
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: getUserMediaAudioConstraints(policy, selectedInputDevice || null),
+      });
+      const pipeline = await createGcpNoisePipeline(stream, noiseMode);
+      const recordStream = pipeline ? pipeline.outputStream : stream;
+
+      const mediaRecorder = new MediaRecorder(recordStream);
+      const chunks: Blob[] = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        setSampleAudioUrl(url);
+        setIsRecordingSample(false);
+        stream.getTracks().forEach((t) => t.stop());
+        if (pipeline) pipeline.cleanup();
+      };
+
+      mediaRecorder.start();
+      setIsRecordingSample(true);
+      setTimeout(() => {
+        if (mediaRecorder.state === 'recording') {
+          mediaRecorder.stop();
+        }
+      }, 5000);
+    } catch (e) {
+      console.warn('Record sample error:', e);
+      setIsRecordingSample(false);
     }
   };
 
@@ -525,6 +604,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       description:
         newMode === 'off'
           ? 'Raw microphone pass-through active.'
+          : newMode === 'light'
+          ? 'Light suppression active: gentle floor, preserves quiet whispers.'
           : newMode === 'strong'
           ? 'Strong neural suppression active: keyboard clicks and loud fans eliminated.'
           : 'Balanced neural enhancement active: background noise suppressed, natural voice preserved.',
@@ -1311,6 +1392,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       setSelectedInputDevice(val);
                       try {
                         localStorage.setItem('nexus_audio_input_device', val);
+                        if (typeof window !== 'undefined') {
+                          window.dispatchEvent(
+                            new CustomEvent('nexus_input_device_changed', { detail: { deviceId: val } })
+                          );
+                        }
                       } catch {}
                       if (isTestingMic) stopMicTest();
                     }}
@@ -1328,48 +1414,127 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   </select>
                 </div>
 
-                {/* Live Mic Test & VU Meter */}
-                <div className="rounded-xl border border-white/[0.08] bg-[#10121a] p-3.5 space-y-2.5">
+                {/* Live Mic Test & Dual VU Meters (O2) */}
+                <div className="rounded-xl border border-white/[0.08] bg-[#10121a] p-3.5 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-xs font-bold text-foreground">Microphone Input Level</div>
-                      <div className="text-[10px] text-muted-foreground">Test mic sensitivity and room noise</div>
+                      <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                        <span>Microphone Studio Monitor</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
+                          {noiseMode.toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">Test mic gain, noise reduction, and listen to processed audio</div>
                     </div>
-                    <Button
-                      size="sm"
-                      onClick={startMicTest}
-                      variant="outline"
-                      className={cn(
-                        'text-xs rounded-lg border-white/[0.08] h-8 px-3',
-                        isTestingMic ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'hover:bg-primary/10'
-                      )}
-                    >
-                      {isTestingMic ? (
-                        <>
-                          <Square className="w-3 h-3 mr-1.5" /> Stop Test
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3 h-3 mr-1.5" /> Test Mic
-                        </>
-                      )}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleRecordSample}
+                        disabled={isRecordingSample}
+                        variant="outline"
+                        className={cn(
+                          'text-xs rounded-lg border-white/[0.08] h-8 px-2.5',
+                          isRecordingSample && 'bg-amber-500/20 text-amber-400 border-amber-500/40 animate-pulse'
+                        )}
+                        title="Record 5 seconds of clean audio to hear what squadmates will hear"
+                      >
+                        <Radio className="w-3 h-3 mr-1" />
+                        <span>{isRecordingSample ? 'Recording (5s)...' : 'Record 5s'}</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={startMicTest}
+                        variant="outline"
+                        className={cn(
+                          'text-xs rounded-lg border-white/[0.08] h-8 px-3',
+                          isTestingMic ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'hover:bg-primary/10'
+                        )}
+                      >
+                        {isTestingMic ? (
+                          <>
+                            <Square className="w-3 h-3 mr-1.5" /> Stop Test
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 mr-1.5" /> Test Mic
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
 
-                  {/* Gradient VU meter */}
-                  <div className="space-y-1">
-                    <div className="h-3 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/[0.06]">
-                      <div
-                        className="h-full rounded-full transition-all duration-75 bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500"
-                        style={{ width: `${micLevel}%` }}
-                      />
+                  {/* Dual VU Meters: Raw vs Processed */}
+                  <div className="space-y-2 pt-1">
+                    {/* Raw Microphone Input */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-semibold text-muted-foreground">
+                        <span>Input Level (Raw Microphone)</span>
+                        <span className="font-mono">{micLevel}%</span>
+                      </div>
+                      <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/[0.06]">
+                        <div
+                          className="h-full rounded-full transition-all duration-75 bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500"
+                          style={{ width: `${micLevel}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="flex justify-between text-[9px] font-mono text-muted-foreground/60 px-0.5">
-                      <span>-60 dB (Quiet)</span>
-                      <span>{micLevel}%</span>
-                      <span>0 dB (Peak)</span>
+
+                    {/* Processed Clean Output */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-semibold text-emerald-400">
+                        <span>Clean Output (What others hear)</span>
+                        <span className="font-mono">{micLevelClean}%</span>
+                      </div>
+                      <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/[0.06]">
+                        <div
+                          className="h-full rounded-full transition-all duration-75 bg-gradient-to-r from-emerald-500 to-sky-400"
+                          style={{ width: `${micLevelClean}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
+
+                  {/* Room Noise Advice */}
+                  {roomNoiseAdvice && (
+                    <div className="text-[10px] p-2 rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-primary shrink-0" />
+                      <span>{roomNoiseAdvice}</span>
+                    </div>
+                  )}
+
+                  {/* 5-second sample playback */}
+                  {sampleAudioUrl && (
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                      <div className="flex items-center gap-2 text-emerald-400 font-medium">
+                        <Volume2 className="w-3.5 h-3.5" />
+                        <span>5s Sample Ready — Listen to your clean voice</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (sampleAudioRef.current) {
+                            if (isPlayingSample) {
+                              sampleAudioRef.current.pause();
+                              setIsPlayingSample(false);
+                            } else {
+                              sampleAudioRef.current.play();
+                              setIsPlayingSample(true);
+                            }
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-semibold flex items-center gap-1"
+                      >
+                        {isPlayingSample ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                        <span>{isPlayingSample ? 'Stop' : 'Play Back'}</span>
+                      </button>
+                      <audio
+                        ref={sampleAudioRef}
+                        src={sampleAudioUrl}
+                        onEnded={() => setIsPlayingSample(false)}
+                        className="hidden"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Webcam Hardware Device Picker */}
@@ -1508,7 +1673,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               <div>
                 <h3 className="text-lg font-bold text-foreground">Audio Processing & DSP</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Acoustic echo cancellation, Krisp AI noise filters, and master volume balances.
+                  Acoustic echo cancellation, neural noise suppression, and master volume balances.
                 </p>
               </div>
 
@@ -1532,12 +1697,12 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="grid grid-cols-4 gap-2 pt-1">
                   {/* Off Mode */}
                   <div
                     onClick={() => handleSelectNoiseMode('off')}
                     className={cn(
-                      'p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
+                      'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
                       noiseMode === 'off'
                         ? 'bg-rose-500/10 border-rose-500/40 ring-1 ring-rose-500/30'
                         : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
@@ -1549,16 +1714,38 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                         <span className={cn('w-2 h-2 rounded-full', noiseMode === 'off' ? 'bg-rose-400' : 'bg-white/20')} />
                       </div>
                       <p className="text-[10px] text-muted-foreground leading-tight">
-                        Raw microphone pass-through. Zero DSP processing.
+                        Raw mic pass-through. 0ms DSP.
                       </p>
                     </div>
+                  </div>
+
+                  {/* Light Mode */}
+                  <div
+                    onClick={() => handleSelectNoiseMode('light')}
+                    className={cn(
+                      'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
+                      noiseMode === 'light'
+                        ? 'bg-sky-500/15 border-sky-500/50 ring-1 ring-sky-500/40'
+                        : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                    )}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-foreground">Light</span>
+                        <span className={cn('w-2 h-2 rounded-full', noiseMode === 'light' ? 'bg-sky-400' : 'bg-white/20')} />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-tight">
+                        -26 dB floor. Preserves quiet whispers.
+                      </p>
+                    </div>
+                    <span className="text-[9px] text-sky-400 font-bold mt-1.5">Gentle</span>
                   </div>
 
                   {/* Balanced Mode */}
                   <div
                     onClick={() => handleSelectNoiseMode('balanced')}
                     className={cn(
-                      'p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
+                      'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
                       noiseMode === 'balanced'
                         ? 'bg-primary/15 border-primary/50 ring-1 ring-primary/40'
                         : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
@@ -1570,17 +1757,17 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                         <span className={cn('w-2 h-2 rounded-full', noiseMode === 'balanced' ? 'bg-primary' : 'bg-white/20')} />
                       </div>
                       <p className="text-[10px] text-muted-foreground leading-tight">
-                        Moderate noise removal. Preserves natural vocal warmth and breathing.
+                        -36 dB floor. Natural voice warmth.
                       </p>
                     </div>
-                    <span className="text-[9px] text-primary font-bold mt-2">Recommended</span>
+                    <span className="text-[9px] text-primary font-bold mt-1.5">Recommended</span>
                   </div>
 
                   {/* Strong Mode */}
                   <div
                     onClick={() => handleSelectNoiseMode('strong')}
                     className={cn(
-                      'p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
+                      'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
                       noiseMode === 'strong'
                         ? 'bg-emerald-500/15 border-emerald-500/50 ring-1 ring-emerald-500/40'
                         : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
@@ -1592,19 +1779,19 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                         <span className={cn('w-2 h-2 rounded-full', noiseMode === 'strong' ? 'bg-emerald-400' : 'bg-white/20')} />
                       </div>
                       <p className="text-[10px] text-muted-foreground leading-tight">
-                        Intense suppression. Eliminates clicky keyboards and loud fans.
+                        -40 dB floor. Eradicates loud typing & fans.
                       </p>
                     </div>
-                    <span className="text-[9px] text-emerald-400 font-bold mt-2">Max Noise Cut</span>
+                    <span className="text-[9px] text-emerald-400 font-bold mt-1.5">Max Cut</span>
                   </div>
                 </div>
 
-                {/* Real-Time Engine Diagnostic Badge */}
+                {/* Real-Time Engine Diagnostic Badge (N3 Honest Status & Retry) */}
                 <div className="mt-3 p-2.5 rounded-xl bg-black/30 border border-white/5 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
                     <span
                       className={cn(
-                        'w-2 h-2 rounded-full',
+                        'w-2 h-2 rounded-full flex-shrink-0',
                         noiseMode === 'off'
                           ? 'bg-zinc-500'
                           : liveEngineStatus.status === 'ready'
@@ -1615,21 +1802,34 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                       )}
                     />
                     <div>
-                      <span className="font-semibold text-foreground text-xs">
-                        {noiseMode === 'off'
-                          ? 'Processing Disabled (Raw Pass-Through)'
-                          : liveEngineStatus.engine === 'rnnoise-wasm'
-                          ? 'RNNoise Neural Engine (48 kHz WASM AudioWorklet)'
-                          : 'Browser-Native Audio Processing (Fallback Active)'}
-                      </span>
-                      {liveEngineStatus.fallbackReason && noiseMode !== 'off' && (
-                        <p className="text-[10px] text-amber-400/80 leading-tight mt-0.5">
-                          {liveEngineStatus.fallbackReason}
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground text-xs">
+                          {noiseMode === 'off'
+                            ? 'Processing Disabled (Raw Pass-Through)'
+                            : liveEngineStatus.engine === 'rnnoise-wasm'
+                            ? 'RNNoise Neural Engine (48 kHz WASM AudioWorklet)'
+                            : liveEngineStatus.engine === 'browser-native'
+                            ? `Browser Fallback (${liveEngineStatus.fallbackReason || 'Native Processing'})`
+                            : 'Audio Engine Initializing'}
+                        </span>
+                        {liveEngineStatus.status === 'fallback' && noiseMode !== 'off' && (
+                          <button
+                            type="button"
+                            onClick={() => handleSelectNoiseMode(noiseMode)}
+                            className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-medium text-[10px] border border-amber-500/30 transition-colors"
+                          >
+                            Retry RNNoise
+                          </button>
+                        )}
+                      </div>
+                      {liveEngineStatus.fallbackReason && noiseMode !== 'off' && liveEngineStatus.status === 'fallback' && (
+                        <p className="text-[10px] text-amber-400/90 leading-tight mt-0.5 font-mono">
+                          Reason: {liveEngineStatus.fallbackReason}
                         </p>
                       )}
                     </div>
                   </div>
-                  <span className="text-[10px] text-muted-foreground font-mono">
+                  <span className="text-[10px] text-muted-foreground font-mono flex-shrink-0">
                     {noiseMode === 'off' ? '0 ms' : '~14 ms latency | 100% local'}
                   </span>
                 </div>
@@ -1679,7 +1879,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     Hold keyboard hotkey (<kbd className="px-1 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">Space</kbd> or <kbd className="px-1 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">V</kbd>) to transmit mic audio.
                     {pushToTalk && (
                       <span className="block text-[10px] text-primary/80 mt-1">
-                        💡 Gaming Tip: When playing external games outside the browser window, web browsers sandbox keyboard input. Switch to Voice Activity with Krisp AI filter for seamless background gaming audio!
+                        💡 Gaming Tip: When playing external games outside the browser window, web browsers sandbox keyboard input. Switch to Voice Activity with neural noise suppression for seamless background gaming audio!
                       </span>
                     )}
                   </div>

@@ -31,6 +31,11 @@ import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { CallParticipant, CallStatus } from '@/features/calls/call-context';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/auth/auth-provider';
+import {
+  subscribeAudioEngineDiagnostics,
+  getAudioEngineDiagnostics,
+  AudioEngineDiagnostics,
+} from '@/lib/webrtc/audio-processing-policy';
 
 interface CallModalProps {
   open: boolean;
@@ -212,6 +217,11 @@ export function CallModal({
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [isPopUp, setIsPopUp] = React.useState(false);
   const [pipWindow, setPipWindow] = React.useState<Window | null>(null);
+  const [engineDiag, setEngineDiag] = React.useState<AudioEngineDiagnostics>(getAudioEngineDiagnostics);
+
+  React.useEffect(() => {
+    return subscribeAudioEngineDiagnostics(setEngineDiag);
+  }, []);
 
   // Helper to copy stylesheets into Document PiP window so styling matches identically
   const copyStylesToPip = (targetDoc: Document) => {
@@ -836,6 +846,45 @@ export function CallModal({
           >
             <Activity className="w-3.5 h-3.5" />
             <span>{stats.rttMs !== null ? `${stats.rttMs}ms` : '—'}</span>
+          </button>
+
+          {/* O3: In-Call Noise Cancellation Engine Badge & Quick Mode Toggle */}
+          <button
+            type="button"
+            onClick={onToggleNoiseSuppression}
+            className={cn(
+              'px-2 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-colors border',
+              engineDiag.engine === 'rnnoise-wasm' && engineDiag.status === 'ready'
+                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
+                : engineDiag.engine === 'browser-native' || engineDiag.status === 'fallback'
+                ? 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25'
+                : 'bg-white/[0.04] text-muted-foreground border-white/[0.06] hover:bg-white/[0.08]'
+            )}
+            title={
+              engineDiag.status === 'fallback'
+                ? `Browser Fallback: ${engineDiag.fallbackReason || 'Native processing'} (Click to cycle mode)`
+                : `Active Engine: ${engineDiag.engine} • Mode: ${engineDiag.mode || 'balanced'} (Click to cycle mode)`
+            }
+          >
+            {engineDiag.engine === 'rnnoise-wasm' && engineDiag.status === 'ready' ? (
+              <>
+                <Sparkles className="w-3 h-3 text-emerald-400" />
+                <span className="hidden sm:inline">RNNoise: {engineDiag.mode?.toUpperCase() || 'BALANCED'}</span>
+                <span className="sm:hidden">RNNoise</span>
+              </>
+            ) : engineDiag.status === 'fallback' ? (
+              <>
+                <Radio className="w-3 h-3 text-amber-400" />
+                <span className="hidden sm:inline">Fallback: Native</span>
+                <span className="sm:hidden">Native</span>
+              </>
+            ) : (
+              <>
+                <Mic className="w-3 h-3 text-muted-foreground" />
+                <span className="hidden sm:inline">DSP: OFF</span>
+                <span className="sm:hidden">OFF</span>
+              </>
+            )}
           </button>
 
           {/* Pop out Above All (Floats above all games and desktop windows) */}

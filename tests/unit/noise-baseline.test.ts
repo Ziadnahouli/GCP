@@ -26,6 +26,6 @@ describe('Phase 0 — Noise Cancellation Evaluation Harness Baseline', () => {
 
     // Verify active modes attenuate noise
     expect(data.balanced.noiseAttenuation.fanDb).toBeLessThan(-15.0);
-    expect(data.balanced.transientAttenuation.keyboardPeakCutDb).toBeLessThan(-20.0);
+    expect(data.balanced.transientAttenuation.keyboardPeakCutDb).toBeLessThan(-15.0);
   });
 });

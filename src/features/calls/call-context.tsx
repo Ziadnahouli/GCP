@@ -9,6 +9,8 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
 import { soundboardEngine, SoundboardClip } from '@/lib/soundboard/audio-engine';
 import { createGcpNoisePipeline, GcpNoisePipeline, NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
+import { getUserMediaAudioConstraints, applyProcessingPolicy } from '@/lib/webrtc/audio-processing-policy';
+import { tuneTrackForSpeech, tuneAudioSender, tuneOpusSdp } from '@/lib/webrtc/opus-transport-tuning';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { audioSessionCoordinator } from '@/lib/webrtc/audio-session-coordinator';
 import {
@@ -622,35 +624,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('nexus_noise_suppression', String(mode !== 'off'));
     } catch {}
 
-    // 1. Update GCP Studio AudioWorklet RNNoise Pipeline immediately
+    // 1. Update GCP AudioWorklet RNNoise Pipeline immediately (single owner of constraints)
     if (gcpNoisePipelineRef.current) {
       try {
         gcpNoisePipelineRef.current.setMode(mode);
       } catch {}
-    }
-
-    // 2. Apply updated constraints to all active raw microphone audio tracks
-    if (rawMicStreamRef.current) {
+    } else if (rawMicStreamRef.current) {
+      // Direct track fallback if pipeline is not active
       const audioTracks = rawMicStreamRef.current.getAudioTracks();
       for (const track of audioTracks) {
-        try {
-          await track.applyConstraints({
-            echoCancellation: true,
-            noiseSuppression: mode !== 'off',
-            autoGainControl: true,
-          });
-        } catch (err) {
-          console.warn('[CallContext] applyConstraints for noise suppression notice:', err);
-        }
-      }
-    }
-
-    // 3. Toggle Krisp AI neural noise filter if active (for LiveKit multi-party rooms)
-    if (krispProcessorRef.current) {
-      try {
-        krispProcessorRef.current.setEnabled(mode !== 'off');
-      } catch (krispErr) {
-        console.warn('[CallContext] Error toggling Krisp filter:', krispErr);
+        await applyProcessingPolicy(track, mode === 'off' ? 'off' : 'browser').catch(() => {});
       }
     }
 
@@ -807,6 +790,120 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
     return pc.getSenders().find((s) => s.track?.kind === 'video') || null;
   }, []);
+
+  // Helper to reliably find the audio sender on an active peer connection
+  const getAudioSender = React.useCallback((pc: RTCPeerConnection) => {
+    const audioTransceiver = pc.getTransceivers().find(
+      (t) => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio'
+    );
+    if (audioTransceiver?.sender) return audioTransceiver.sender;
+    return pc.getSenders().find((s) => s.track?.kind === 'audio') || null;
+  }, []);
+
+  // Hot-swap microphone device mid-call without renegotiation (N10)
+  const switchMicrophone = React.useCallback(
+    async (newDeviceId: string | null) => {
+      try {
+        const policy = noiseSuppressionMode === 'off' ? 'off' : 'rnnoise';
+        let rawStream: MediaStream;
+        try {
+          rawStream = await navigator.mediaDevices.getUserMedia({
+            audio: getUserMediaAudioConstraints(policy, newDeviceId),
+          });
+        } catch (exactErr) {
+          console.warn('[CallContext] Requested microphone failed, falling back to default:', exactErr);
+          rawStream = await navigator.mediaDevices.getUserMedia({
+            audio: getUserMediaAudioConstraints(policy, null),
+          });
+        }
+
+        // Stop old raw mic tracks
+        if (rawMicStreamRef.current) {
+          rawMicStreamRef.current.getTracks().forEach((t) => {
+            try { t.stop(); } catch {}
+          });
+        }
+        rawMicStreamRef.current = rawStream;
+
+        // Rebuild noise cancellation pipeline with new source
+        if (gcpNoisePipelineRef.current) {
+          try { gcpNoisePipelineRef.current.cleanup(); } catch {}
+          gcpNoisePipelineRef.current = null;
+        }
+
+        let newAudioTrack = rawStream.getAudioTracks()[0];
+        if (newAudioTrack) {
+          newAudioTrack.onended = () => {
+            console.warn('[CallContext] Active microphone track ended; attempting recovery...');
+            switchMicrophone(null);
+          };
+
+          const pipeline = await createGcpNoisePipeline(rawStream, noiseSuppressionMode);
+          if (pipeline) {
+            gcpNoisePipelineRef.current = pipeline;
+            const procTrack = pipeline.outputStream.getAudioTracks()[0];
+            if (procTrack) {
+              newAudioTrack = procTrack;
+            }
+          }
+
+          newAudioTrack.enabled = !isMicMutedRef.current;
+          tuneTrackForSpeech(newAudioTrack);
+
+          // Hot-swap track on active RTCPeerConnection without renegotiation (N10)
+          if (pcRef.current) {
+            const sender = getAudioSender(pcRef.current);
+            if (sender) {
+              await sender.replaceTrack(newAudioTrack);
+              await tuneAudioSender(sender);
+            }
+          }
+
+          // Update localStream
+          if (localStreamRef.current) {
+            const oldAudio = localStreamRef.current.getAudioTracks()[0];
+            if (oldAudio) {
+              localStreamRef.current.removeTrack(oldAudio);
+            }
+            localStreamRef.current.addTrack(newAudioTrack);
+            setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+          }
+        }
+      } catch (err) {
+        console.error('[CallContext] Failed to switch microphone:', err);
+      }
+    },
+    [noiseSuppressionMode, getAudioSender]
+  );
+
+  React.useEffect(() => {
+    const handleDeviceChanged = (e: any) => {
+      const devId = e?.detail?.deviceId;
+      if (callStatusRef.current === 'in_call' || callStatusRef.current === 'outgoing_ringing') {
+        switchMicrophone(devId || null);
+      }
+    };
+
+    const handleDeviceListChange = () => {
+      if (callStatusRef.current === 'in_call' && rawMicStreamRef.current) {
+        const activeTrack = rawMicStreamRef.current.getAudioTracks()[0];
+        if (!activeTrack || activeTrack.readyState !== 'live') {
+          switchMicrophone(null);
+        }
+      }
+    };
+
+    window.addEventListener('nexus_input_device_changed', handleDeviceChanged);
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', handleDeviceListChange);
+    }
+    return () => {
+      window.removeEventListener('nexus_input_device_changed', handleDeviceChanged);
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.removeEventListener) {
+        navigator.mediaDevices.removeEventListener('devicechange', handleDeviceListChange);
+      }
+    };
+  }, [switchMicrophone]);
 
   // Centralized call state cleanup
   const stopMediaTracks = React.useCallback(() => {
@@ -1464,30 +1561,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const savedMicId = (typeof window !== 'undefined' ? localStorage.getItem('nexus_audio_input_device') : null) || settings?.input_device_id || null;
+      const policy = noiseSuppressionMode === 'off' ? 'off' : 'rnnoise';
+      const audioConstraints = getUserMediaAudioConstraints(policy, savedMicId);
       let rawStream: MediaStream;
       try {
         rawStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
-          },
+          audio: audioConstraints,
           video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
         });
       } catch (exactErr) {
         console.warn('[CallContext] Exact mic device failed or unplugged, falling back to default:', exactErr);
         rawStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
+          audio: getUserMediaAudioConstraints(policy, null),
           video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
         });
       }
       rawMicStreamRef.current = rawStream;
-      if (disconnectGateRef.current || isMicMutedRef.current) {
+      const isMutedAtStart = Boolean(disconnectGateRef.current || isMicMutedRef.current);
+      if (isMutedAtStart) {
         rawStream.getAudioTracks().forEach((t) => { t.enabled = false; });
       }
 
@@ -1512,10 +1603,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         console.warn('[CallAudio] GCP Noise Pipeline initialization fallback:', dspErr);
       }
 
-      // Assemble final stream
+      // Assemble final stream (strictly respecting isMutedAtStart on finalAudioTrack, N11)
       const tracks: MediaStreamTrack[] = [];
       if (finalAudioTrack) {
-        finalAudioTrack.enabled = true;
+        finalAudioTrack.enabled = !isMutedAtStart;
         tracks.push(finalAudioTrack);
       }
       rawStream.getVideoTracks().forEach((vt) => {
@@ -1653,6 +1744,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }
 
       const offer = await pc.createOffer({ iceRestart: true });
+      if (offer.sdp) offer.sdp = tuneOpusSdp(offer.sdp);
       await pc.setLocalDescription(offer);
 
       const targetId = peerUserId || incomingCall?.callerId;
@@ -1710,6 +1802,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('[CallMedia] Initiating SDP renegotiation for media track change...');
       const offer = await pc.createOffer();
+      if (offer.sdp) offer.sdp = tuneOpusSdp(offer.sdp);
       await pc.setLocalDescription(offer);
 
       const targetId = peerUserIdRef.current;
@@ -1752,6 +1845,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         await drainPendingRemoteCandidates();
 
         const answer = await activePc.createAnswer();
+        if (answer.sdp) answer.sdp = tuneOpusSdp(answer.sdp);
         await activePc.setLocalDescription(answer);
 
         const ansMessageId = `reneg-ans-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -2622,7 +2716,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (stream) {
       stream.getTracks().forEach((track) => {
         track.enabled = true;
-        pc.addTrack(track, stream);
+        if (track.kind === 'audio') {
+          tuneTrackForSpeech(track);
+        }
+        const sender = pc.addTrack(track, stream);
+        if (track.kind === 'audio' && sender) {
+          tuneAudioSender(sender);
+        }
       });
     }
 
@@ -2957,6 +3057,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           flushRoomQueue();
           try {
             const offer = await pc.createOffer();
+            if (offer.sdp) offer.sdp = tuneOpusSdp(offer.sdp);
             await pc.setLocalDescription(offer);
 
             const callPayload: IncomingCallData = {
@@ -3077,7 +3178,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (stream) {
       stream.getTracks().forEach((track) => {
         track.enabled = true;
-        pc.addTrack(track, stream);
+        if (track.kind === 'audio') {
+          tuneTrackForSpeech(track);
+        }
+        const sender = pc.addTrack(track, stream);
+        if (track.kind === 'audio' && sender) {
+          tuneAudioSender(sender);
+        }
       });
     }
 
@@ -3374,6 +3481,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               });
 
               const answer = await pc.createAnswer();
+              if (answer.sdp) answer.sdp = tuneOpusSdp(answer.sdp);
               await pc.setLocalDescription(answer);
 
               const localZtIp = getLocalZeroTierIp();

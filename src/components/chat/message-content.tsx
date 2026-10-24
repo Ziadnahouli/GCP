@@ -12,7 +12,7 @@ import { Server } from '@/lib/types/server';
 import { LinkPreviewCard } from '@/components/chat/link-preview';
 
 interface MessageContentProps {
-  content: string;
+  content?: string | null;
   isMe?: boolean;
   isCallActive?: boolean;
 }
@@ -30,13 +30,15 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
   const { toast } = useToast();
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
+  const safeContent = content ?? '';
+
   const [isJoining, setIsJoining] = React.useState(false);
   const [serverMeta, setServerMeta] = React.useState<{ name?: string; icon_url?: string | null; memberCount?: number } | null>(null);
 
   // Check if content contains a squad voice call beacon
   const squadCallMatch = React.useMemo(() => {
-    return content.match(SQUAD_CALL_REGEX);
-  }, [content]);
+    return safeContent.match(SQUAD_CALL_REGEX);
+  }, [safeContent]);
 
   const squadCallConvId = squadCallMatch ? squadCallMatch[1] : null;
 
@@ -133,20 +135,20 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
 
   // Check if content contains a server invite
   const inviteMatch = React.useMemo(() => {
-    return content.match(SERVER_INVITE_REGEX);
-  }, [content]);
+    return safeContent.match(SERVER_INVITE_REGEX);
+  }, [safeContent]);
 
   const inviteServerId = inviteMatch ? inviteMatch[1] : null;
 
   // Check if content contains a general web URL for safe preview (excluding server invites)
   const previewUrl = React.useMemo(() => {
     if (inviteMatch || squadCallMatch) return null;
-    const match = content.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/i);
+    const match = safeContent.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/i);
     if (!match) return null;
     let urlStr = match[0];
     if (urlStr.startsWith('www.')) urlStr = `https://${urlStr}`;
     return urlStr;
-  }, [content, inviteMatch, squadCallMatch]);
+  }, [safeContent, inviteMatch, squadCallMatch]);
 
   // Check if user is already a member
   const existingServer = React.useMemo(() => {
@@ -168,7 +170,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
     }
 
     // Attempt to extract server name from message text if available: e.g. 'server "NAME" on Nexus'
-    const nameMatch = content.match(/server\s+"([^"]+)"/i);
+    const nameMatch = safeContent.match(/server\s+"([^"]+)"/i);
     const fallbackName = nameMatch ? nameMatch[1] : 'Squad Server';
 
     setServerMeta({
@@ -195,7 +197,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
         },
         () => {}
       );
-  }, [inviteServerId, existingServer, content]);
+  }, [inviteServerId, existingServer, safeContent]);
 
   const handleJoinOrNavigate = async () => {
     if (!inviteServerId) return;
@@ -321,7 +323,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
   return (
     <div className="space-y-2">
       {/* Text message content with link and mention detection */}
-      <div>{renderTextWithLinks(content)}</div>
+      <div>{renderTextWithLinks(safeContent)}</div>
 
       {/* Interactive Squad Voice Call Announcement Card */}
       {squadCallConvId && (

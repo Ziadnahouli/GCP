@@ -5,7 +5,16 @@
 --   M1: Add composite timeline index on channel_messages for keyset pagination.
 -- ==============================================================================
 
--- 1. Enforce max 4000 character length on direct messages
+-- 1. Truncate any existing messages exceeding 4000 characters before applying constraint
+UPDATE public.messages
+    SET content = substring(content from 1 for 4000)
+    WHERE char_length(content) > 4000;
+
+UPDATE public.channel_messages
+    SET content = substring(content from 1 for 4000)
+    WHERE char_length(content) > 4000;
+
+-- 2. Enforce max 4000 character length on direct messages using NOT VALID + VALIDATE CONSTRAINT
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -14,11 +23,13 @@ BEGIN
     ) THEN
         ALTER TABLE public.messages
             ADD CONSTRAINT messages_content_length_check
-            CHECK (char_length(content) <= 4000);
+            CHECK (char_length(content) <= 4000) NOT VALID;
+        ALTER TABLE public.messages
+            VALIDATE CONSTRAINT messages_content_length_check;
     END IF;
 END $$;
 
--- 2. Enforce max 4000 character length on channel messages
+-- 3. Enforce max 4000 character length on channel messages using NOT VALID + VALIDATE CONSTRAINT
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -27,7 +38,9 @@ BEGIN
     ) THEN
         ALTER TABLE public.channel_messages
             ADD CONSTRAINT channel_messages_content_length_check
-            CHECK (char_length(content) <= 4000);
+            CHECK (char_length(content) <= 4000) NOT VALID;
+        ALTER TABLE public.channel_messages
+            VALIDATE CONSTRAINT channel_messages_content_length_check;
     END IF;
 END $$;
 

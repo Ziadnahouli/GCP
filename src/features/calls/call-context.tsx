@@ -382,6 +382,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const ringtoneRef = React.useRef<RingtonePlayer | null>(null);
   const isStartingCallRef = React.useRef<boolean>(false);
   const ringingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const calleeRingingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const iceWatchdogTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const iceRestartingRef = React.useRef<boolean>(false);
   const activeCallPayloadRef = React.useRef<IncomingCallData | null>(null);
@@ -853,6 +854,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(ringingTimerRef.current);
       ringingTimerRef.current = null;
     }
+    if (calleeRingingTimerRef.current) {
+      clearTimeout(calleeRingingTimerRef.current);
+      calleeRingingTimerRef.current = null;
+    }
     if (ringingBeaconRef.current) {
       clearInterval(ringingBeaconRef.current);
       ringingBeaconRef.current = null;
@@ -949,10 +954,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       }, 600);
     }
 
-    if (sessionStatusChannelRef.current && supabase) {
+    if (sessionStatusChannelRef.current) {
       try {
-        sessionStatusChannelRef.current.unsubscribe();
-        supabase.removeChannel(sessionStatusChannelRef.current);
+        realtimeHub.release(sessionStatusChannelRef.current);
       } catch {}
       sessionStatusChannelRef.current = null;
     }
@@ -1967,8 +1971,30 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const myChannel = realtimeHub.acquire(personalChannelName, { config: { private: true } }, supabase);
 
     myChannel
-      .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
+      .on('broadcast', { event: 'incoming_call' }, async ({ payload }) => {
         if (!payload || payload.callerId === user.id) return;
+
+        // R7: Verify caller identity against public.call_sessions before ringing or answering
+        if (payload.conversationId && supabase) {
+          try {
+            const { data: verifiedSession } = await supabase
+              .from('call_sessions')
+              .select('id, caller_id, status')
+              .eq('conversation_id', payload.conversationId)
+              .eq('caller_id', payload.callerId)
+              .in('status', ['ringing', 'active'])
+              .order('started_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (!verifiedSession) {
+              console.warn('[CallSignaling] Dropping unverified incoming_call beacon (no matching call_sessions in DB):', payload);
+              return;
+            }
+          } catch (e) {
+            console.warn('[CallSignaling] DB verification query error:', e);
+          }
+        }
 
         const isCurrentCall =
           (activeConversationIdRef.current && activeConversationIdRef.current === payload.conversationId) ||
@@ -2081,12 +2107,42 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setActiveConversationId(payload.conversationId);
         setPeerUserId(payload.callerId);
 
-        // Start ringtone once strictly
-        if (!ringtoneRef.current && !RingtonePlayer.isPlaying()) {
-          const player = new RingtonePlayer();
-          player.start();
-          ringtoneRef.current = player;
+        // L6: Respect Do Not Disturb (DND)
+        const isDnd = profile?.status === 'dnd';
+        if (isDnd) {
+          console.debug('[CallSignaling] Callee is in Do Not Disturb mode. Suppressing audible ringtone.');
+        } else {
+          // Start ringtone once strictly
+          if (!ringtoneRef.current && !RingtonePlayer.isPlaying()) {
+            const player = new RingtonePlayer();
+            player.start();
+            ringtoneRef.current = player;
+          }
         }
+
+        // L6: Cap incoming ring duration at 35s to prevent perpetual ringing
+        if (calleeRingingTimerRef.current) {
+          clearTimeout(calleeRingingTimerRef.current);
+        }
+        calleeRingingTimerRef.current = setTimeout(() => {
+          if (callStatusRef.current === 'incoming_ringing') {
+            console.debug('[CallSignaling] Callee ring duration expired (35s timeout). Auto-dismissing.');
+            RingtonePlayer.stopAll();
+            if (ringtoneRef.current) {
+              ringtoneRef.current.stop();
+              ringtoneRef.current = null;
+            }
+            setIncomingCall(null);
+            incomingCallRef.current = null;
+            setCallStatus('idle');
+            callStatusRef.current = 'idle';
+            toast({
+              title: 'Missed Call',
+              description: `${payload.callerName || 'Squadmate'} tried to call you.`,
+              type: 'info',
+            });
+          }
+        }, 35000);
       })
       .on('broadcast', { event: 'call_accepted' }, ({ payload }) => {
         if (!payload || payload.calleeId === user.id) return;
@@ -2099,6 +2155,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (ringingTimerRef.current) {
           clearTimeout(ringingTimerRef.current);
           ringingTimerRef.current = null;
+        }
+        if (calleeRingingTimerRef.current) {
+          clearTimeout(calleeRingingTimerRef.current);
+          calleeRingingTimerRef.current = null;
         }
         if (ringingBeaconRef.current) {
           clearInterval(ringingBeaconRef.current);
@@ -2681,11 +2741,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (conversationId && supabase) {
         if (sessionStatusChannelRef.current) {
           try {
-            supabase.removeChannel(sessionStatusChannelRef.current);
+            realtimeHub.release(sessionStatusChannelRef.current);
           } catch {}
+          sessionStatusChannelRef.current = null;
         }
         const sessionChan = realtimeHub
-          .acquire(`call-status-sync-${conversationId}-${Date.now()}`, { config: { private: true } }, supabase)
+          .acquire(`call-status-sync-${conversationId}`, { config: { private: true } }, supabase)
           .on(
             'postgres_changes',
             {
@@ -3335,11 +3396,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (conversationId && supabase) {
       if (sessionStatusChannelRef.current) {
         try {
-          supabase.removeChannel(sessionStatusChannelRef.current);
+          realtimeHub.release(sessionStatusChannelRef.current);
         } catch {}
+        sessionStatusChannelRef.current = null;
       }
       const sessionChan = realtimeHub
-        .acquire(`call-status-sync-${conversationId}-${Date.now()}`, { config: { private: true } }, supabase)
+        .acquire(`call-status-sync-${conversationId}`, { config: { private: true } }, supabase)
         .on(
           'postgres_changes',
           {

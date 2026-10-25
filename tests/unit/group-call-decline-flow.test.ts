@@ -90,7 +90,10 @@ const {
       neq: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { id: 'call-sess-squad-888', caller_id: 'user-caller-111', status: 'ringing' },
+        error: null,
+      }),
       then: vi.fn((resolve: any) => resolve({ data: [], error: null })),
     }),
   };
@@ -225,20 +228,22 @@ describe('Squad Group Call Decline Flow & Active Persistence Verification', () =
     const calleeMailbox = channelCallbacks.get(`user-signals-${mockUser.id}`);
     const incomingCallListeners = calleeMailbox?.get('incoming_call') || [];
 
-    act(() => {
-      incomingCallListeners.forEach((fn) =>
-        fn({
-          payload: {
-            id: 'call-sess-squad-888',
-            callerId: 'user-caller-111',
-            callerName: 'User One',
-            targetUserId: mockUser.id,
-            conversationId: 'conv-group-squad-444',
-            isVideo: false,
-            isGroup: true,
-            groupName: 'Elite Gamers Squad',
-          },
-        })
+    await act(async () => {
+      await Promise.all(
+        incomingCallListeners.map((fn) =>
+          fn({
+            payload: {
+              id: 'call-sess-squad-888',
+              callerId: 'user-caller-111',
+              callerName: 'User One',
+              targetUserId: mockUser.id,
+              conversationId: 'conv-group-squad-444',
+              isVideo: false,
+              isGroup: true,
+              groupName: 'Elite Gamers Squad',
+            },
+          })
+        )
       );
     });
 
@@ -286,20 +291,22 @@ describe('Squad Group Call Decline Flow & Active Persistence Verification', () =
     const squadEndedListeners = calleeMailbox?.get('squad_call_ended') || [];
 
     // Callee receives group call and dismisses ringtone
-    act(() => {
-      incomingCallListeners.forEach((fn) =>
-        fn({
-          payload: {
-            id: 'call-sess-squad-888',
-            callerId: 'user-caller-111',
-            callerName: 'User One',
-            targetUserId: mockUser.id,
-            conversationId: 'conv-group-squad-444',
-            isVideo: false,
-            isGroup: true,
-            groupName: 'Elite Gamers Squad',
-          },
-        })
+    await act(async () => {
+      await Promise.all(
+        incomingCallListeners.map((fn) =>
+          fn({
+            payload: {
+              id: 'call-sess-squad-888',
+              callerId: 'user-caller-111',
+              callerName: 'User One',
+              targetUserId: mockUser.id,
+              conversationId: 'conv-group-squad-444',
+              isVideo: false,
+              isGroup: true,
+              groupName: 'Elite Gamers Squad',
+            },
+          })
+        )
       );
     });
 

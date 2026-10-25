@@ -67,6 +67,7 @@ interface ServerSettingsModalProps {
   onUpdateMemberRole?: (serverId: string, userId: string, newRole: ServerRole) => Promise<unknown>;
   onKickMember?: (serverId: string, userId: string) => Promise<unknown>;
   onLeaveServer?: (serverId: string) => Promise<unknown>;
+  onTransferOwnership?: (serverId: string, newOwnerId: string) => Promise<boolean>;
   onCreateRole?: (serverId: string, name: string, color: string, permissions: ServerPermission[]) => Promise<unknown>;
   onUpdateRole?: (serverId: string, roleId: string, updates: Partial<RoleDefinition>) => Promise<unknown>;
   onDeleteRole?: (serverId: string, roleId: string) => Promise<unknown>;
@@ -85,6 +86,7 @@ export function ServerSettingsModal({
   onUpdateMemberRole,
   onKickMember,
   onLeaveServer,
+  onTransferOwnership,
   onCreateRole,
   onUpdateRole,
   onDeleteRole,
@@ -1134,6 +1136,36 @@ export function ServerSettingsModal({
                               title="Kick from Server"
                             >
                               <UserMinus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {/* Transfer Ownership Button */}
+                          {isOwner && onTransferOwnership && (
+                            <button
+                              onClick={async () => {
+                                const targetName = mem.profile?.display_name || mem.profile?.username || 'this member';
+                                const confirmed = window.confirm(
+                                  `Are you sure you want to transfer server ownership to ${targetName}?\n\nYou will be demoted to Admin and will no longer be the server owner.`
+                                );
+                                if (!confirmed) return;
+                                const success = await onTransferOwnership(server.id, mem.user_id);
+                                if (success) {
+                                  toast({
+                                    title: 'Ownership Transferred',
+                                    description: `Server ownership has been successfully transferred to ${targetName}.`,
+                                    type: 'success',
+                                  });
+                                } else {
+                                  toast({
+                                    title: 'Transfer Failed',
+                                    description: 'Could not transfer ownership. Please check your network and try again.',
+                                    type: 'error',
+                                  });
+                                }
+                              }}
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                              title="Transfer Server Ownership"
+                            >
+                              <Crown className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>

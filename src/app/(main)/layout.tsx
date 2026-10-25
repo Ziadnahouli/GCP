@@ -24,6 +24,7 @@ import { OfflineBanner } from '@/components/network/offline-banner';
 import { ComponentErrorBoundary } from '@/components/ui/error-boundary';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers, ServersProvider } from '@/hooks/use-servers';
+import { useToast } from '@/components/ui/toast';
 import { ConversationsProvider } from '@/hooks/use-conversations';
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { Gamepad2, MessageSquare, Users, X } from 'lucide-react';
@@ -96,6 +97,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
     deleteChannel,
     joinServer,
     leaveServer,
+    transferOwnership,
     updateMemberRole,
     kickMember,
     createRole,
@@ -103,6 +105,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
     deleteRole,
     updateRolePermissions,
   } = useServers();
+  const { toast } = useToast();
 
   const activeServer = React.useMemo(() => {
     if (!selectedServerId) return null;
@@ -189,7 +192,24 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
   };
 
   const handleLeaveServer = async (srvId: string) => {
-    await leaveServer(srvId);
+    const srv = servers.find((s) => s.id === srvId);
+    if (srv && srv.owner_id === user?.id) {
+      toast({
+        title: 'Cannot Leave Server',
+        description: 'Server owners must transfer ownership to another member or delete the server before leaving.',
+        type: 'error',
+      });
+      return;
+    }
+    const success = await leaveServer(srvId);
+    if (!success) {
+      toast({
+        title: 'Failed to Leave Server',
+        description: 'An unexpected error occurred while attempting to leave the server.',
+        type: 'error',
+      });
+      return;
+    }
     setShowServerSettings(false);
     router.push('/');
   };
@@ -408,6 +428,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
             onUpdateMemberRole={updateMemberRole}
             onKickMember={kickMember}
             onLeaveServer={handleLeaveServer}
+            onTransferOwnership={transferOwnership}
             onCreateRole={createRole}
             onUpdateRole={updateRole}
             onDeleteRole={deleteRole}

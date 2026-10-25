@@ -36,11 +36,19 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
   const [allowFriendReqs, setAllowFriendReqs] = React.useState<'everyone' | 'friends_of_friends' | 'none'>(
     settings?.allow_friend_requests || 'everyone'
   );
+  const [profileVisibility, setProfileVisibility] = React.useState<'everyone' | 'friends' | 'nobody'>(
+    settings?.profile_visibility || 'everyone'
+  );
+  const [presenceVisibility, setPresenceVisibility] = React.useState<'everyone' | 'friends' | 'nobody'>(
+    settings?.presence_visibility || 'everyone'
+  );
 
   React.useEffect(() => {
     if (settings) {
       if (settings.allow_direct_messages) setAllowDms(settings.allow_direct_messages);
       if (settings.allow_friend_requests) setAllowFriendReqs(settings.allow_friend_requests);
+      if (settings.profile_visibility) setProfileVisibility(settings.profile_visibility);
+      if (settings.presence_visibility) setPresenceVisibility(settings.presence_visibility);
     }
   }, [settings]);
 
@@ -61,10 +69,12 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
   const handleUpdatePrivacy = async (updates: Partial<UserSettings>) => {
     if (updates.allow_direct_messages) setAllowDms(updates.allow_direct_messages);
     if (updates.allow_friend_requests) setAllowFriendReqs(updates.allow_friend_requests);
+    if (updates.profile_visibility) setProfileVisibility(updates.profile_visibility);
+    if (updates.presence_visibility) setPresenceVisibility(updates.presence_visibility);
     await updateSettings(updates);
     toast({
       title: 'Privacy Policy Saved',
-      description: 'Communication and invitation policies updated.',
+      description: 'Communication and visibility policies updated.',
       type: 'success',
       duration: 2000,
     });
@@ -72,7 +82,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
 
   const handleSendPasswordReset = async () => {
     const supabase = getBrowserClient();
-    const userEmail = (user as any)?.email;
+    const userEmail = user?.email;
     if (!userEmail) {
       toast({
         title: 'Password Reset',
@@ -310,7 +320,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => handleUpdatePrivacy({ allow_direct_messages: opt.id as any })}
+                onClick={() => handleUpdatePrivacy({ allow_direct_messages: opt.id as 'everyone' | 'friends' | 'none' })}
                 className={cn(
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   allowDms === opt.id
@@ -340,10 +350,70 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => handleUpdatePrivacy({ allow_friend_requests: opt.id as any })}
+                onClick={() => handleUpdatePrivacy({ allow_friend_requests: opt.id as 'everyone' | 'friends_of_friends' | 'none' })}
                 className={cn(
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   allowFriendReqs === opt.id
+                    ? 'bg-primary/20 border-primary text-foreground'
+                    : 'bg-white/[0.02] border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]'
+                )}
+              >
+                <div className="font-semibold">{opt.label}</div>
+                <div className="text-[10px] opacity-75">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* L15: Profile Visibility Policy */}
+        <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+          <div>
+            <div className="text-xs font-bold text-foreground">Profile Visibility</div>
+            <div className="text-[11px] text-muted-foreground">Control who can view your full bio, banner, and profile details</div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {[
+              { id: 'everyone', label: 'Everyone', desc: 'Visible to all platform users' },
+              { id: 'friends', label: 'Friends Only', desc: 'Only confirmed friends' },
+              { id: 'nobody', label: 'Private (Nobody)', desc: 'Only visible to you' },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => handleUpdatePrivacy({ profile_visibility: opt.id as 'everyone' | 'friends' | 'nobody' })}
+                className={cn(
+                  'p-2.5 rounded-xl border text-left transition text-xs',
+                  profileVisibility === opt.id
+                    ? 'bg-primary/20 border-primary text-foreground'
+                    : 'bg-white/[0.02] border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]'
+                )}
+              >
+                <div className="font-semibold">{opt.label}</div>
+                <div className="text-[10px] opacity-75">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* L16: Presence & Game Activity Visibility */}
+        <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+          <div>
+            <div className="text-xs font-bold text-foreground">Online Status & Activity Visibility</div>
+            <div className="text-[11px] text-muted-foreground">Control who sees your live online status and current game activity</div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {[
+              { id: 'everyone', label: 'Everyone', desc: 'Mutual servers & friends' },
+              { id: 'friends', label: 'Friends Only', desc: 'Only your friends list' },
+              { id: 'nobody', label: 'Nobody', desc: 'Always appear private' },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => handleUpdatePrivacy({ presence_visibility: opt.id as 'everyone' | 'friends' | 'nobody' })}
+                className={cn(
+                  'p-2.5 rounded-xl border text-left transition text-xs',
+                  presenceVisibility === opt.id
                     ? 'bg-primary/20 border-primary text-foreground'
                     : 'bg-white/[0.02] border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]'
                 )}
@@ -365,11 +435,11 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
             <div>
               <div className="text-xs font-bold text-foreground">Email Verification</div>
               <div className="text-[11px] text-muted-foreground">
-                {(user as any)?.email || 'Signed in via provider'}
+                {user?.email || 'Signed in via provider'}
               </div>
             </div>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              {(user as any)?.email_confirmed_at ? 'Email Verified' : 'Verified'}
+              {user?.email_confirmed_at ? 'Email Verified' : 'Verified'}
             </span>
           </div>
 

@@ -15,7 +15,7 @@ vi.mock('@/lib/supabase/config', () => ({
 }));
 
 import { updateSession } from '@/lib/supabase/middleware';
-import { middleware } from '@/lib/middleware';
+import { middleware } from '@/middleware';
 
 describe('A1: Root middleware route protection and session refresh', () => {
   beforeEach(() => {
@@ -34,6 +34,36 @@ describe('A1: Root middleware route protection and session refresh', () => {
 
     expect(res.status).toBe(307);
     expect(res.headers.get('location')).toBe('http://localhost:3000/login');
+  });
+
+  it('redirects unauthenticated user with query params and preserves them in redirectTo', async () => {
+    const mockResponse = NextResponse.next();
+    vi.mocked(updateSession).mockResolvedValue({
+      response: mockResponse,
+      user: null,
+    });
+
+    const req = new NextRequest('http://localhost:3000/?join=myinvitecode');
+    const res = await middleware(req);
+
+    expect(res.status).toBe(307);
+    const location = res.headers.get('location') || '';
+    expect(location).toContain('/login');
+    expect(location).toContain('redirectTo=%2F%3Fjoin%3Dmyinvitecode');
+  });
+
+  it('allows unauthenticated access to public invite landing page /invite/<code>', async () => {
+    const mockResponse = NextResponse.next();
+    vi.mocked(updateSession).mockResolvedValue({
+      response: mockResponse,
+      user: null,
+    });
+
+    const req = new NextRequest('http://localhost:3000/invite/myinvitecode');
+    const res = await middleware(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('location')).toBeNull();
   });
 
   it('redirects unauthenticated user from deep protected route and preserves redirectTo parameter', async () => {

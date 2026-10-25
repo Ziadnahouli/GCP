@@ -5,8 +5,8 @@
     "cleanSiSdrDb": 99,
     "onsetPreservationPct": 100,
     "gateFalseCloseRatePct": 0,
-    "cpuMeanMs": 0.006,
-    "cpuP99Ms": 0.023,
+    "cpuMeanMs": 0.007,
+    "cpuP99Ms": 0.051,
     "nanInfCount": 0,
     "clippingCount": 0,
     "underruns": 0,
@@ -43,33 +43,33 @@
     }
   },
   "light": {
-    "latencyMs": 28.67,
+    "latencyMs": 20.67,
     "stoi": 0.982,
-    "cleanSiSdrDb": 0.04,
+    "cleanSiSdrDb": 0.05,
     "onsetPreservationPct": 78.7,
     "gateFalseCloseRatePct": 17.3,
-    "cpuMeanMs": 0.486,
-    "cpuP99Ms": 3.217,
+    "cpuMeanMs": 0.385,
+    "cpuP99Ms": 2.192,
     "nanInfCount": 0,
     "clippingCount": 0,
     "underruns": 0,
-    "whisperStoi": 0.726,
+    "whisperStoi": 0.76,
     "noiseAttenuation": {
-      "fanDb": -16.7,
-      "airConDb": -11.43,
-      "streetDb": -29.15,
-      "cafeBabbleDb": -1.44,
-      "tvMusicDb": -5.74,
-      "barkingDb": -5.34
+      "fanDb": -16.61,
+      "airConDb": -11.47,
+      "streetDb": -28.55,
+      "cafeBabbleDb": -1.39,
+      "tvMusicDb": -3.79,
+      "barkingDb": -4.31
     },
     "transientAttenuation": {
-      "keyboardPeakCutDb": -19.78,
-      "mousePeakCutDb": -6.31
+      "keyboardPeakCutDb": -18.04,
+      "mousePeakCutDb": -6.22
     },
     "mixtures": {
       "snr0dB": {
-        "outputSiSdrDb": -2.23,
-        "siSdrImprovementDb": -2.33
+        "outputSiSdrDb": -2.24,
+        "siSdrImprovementDb": -2.35
       },
       "snr5dB": {
         "outputSiSdrDb": -1.46,
@@ -77,33 +77,33 @@
       },
       "snr10dB": {
         "outputSiSdrDb": -1.13,
-        "siSdrImprovementDb": -11.17
+        "siSdrImprovementDb": -11.16
       },
       "snr20dB": {
-        "outputSiSdrDb": -0.95,
-        "siSdrImprovementDb": -20.96
+        "outputSiSdrDb": -0.94,
+        "siSdrImprovementDb": -20.95
       }
     }
   },
   "balanced": {
-    "latencyMs": 28.67,
+    "latencyMs": 20.67,
     "stoi": 0.982,
     "cleanSiSdrDb": 0.04,
-    "onsetPreservationPct": 78.7,
+    "onsetPreservationPct": 78.5,
     "gateFalseCloseRatePct": 17.3,
-    "cpuMeanMs": 0.468,
-    "cpuP99Ms": 2.715,
+    "cpuMeanMs": 0.363,
+    "cpuP99Ms": 1.926,
     "nanInfCount": 0,
     "clippingCount": 0,
     "underruns": 0,
-    "whisperStoi": 0.709,
+    "whisperStoi": 0.723,
     "noiseAttenuation": {
-      "fanDb": -16.7,
-      "airConDb": -11.43,
-      "streetDb": -30.21,
-      "cafeBabbleDb": -1.46,
-      "tvMusicDb": -6.28,
-      "barkingDb": -6.34
+      "fanDb": -16.62,
+      "airConDb": -11.47,
+      "streetDb": -30.84,
+      "cafeBabbleDb": -1.39,
+      "tvMusicDb": -5.28,
+      "barkingDb": -5.43
     },
     "transientAttenuation": {
       "keyboardPeakCutDb": -19.85,
@@ -111,63 +111,63 @@
     },
     "mixtures": {
       "snr0dB": {
-        "outputSiSdrDb": -2.23,
-        "siSdrImprovementDb": -2.34
+        "outputSiSdrDb": -2.24,
+        "siSdrImprovementDb": -2.35
       },
       "snr5dB": {
-        "outputSiSdrDb": -1.48,
-        "siSdrImprovementDb": -6.54
-      },
-      "snr10dB": {
-        "outputSiSdrDb": -1.14,
-        "siSdrImprovementDb": -11.17
-      },
-      "snr20dB": {
-        "outputSiSdrDb": -0.96,
-        "siSdrImprovementDb": -20.97
-      }
-    }
-  },
-  "strong": {
-    "latencyMs": 28.67,
-    "stoi": 0.981,
-    "cleanSiSdrDb": 0.04,
-    "onsetPreservationPct": 78.3,
-    "gateFalseCloseRatePct": 17.3,
-    "cpuMeanMs": 0.588,
-    "cpuP99Ms": 4.151,
-    "nanInfCount": 0,
-    "clippingCount": 0,
-    "underruns": 0,
-    "whisperStoi": 0.689,
-    "noiseAttenuation": {
-      "fanDb": -16.7,
-      "airConDb": -11.48,
-      "streetDb": -31.48,
-      "cafeBabbleDb": -2.02,
-      "tvMusicDb": -11.18,
-      "barkingDb": -7.37
-    },
-    "transientAttenuation": {
-      "keyboardPeakCutDb": -19.95,
-      "mousePeakCutDb": -6.47
-    },
-    "mixtures": {
-      "snr0dB": {
-        "outputSiSdrDb": -2.29,
-        "siSdrImprovementDb": -2.39
-      },
-      "snr5dB": {
-        "outputSiSdrDb": -1.54,
-        "siSdrImprovementDb": -6.6
+        "outputSiSdrDb": -1.47,
+        "siSdrImprovementDb": -6.53
       },
       "snr10dB": {
         "outputSiSdrDb": -1.14,
         "siSdrImprovementDb": -11.18
       },
       "snr20dB": {
-        "outputSiSdrDb": -0.97,
-        "siSdrImprovementDb": -20.98
+        "outputSiSdrDb": -0.95,
+        "siSdrImprovementDb": -20.96
+      }
+    }
+  },
+  "strong": {
+    "latencyMs": 20.67,
+    "stoi": 0.982,
+    "cleanSiSdrDb": 0.05,
+    "onsetPreservationPct": 78.5,
+    "gateFalseCloseRatePct": 17.3,
+    "cpuMeanMs": 0.406,
+    "cpuP99Ms": 2.789,
+    "nanInfCount": 0,
+    "clippingCount": 0,
+    "underruns": 0,
+    "whisperStoi": 0.749,
+    "noiseAttenuation": {
+      "fanDb": -16.62,
+      "airConDb": -11.47,
+      "streetDb": -30.84,
+      "cafeBabbleDb": -1.39,
+      "tvMusicDb": -4.38,
+      "barkingDb": -5.41
+    },
+    "transientAttenuation": {
+      "keyboardPeakCutDb": -19.85,
+      "mousePeakCutDb": -6.37
+    },
+    "mixtures": {
+      "snr0dB": {
+        "outputSiSdrDb": -2.24,
+        "siSdrImprovementDb": -2.35
+      },
+      "snr5dB": {
+        "outputSiSdrDb": -1.46,
+        "siSdrImprovementDb": -6.52
+      },
+      "snr10dB": {
+        "outputSiSdrDb": -1.13,
+        "siSdrImprovementDb": -11.16
+      },
+      "snr20dB": {
+        "outputSiSdrDb": -0.94,
+        "siSdrImprovementDb": -20.95
       }
     }
   }

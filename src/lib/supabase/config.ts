@@ -21,7 +21,7 @@ export function getSupabaseConfig(): SupabaseConfig {
       anonKey &&
       !url.includes('your-project') &&
       !anonKey.includes('your-supabase') &&
-      url.startsWith('https://')
+      (url.startsWith('https://') || url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost'))
   );
 
   return {

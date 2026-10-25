@@ -6,14 +6,17 @@ import {
   Copy,
   Check,
   Search,
-  MessageSquare,
   Sparkles,
   X,
   Send,
   Users,
+  Clock,
+  Hash,
+  Loader2,
 } from 'lucide-react';
 import { Server } from '@/lib/types/server';
 import { useSocial } from '@/hooks/use-social';
+import { useServers } from '@/hooks/use-servers';
 import { useConversations } from '@/hooks/use-conversations';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -29,26 +32,82 @@ interface InviteModalProps {
   server: Server;
 }
 
+const EXPIRY_OPTIONS = [
+  { label: '30 Minutes', hours: 1 },
+  { label: '1 Hour', hours: 1 },
+  { label: '1 Day', hours: 24 },
+  { label: '7 Days', hours: 168 },
+  { label: 'Never', hours: 0 },
+];
+
+const MAX_USES_OPTIONS = [
+  { label: 'No Limit', uses: 0 },
+  { label: '1 Use', uses: 1 },
+  { label: '5 Uses', uses: 5 },
+  { label: '10 Uses', uses: 10 },
+  { label: '25 Uses', uses: 25 },
+  { label: '50 Uses', uses: 50 },
+  { label: '100 Uses', uses: 100 },
+];
+
 export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
   useModalEscape(open, onOpenChange);
   const { user } = useAuth();
   const { friends } = useSocial();
+  const { createInvite } = useServers();
   const { getOrCreateDirectConversation } = useConversations();
   const { toast } = useToast();
 
+  const [inviteCode, setInviteCode] = React.useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = React.useState(false);
   const [copiedLink, setCopiedLink] = React.useState(false);
-  const [copiedId, setCopiedId] = React.useState(false);
   const [search, setSearch] = React.useState('');
   const [invitedMap, setInvitedMap] = React.useState<Record<string, boolean>>({});
   const [invitingId, setInvitingId] = React.useState<string | null>(null);
 
+  // Expiration and Max Uses state
+  const [expiresInHours, setExpiresInHours] = React.useState<number>(168); // 7 days default
+  const [maxUses, setMaxUses] = React.useState<number>(0); // Unlimited default
+
+  // Generate invite code when modal opens or settings change
+  const generateInvite = React.useCallback(async () => {
+    if (!server?.id || !user) return;
+    setIsGenerating(true);
+    try {
+      const res = await createInvite(server.id, maxUses, expiresInHours);
+      if (res.invite?.code) {
+        setInviteCode(res.invite.code);
+      } else if (res.error) {
+        toast({
+          title: 'Could Not Create Invite',
+          description: res.error,
+          type: 'error',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'Failed to generate server invite.',
+        type: 'error',
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [server?.id, user, maxUses, expiresInHours, createInvite, toast]);
+
+  React.useEffect(() => {
+    if (open && server?.id) {
+      generateInvite();
+    }
+  }, [open, server?.id, expiresInHours, maxUses, generateInvite]);
+
   if (!open) return null;
 
-  const inviteLink = typeof window !== 'undefined'
-    ? `${window.location.origin}/?join=${server.id}`
-    : `https://nexus.gg/join/${server.id}`;
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nexus.gg';
+  const inviteLink = inviteCode ? `${origin}/invite/${inviteCode}` : `${origin}/invite/...`;
 
   const handleCopyLink = () => {
+    if (!inviteCode) return;
     try {
       navigator.clipboard.writeText(inviteLink);
       setCopiedLink(true);
@@ -58,24 +117,13 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
         type: 'success',
       });
       setTimeout(() => setCopiedLink(false), 2000);
-    } catch {}
-  };
-
-  const handleCopyId = () => {
-    try {
-      navigator.clipboard.writeText(server.id);
-      setCopiedId(true);
-      toast({
-        title: 'Server ID Copied',
-        description: 'Friends can paste this in "Join with Invite".',
-        type: 'success',
-      });
-      setTimeout(() => setCopiedId(false), 2000);
-    } catch {}
+    } catch (err) {
+      void err;
+    }
   };
 
   const handleSendInviteToFriend = async (friendId: string, friendName: string) => {
-    if (!user) return;
+    if (!user || !inviteCode) return;
     setInvitingId(friendId);
     try {
       const { conversationId, error } = await getOrCreateDirectConversation(friendId);
@@ -152,9 +200,16 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
 
         {/* 1-Click Shareable Link */}
         <div className="space-y-1.5">
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-            Invite Link
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+              Invite Link
+            </label>
+            {isGenerating && (
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
+                <Loader2 className="w-3 h-3 animate-spin" /> Generating...
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-1.5 bg-white/[0.02] border border-white/[0.08] rounded-xl p-1.5 pl-3">
             <span className="text-xs text-foreground/80 font-mono truncate flex-1 select-all">
               {inviteLink}
@@ -162,6 +217,7 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
             <Button
               size="sm"
               onClick={handleCopyLink}
+              disabled={!inviteCode || isGenerating}
               className="h-7 px-3 text-xs font-medium gap-1.5 shrink-0"
             >
               {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -170,27 +226,45 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
           </div>
         </div>
 
-        {/* Server ID for Direct Join */}
-        <div className="flex items-center justify-between p-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02]">
-          <div>
-            <div className="text-[11px] text-muted-foreground font-mono">Server ID:</div>
-            <div className="text-xs font-mono font-medium text-foreground select-all">
-              {server.id}
-            </div>
+        {/* Expiration and Max Uses selectors */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+              <Clock className="w-3 h-3 text-primary" /> Expire After
+            </label>
+            <select
+              value={expiresInHours}
+              onChange={(e) => setExpiresInHours(Number(e.target.value))}
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-2 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary/50"
+            >
+              {EXPIRY_OPTIONS.map((opt) => (
+                <option key={opt.hours} value={opt.hours} className="bg-surface-panel text-foreground">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleCopyId}
-            className="h-7 text-xs border-white/[0.08] hover:bg-white/[0.04] gap-1"
-          >
-            {copiedId ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-            <span>{copiedId ? 'Copied' : 'Copy ID'}</span>
-          </Button>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+              <Hash className="w-3 h-3 text-primary" /> Max Uses
+            </label>
+            <select
+              value={maxUses}
+              onChange={(e) => setMaxUses(Number(e.target.value))}
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-2 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary/50"
+            >
+              {MAX_USES_OPTIONS.map((opt) => (
+                <option key={opt.uses} value={opt.uses} className="bg-surface-panel text-foreground">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Direct Invite Friends List */}
-        <div className="space-y-2 pt-1">
+        <div className="space-y-2 pt-1 border-t border-white/[0.06]">
           <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
             <span>Invite Friends Directly</span>
             <span className="text-[10px] font-mono lowercase">({friends.length} friends)</span>
@@ -207,7 +281,7 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
             />
           </div>
 
-          <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+          <div className="max-h-44 overflow-y-auto space-y-1 pr-1">
             {filteredFriends.length === 0 ? (
               <div className="text-center py-4 text-xs text-muted-foreground/60 font-mono">
                 No friends found matching &quot;{search}&quot;
@@ -243,7 +317,7 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
                     <Button
                       size="sm"
                       variant={isInvited ? 'outline' : 'default'}
-                      disabled={isInvited || isInviting}
+                      disabled={isInvited || isInviting || !inviteCode}
                       onClick={() => handleSendInviteToFriend(f.friend.id, f.friend.display_name)}
                       className={cn(
                         'h-7 text-xs px-2.5 font-medium transition-all shrink-0',

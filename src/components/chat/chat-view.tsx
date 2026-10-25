@@ -93,15 +93,58 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     };
   }, [conversationId, setActiveConversationId]);
 
-  // Automatically mark conversation as read when viewing and when new messages arrive
+  // L9: Smart read marking only when window has focus, tab is visible, and scrolled near bottom
+  const [newMessagesDividerId, setNewMessagesDividerId] = React.useState<string | null>(null);
   const lastMarkedCountRef = React.useRef<number>(-1);
-  React.useEffect(() => {
+
+  const checkAndMarkRead = React.useCallback(() => {
     if (!conversationId || !markConversationAsRead) return;
-    if (lastMarkedCountRef.current !== messages.length) {
-      lastMarkedCountRef.current = messages.length;
+    const isVisible = typeof document !== 'undefined' && !document.hidden;
+    const isFocused = typeof document !== 'undefined' && (typeof document.hasFocus === 'function' ? document.hasFocus() : true);
+    const isAtBottom = isNearBottomRef.current;
+
+    if (isVisible && isFocused && isAtBottom) {
       markConversationAsRead(conversationId);
+      lastMarkedCountRef.current = messages.length;
+      setNewMessagesDividerId(null);
     }
   }, [conversationId, markConversationAsRead, messages.length]);
+
+  React.useEffect(() => {
+    if (!conversationId || !markConversationAsRead) return;
+    if (messages.length === 0) return;
+
+    const isVisible = typeof document !== 'undefined' && !document.hidden;
+    const isFocused = typeof document !== 'undefined' && (typeof document.hasFocus === 'function' ? document.hasFocus() : true);
+    const isAtBottom = isNearBottomRef.current;
+
+    if (isVisible && isFocused && isAtBottom) {
+      lastMarkedCountRef.current = messages.length;
+      markConversationAsRead(conversationId);
+      setNewMessagesDividerId(null);
+    } else {
+      // User is not actively looking at messages: place the "New Messages" divider at the first unseen message
+      if (!newMessagesDividerId && lastMarkedCountRef.current >= 0 && messages.length > lastMarkedCountRef.current) {
+        const firstUnread = messages[lastMarkedCountRef.current];
+        if (firstUnread) {
+          setNewMessagesDividerId(firstUnread.id);
+        }
+      }
+    }
+  }, [conversationId, markConversationAsRead, messages, newMessagesDividerId]);
+
+  React.useEffect(() => {
+    const onVisibilityOrFocus = () => {
+      checkAndMarkRead();
+    };
+
+    window.addEventListener('focus', onVisibilityOrFocus);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+    return () => {
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+    };
+  }, [checkAndMarkRead]);
 
   const callState = useCallState();
   const callActions = useCallActions();
@@ -170,6 +213,10 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     const nearBottom = scrollHeight - scrollTop - clientHeight < 150;
     isNearBottomRef.current = nearBottom;
     setIsScrolledUp(!nearBottom);
+
+    if (nearBottom) {
+      checkAndMarkRead();
+    }
   };
 
   const supabase = React.useMemo(() => getBrowserClient(), []);
@@ -999,15 +1046,25 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
           const repliedMsg = msg.reply_to_id
             ? messages.find((m) => m.id === msg.reply_to_id)
             : null;
+          const isFirstUnread = msg.id === newMessagesDividerId;
 
           return (
-            <div
-              key={msg.id}
-              className={cn(
-                'group relative flex gap-3.5 p-2 rounded-xl hover:bg-surface-default/60 transition-colors',
-                isMe ? 'flex-row-reverse' : 'flex-row'
+            <React.Fragment key={msg.id}>
+              {isFirstUnread && (
+                <div className="flex items-center gap-3 my-4 px-2 select-none" role="separator" aria-label="New messages">
+                  <div className="flex-1 h-[1px] bg-rose-500/60 shadow-[0_0_8px_rgba(244,63,94,0.4)]" />
+                  <span className="text-[10px] font-bold tracking-wider uppercase text-rose-400 bg-rose-500/15 px-2.5 py-0.5 rounded-full border border-rose-500/30">
+                    New Messages
+                  </span>
+                  <div className="flex-1 h-[1px] bg-rose-500/60 shadow-[0_0_8px_rgba(244,63,94,0.4)]" />
+                </div>
               )}
-            >
+              <div
+                className={cn(
+                  'group relative flex gap-3.5 p-2 rounded-xl hover:bg-surface-default/60 transition-colors',
+                  isMe ? 'flex-row-reverse' : 'flex-row'
+                )}
+              >
               {/* Sender Avatar */}
               <Avatar
                 src={msg.sender?.avatar_url}
@@ -1318,6 +1375,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                 )}
               </div>
             </div>
+          </React.Fragment>
           );
         })}
 

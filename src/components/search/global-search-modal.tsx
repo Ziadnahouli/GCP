@@ -271,10 +271,15 @@ export function GlobalSearchModal({
     );
   }, [query, router, onOpenChange, onOpenSettings, onOpenSoundboard]);
 
+function sanitizeSearchTerm(term: string): string {
+  // Strip PostgREST filter delimiters and SQL wildcards to prevent query corruption
+  return term.replace(/[%_(),"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
   // Debounced asynchronous server-side search for accessible messages and remote users
   React.useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2 || !isConfigured || !supabase) {
+    const sanitized = sanitizeSearchTerm(query);
+    if (sanitized.length < 2 || !isConfigured || !supabase) {
       setMessageResults([]);
       setUserResults([]);
       setIsSearchingMessages(false);
@@ -288,7 +293,7 @@ export function GlobalSearchModal({
         const { data: msgData } = await supabase
           .from('messages')
           .select('id, content, conversation_id, channel_id, created_at, sender:sender_id(display_name, username)')
-          .ilike('content', `%${trimmed}%`)
+          .ilike('content', `%${sanitized}%`)
           .limit(8);
 
         if (msgData) {
@@ -299,7 +304,7 @@ export function GlobalSearchModal({
             subtitle: `Message by ${m.sender?.display_name || 'Squadmate'} • ${new Date(m.created_at).toLocaleDateString()}`,
             icon: <MessageSquare className="w-4 h-4 text-muted-foreground" />,
             action: () => {
-              saveRecentSearch(trimmed);
+              saveRecentSearch(sanitized);
               onOpenChange(false);
               if (m.conversation_id) {
                 router.push(`/?c=${m.conversation_id}`);
@@ -319,7 +324,7 @@ export function GlobalSearchModal({
         const { data: profData } = await supabase
           .from('profiles')
           .select('id, display_name, username, avatar_url')
-          .or(`display_name.ilike.%${trimmed}%,username.ilike.%${trimmed}%`)
+          .or(`display_name.ilike.%${sanitized}%,username.ilike.%${sanitized}%`)
           .neq('id', user?.id || '')
           .limit(5);
 
@@ -334,7 +339,7 @@ export function GlobalSearchModal({
               avatarUrl: p.avatar_url,
               icon: <Users className="w-4 h-4 text-primary" />,
               action: async () => {
-                saveRecentSearch(trimmed);
+                saveRecentSearch(sanitized);
                 onOpenChange(false);
                 const { conversationId } = await getOrCreateDirectConversation(p.id);
                 if (conversationId) router.push(`/?c=${conversationId}`);

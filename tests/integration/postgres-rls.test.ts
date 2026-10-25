@@ -959,6 +959,50 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
       expect(Number(charlieRes.rows[0].count)).toBe(0);
     });
 
+    it('authorizes only target user to listen on user-signals topic and rejects eavesdropping (R1)', async () => {
+      // Alice can query her own signals
+      await asUser(ALICE_ID);
+      const aliceRes = await db.query(`SELECT * FROM realtime.messages WHERE topic = 'user-signals-${ALICE_ID}'`);
+      expect(aliceRes.rows).toBeDefined();
+
+      // Bob cannot query Alice's signals
+      await asUser(BOB_ID);
+      const bobRes = await db.query(`SELECT * FROM realtime.messages WHERE topic = 'user-signals-${ALICE_ID}'`);
+      expect(bobRes.rows.length).toBe(0);
+    });
+
+    it('rejects signaling when sender is blocked or recipient blocks DMs (R1)', async () => {
+      // Alice blocks Bob
+      await asSuperuser();
+      await db.exec(`
+        INSERT INTO public.blocks (blocker_id, blocked_id)
+        VALUES ('${ALICE_ID}', '${BOB_ID}')
+        ON CONFLICT DO NOTHING;
+      `);
+
+      // Bob cannot signal Alice
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          INSERT INTO realtime.messages (topic, extension)
+          VALUES ('user-signals-${ALICE_ID}', 'broadcast');
+        `)
+      ).rejects.toThrow();
+    });
+
+    it('rejects blanket unanchored voice_room topics (R2)', async () => {
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          INSERT INTO realtime.messages (topic, extension)
+          VALUES ('voice_room_lounge', 'broadcast');
+        `)
+      ).rejects.toThrow();
+
+      const res = await db.query(`SELECT * FROM realtime.messages WHERE topic = 'voice_room_lounge'`);
+      expect(res.rows.length).toBe(0);
+    });
+
     it('strictly denies anon unauthenticated access to realtime.messages', async () => {
       await asUser(null);
       await expect(
@@ -973,6 +1017,326 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
           SELECT * FROM realtime.messages;
         `)
       ).rejects.toThrow();
+    });
+  });
+
+  describe('S12: Call Abuse Prevention & Rate Limiting (L6)', () => {
+    beforeEach(async () => {
+      await asSuperuser();
+      await db.exec(`
+        INSERT INTO public.conversations (id, created_by, type)
+        VALUES ('${CONV_ID}', '${ALICE_ID}', 'direct')
+        ON CONFLICT (id) DO NOTHING;
+
+        INSERT INTO public.conversation_members (conversation_id, user_id, role)
+        VALUES ('${CONV_ID}', '${ALICE_ID}', 'owner'),
+               ('${CONV_ID}', '${BOB_ID}', 'member')
+        ON CONFLICT (conversation_id, user_id) DO NOTHING;
+
+        DELETE FROM public.blocks WHERE (blocker_id = '${ALICE_ID}' AND blocked_id = '${BOB_ID}') OR (blocker_id = '${BOB_ID}' AND blocked_id = '${ALICE_ID}');
+        DELETE FROM public.call_sessions WHERE caller_id = '${BOB_ID}' OR caller_id = '${ALICE_ID}';
+      `);
+    });
+
+    it('rejects call session insertion when caller is blocked by recipient', async () => {
+      await asSuperuser();
+      await db.exec(`
+        INSERT INTO public.blocks (blocker_id, blocked_id)
+        VALUES ('${ALICE_ID}', '${BOB_ID}')
+        ON CONFLICT DO NOTHING;
+      `);
+
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          INSERT INTO public.call_sessions (conversation_id, caller_id, livekit_room_name, status)
+          VALUES ('${CONV_ID}', '${BOB_ID}', 'call-room-${CONV_ID}', 'ringing');
+        `)
+      ).rejects.toThrow(/Cannot call this user \(blocked\)/);
+    });
+
+    it('enforces call rate limit of at most 3 call attempts per minute', async () => {
+      await asSuperuser();
+      await db.exec(`
+        DELETE FROM public.blocks WHERE blocker_id = '${ALICE_ID}' AND blocked_id = '${BOB_ID}';
+        DELETE FROM public.call_sessions WHERE caller_id = '${BOB_ID}';
+      `);
+
+      await asUser(BOB_ID);
+      for (let i = 0; i < 3; i++) {
+        await db.query(`
+          INSERT INTO public.call_sessions (conversation_id, caller_id, livekit_room_name, status)
+          VALUES ('${CONV_ID}', '${BOB_ID}', 'call-room-${CONV_ID}-${i}', 'ringing');
+        `);
+      }
+
+      await expect(
+        db.query(`
+          INSERT INTO public.call_sessions (conversation_id, caller_id, livekit_room_name, status)
+          VALUES ('${CONV_ID}', '${BOB_ID}', 'call-room-${CONV_ID}-4', 'ringing');
+        `)
+      ).rejects.toThrow(/Calling rate limit exceeded/);
+    });
+  });
+
+  describe('S13: Account Deletion Data Safety (L1)', () => {
+    beforeEach(async () => {
+      await asSuperuser();
+      await db.exec(`
+        INSERT INTO public.conversations (id, created_by, type)
+        VALUES ('${CONV_ID}', '${ALICE_ID}', 'direct')
+        ON CONFLICT (id) DO NOTHING;
+
+        INSERT INTO public.conversation_members (conversation_id, user_id, role)
+        VALUES ('${CONV_ID}', '${ALICE_ID}', 'owner'),
+               ('${CONV_ID}', '${BOB_ID}', 'member')
+        ON CONFLICT (conversation_id, user_id) DO NOTHING;
+
+        INSERT INTO public.servers (id, name, owner_id)
+        VALUES ('${SERVER_ID}', 'Alice Fortress', '${ALICE_ID}')
+        ON CONFLICT (id) DO UPDATE SET owner_id = '${ALICE_ID}';
+
+        INSERT INTO public.server_members (server_id, user_id, role)
+        VALUES ('${SERVER_ID}', '${ALICE_ID}', 'owner'),
+               ('${SERVER_ID}', '${BOB_ID}', 'member')
+        ON CONFLICT (server_id, user_id) DO UPDATE SET role = EXCLUDED.role;
+      `);
+    });
+
+    it('preserves other users message history and transfers server ownership instead of destroying data', async () => {
+      await asSuperuser();
+      const msgRes = await db.query<{ id: string }>(`
+        INSERT INTO public.messages (conversation_id, sender_id, content)
+        VALUES ('${CONV_ID}', '${ALICE_ID}', 'Alice crucial tactical briefing')
+        RETURNING id;
+      `);
+      const msgId = msgRes.rows[0].id;
+
+      await asUser(ALICE_ID);
+      const delRes = await db.query<{ delete_user_account: boolean }>(`
+        SELECT public.delete_user_account();
+      `);
+      expect(delRes.rows[0].delete_user_account).toBe(true);
+
+      await asSuperuser();
+      const checkMsg = await db.query<{ content: string; sender_id: string | null }>(`
+        SELECT content, sender_id FROM public.messages WHERE id = '${msgId}';
+      `);
+      expect(checkMsg.rows.length).toBe(1);
+      expect(checkMsg.rows[0].content).toBe('Alice crucial tactical briefing');
+      expect(checkMsg.rows[0].sender_id).toBeNull();
+
+      const checkServer = await db.query<{ owner_id: string }>(`
+        SELECT owner_id FROM public.servers WHERE id = '${SERVER_ID}';
+      `);
+      expect(checkServer.rows.length).toBe(1);
+      expect(checkServer.rows[0].owner_id).toBe(BOB_ID);
+    });
+  });
+
+  describe('S11: Channel Messages Timeout & Ban Enforcement (B3)', () => {
+    beforeEach(async () => {
+      await asSuperuser();
+      await db.exec(`
+        INSERT INTO public.server_members (server_id, user_id, role)
+        VALUES ('${SERVER_ID}', '${BOB_ID}', 'member')
+        ON CONFLICT (server_id, user_id) DO UPDATE SET timeout_until = NULL;
+        DELETE FROM public.server_bans WHERE server_id = '${SERVER_ID}' AND user_id = '${BOB_ID}';
+      `);
+    });
+
+    it('strictly rejects timed-out member from inserting channel messages', async () => {
+      // Put Bob in timeout until 1 hour in future
+      await asSuperuser();
+      await db.query(`
+        UPDATE public.server_members
+        SET timeout_until = NOW() + INTERVAL '1 hour'
+        WHERE server_id = '${SERVER_ID}' AND user_id = '${BOB_ID}';
+      `);
+
+      // Bob attempts to insert message
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          INSERT INTO public.channel_messages (channel_id, user_id, content)
+          VALUES ('${CHANNEL_ID}', '${BOB_ID}', 'Message while timed out');
+        `)
+      ).rejects.toThrow();
+
+      // Alice (not timed out) can insert
+      await asUser(ALICE_ID);
+      const res = await db.query(`
+        INSERT INTO public.channel_messages (channel_id, user_id, content)
+        VALUES ('${CHANNEL_ID}', '${ALICE_ID}', 'Alice message')
+        RETURNING id;
+      `);
+      expect(res.rows.length).toBe(1);
+    });
+
+    it('allows member to insert channel messages after timeout expires', async () => {
+      // Set Bob's timeout to the past
+      await asSuperuser();
+      await db.query(`
+        UPDATE public.server_members
+        SET timeout_until = NOW() - INTERVAL '1 minute'
+        WHERE server_id = '${SERVER_ID}' AND user_id = '${BOB_ID}';
+      `);
+
+      // Bob can insert now
+      await asUser(BOB_ID);
+      const res = await db.query(`
+        INSERT INTO public.channel_messages (channel_id, user_id, content)
+        VALUES ('${CHANNEL_ID}', '${BOB_ID}', 'Message after timeout expired')
+        RETURNING id;
+      `);
+      expect(res.rows.length).toBe(1);
+    });
+
+    it('strictly rejects banned user from inserting channel messages', async () => {
+      await asSuperuser();
+      await db.query(`
+        INSERT INTO public.server_bans (server_id, user_id, banned_by)
+        VALUES ('${SERVER_ID}', '${BOB_ID}', '${ALICE_ID}')
+        ON CONFLICT DO NOTHING;
+      `);
+
+      await asUser(BOB_ID);
+      await expect(
+        db.query(`
+          INSERT INTO public.channel_messages (channel_id, user_id, content)
+          VALUES ('${CHANNEL_ID}', '${BOB_ID}', 'Message while banned');
+        `)
+      ).rejects.toThrow();
+    });
+
+    it('strictly rejects timed-out member from updating an existing channel message', async () => {
+      // Bob creates a message while active
+      await asUser(BOB_ID);
+      const msgRes = await db.query<{ id: string }>(`
+        INSERT INTO public.channel_messages (channel_id, user_id, content)
+        VALUES ('${CHANNEL_ID}', '${BOB_ID}', 'Initial message')
+        RETURNING id;
+      `);
+      const msgId = msgRes.rows[0].id;
+
+      // Bob is now timed out
+      await asSuperuser();
+      await db.query(`
+        UPDATE public.server_members
+        SET timeout_until = NOW() + INTERVAL '1 hour'
+        WHERE server_id = '${SERVER_ID}' AND user_id = '${BOB_ID}';
+      `);
+
+      // Bob attempts to edit his message (RLS blocks row access, updating 0 rows)
+      await asUser(BOB_ID);
+      const updateRes = await db.query(`
+        UPDATE public.channel_messages
+        SET content = 'Edited while timed out'
+        WHERE id = '${msgId}';
+      `);
+      expect(updateRes.affectedRows).toBe(0);
+
+      // Verify message content was not altered
+      await asSuperuser();
+      const checkRes = await db.query<{ content: string }>(`
+        SELECT content FROM public.channel_messages WHERE id = '${msgId}';
+      `);
+      expect(checkRes.rows[0].content).toBe('Initial message');
+    });
+  });
+
+  describe('S14: Username Collision & Reserved Protection (L2)', () => {
+    it('rejects registering or updating to a case-insensitive duplicate username', async () => {
+      await asSuperuser();
+      const testUser1 = '11111111-1111-1111-1111-111111111111';
+      const testUser2 = '22222222-2222-2222-2222-222222222222';
+
+      await db.exec(`
+        INSERT INTO auth.users (id, email)
+        VALUES ('${testUser1}', 'u1@nexus.gg'),
+               ('${testUser2}', 'u2@nexus.gg')
+        ON CONFLICT (id) DO NOTHING;
+
+        INSERT INTO public.profiles (id, username, display_name)
+        VALUES ('${testUser1}', 'VanguardPilot', 'Pilot')
+        ON CONFLICT (id) DO UPDATE SET username = 'VanguardPilot';
+      `);
+
+      await expect(
+        db.query(`
+          INSERT INTO public.profiles (id, username, display_name)
+          VALUES ('${testUser2}', 'vanguardpilot', 'Imposter');
+        `)
+      ).rejects.toThrow();
+    });
+
+    it('rejects registering or updating to a reserved username', async () => {
+      await asSuperuser();
+      const testUser3 = '33333333-3333-3333-3333-333333333333';
+      const testUser4 = '44444444-4444-4444-4444-444444444444';
+      const testUser5 = '55555555-5555-5555-5555-555555555555';
+
+      await db.exec(`
+        INSERT INTO auth.users (id, email)
+        VALUES ('${testUser3}', 'u3@nexus.gg'),
+               ('${testUser4}', 'u4@nexus.gg'),
+               ('${testUser5}', 'u5@nexus.gg')
+        ON CONFLICT (id) DO NOTHING;
+      `);
+
+      await expect(
+        db.query(`
+          INSERT INTO public.profiles (id, username, display_name)
+          VALUES ('${testUser3}', 'admin', 'Fake Admin');
+        `)
+      ).rejects.toThrow(/Username "admin" is reserved/);
+
+      await expect(
+        db.query(`
+          INSERT INTO public.profiles (id, username, display_name)
+          VALUES ('${testUser4}', 'NEXUS', 'Fake Nexus Staff');
+        `)
+      ).rejects.toThrow(/Username "NEXUS" is reserved/);
+
+      await expect(
+        db.query(`
+          INSERT INTO public.profiles (id, username, display_name)
+          VALUES ('${testUser5}', 'deleted_user', 'Fake Tombstone');
+        `)
+      ).rejects.toThrow(/Username prefix "deleted_" is reserved/);
+    });
+  });
+
+  describe('S15: Message Rate Limiting Trigger (L11)', () => {
+    it('rejects inserting more than 10 messages in rapid succession (rate limit)', async () => {
+      await asSuperuser();
+      await db.exec(`
+        INSERT INTO public.conversations (id, created_by, type)
+        VALUES ('${CONV_ID}', '${ALICE_ID}', 'direct')
+        ON CONFLICT (id) DO NOTHING;
+
+        INSERT INTO public.conversation_members (conversation_id, user_id, role)
+        VALUES ('${CONV_ID}', '${ALICE_ID}', 'owner'),
+               ('${CONV_ID}', '${BOB_ID}', 'member')
+        ON CONFLICT (conversation_id, user_id) DO NOTHING;
+
+        DELETE FROM public.messages WHERE conversation_id = '${CONV_ID}';
+      `);
+
+      await asUser(ALICE_ID);
+      for (let i = 0; i < 10; i++) {
+        await db.query(`
+          INSERT INTO public.messages (conversation_id, sender_id, content)
+          VALUES ('${CONV_ID}', '${ALICE_ID}', 'Burst message ${i}');
+        `);
+      }
+
+      await expect(
+        db.query(`
+          INSERT INTO public.messages (conversation_id, sender_id, content)
+          VALUES ('${CONV_ID}', '${ALICE_ID}', 'Burst message 11');
+        `)
+      ).rejects.toThrow(/Chat rate limit exceeded/);
     });
   });
 });

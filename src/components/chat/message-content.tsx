@@ -18,8 +18,8 @@ interface MessageContentProps {
   isCallActive?: boolean;
 }
 
-// UUID regex for matching server invites
-const SERVER_INVITE_REGEX = /(?:https?:\/\/[^\s]+[?&]join=|\/?\?join=|\/join\/|\/invite\/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+// Regex matching /invite/<code>, /?join=<code>, or full URL with invite code
+const SERVER_INVITE_REGEX = /(?:https?:\/\/[^\s]+)?(?:\/invite\/|[?&]join=|\/join\/)([a-zA-Z0-9_-]{6,36})/i;
 const SQUAD_CALL_REGEX = /\[(?:join-squad-call|join-call):([0-9a-f-]{36})\]/i;
 const GENERAL_URL_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
 const MENTION_TOKEN_REGEX = /(@[a-zA-Z0-9_.-]+)/g;
@@ -35,7 +35,12 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
   const safeContent = content ?? '';
 
   const [isJoining, setIsJoining] = React.useState(false);
-  const [serverMeta, setServerMeta] = React.useState<{ name?: string; icon_url?: string | null; memberCount?: number } | null>(null);
+  const [serverMeta, setServerMeta] = React.useState<{
+    serverId?: string;
+    name?: string;
+    icon_url?: string | null;
+    memberCount?: number;
+  } | null>(null);
 
   // Check if content contains a squad voice call beacon
   const squadCallMatch = React.useMemo(() => {
@@ -156,7 +161,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
     return safeContent.match(SERVER_INVITE_REGEX);
   }, [safeContent]);
 
-  const inviteServerId = inviteMatch ? inviteMatch[1] : null;
+  const inviteCode = inviteMatch ? inviteMatch[1] : null;
 
   // Check if content contains a general web URL for safe preview (excluding server invites)
   const previewUrl = React.useMemo(() => {
@@ -170,55 +175,43 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
 
   // Check if user is already a member
   const existingServer = React.useMemo(() => {
-    if (!inviteServerId) return null;
-    return servers.find((s) => s.id.toLowerCase() === inviteServerId.toLowerCase()) || null;
-  }, [servers, inviteServerId]);
+    if (!serverMeta?.serverId) return null;
+    return servers.find((s) => s.id.toLowerCase() === serverMeta.serverId?.toLowerCase()) || null;
+  }, [servers, serverMeta?.serverId]);
 
-  // If server metadata is not in local list, attempt to fetch basic info for preview
+  // Fetch server preview metadata using get_server_preview RPC
   React.useEffect(() => {
-    if (!inviteServerId) return;
+    if (!inviteCode) return;
 
-    if (existingServer) {
-      setServerMeta({
-        name: existingServer.name,
-        icon_url: existingServer.icon_url,
-        memberCount: existingServer.members?.length || 1,
-      });
-      return;
-    }
+    let mounted = true;
+    const fetchPreview = async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_server_preview', {
+          p_code: inviteCode,
+        });
 
-    // Attempt to extract server name from message text if available: e.g. 'server "NAME" on Nexus'
-    const nameMatch = safeContent.match(/server\s+"([^"]+)"/i);
-    const fallbackName = nameMatch ? nameMatch[1] : 'Squad Server';
+        if (mounted && data && !error) {
+          setServerMeta({
+            name: data.name,
+            icon_url: data.icon_url,
+            memberCount: data.member_count || 1,
+            serverId: data.server_id,
+          });
+        }
+      } catch (err) {
+        void err;
+      }
+    };
 
-    setServerMeta({
-      name: fallbackName,
-      icon_url: null,
-      memberCount: 1,
-    });
+    fetchPreview();
 
-    const supabase = getBrowserClient();
-    supabase
-      .from('servers')
-      .select('name, icon_url')
-      .eq('id', inviteServerId)
-      .maybeSingle()
-      .then(
-        ({ data }) => {
-          if (data) {
-            setServerMeta((prev) => ({
-              name: data.name || prev?.name,
-              icon_url: data.icon_url || prev?.icon_url,
-              memberCount: prev?.memberCount || 1,
-            }));
-          }
-        },
-        () => {}
-      );
-  }, [inviteServerId, existingServer, safeContent]);
+    return () => {
+      mounted = false;
+    };
+  }, [inviteCode, supabase]);
 
   const handleJoinOrNavigate = async () => {
-    if (!inviteServerId) return;
+    if (!inviteCode) return;
 
     if (existingServer) {
       const firstChannel = existingServer.channels?.[0]?.id || '';
@@ -228,7 +221,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
 
     setIsJoining(true);
     try {
-      const res = await joinServer(inviteServerId);
+      const res = await joinServer(inviteCode);
       if (res.success && res.server) {
         toast({
           title: 'Joined Server!',
@@ -448,7 +441,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
       )}
 
       {/* Interactive App-Style Server Invite Card */}
-      {inviteServerId && (
+      {inviteCode && (
         <div
           onClick={(e) => e.stopPropagation()}
           className="mt-2 w-full max-w-sm rounded-xl border border-white/[0.12] bg-[#0d0e15]/95 backdrop-blur-md p-3.5 shadow-xl transition-all hover:border-primary/40 select-none text-left"

@@ -33,6 +33,8 @@ export interface UserSettings {
   output_device_id?: string | null;
   allow_direct_messages: 'everyone' | 'friends' | 'none';
   allow_friend_requests: 'everyone' | 'friends_of_friends' | 'none';
+  profile_visibility?: 'everyone' | 'friends' | 'nobody';
+  presence_visibility?: 'everyone' | 'friends' | 'nobody';
   email_notifications: boolean;
   desktop_notifications: boolean;
   notif_dms?: boolean;

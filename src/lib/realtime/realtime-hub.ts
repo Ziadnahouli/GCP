@@ -69,6 +69,7 @@ export class RealtimeHub {
         }
       : undefined;
 
+    // eslint-disable-next-line no-restricted-syntax
     const channel = client.channel(topic, effectiveOptions);
     this.channels.set(topic, {
       channel,
@@ -86,7 +87,10 @@ export class RealtimeHub {
    * Decrements ref count. If ref count reaches 0, tears down channel either
    * immediately or after the specified gracePeriodMs.
    */
-  release(topic: string, gracePeriodMs: number = 0): void {
+  release(topicOrChannel: string | { topic?: string }, gracePeriodMs: number = 0): void {
+    const rawTopic = typeof topicOrChannel === 'string' ? topicOrChannel : topicOrChannel?.topic;
+    if (!rawTopic) return;
+    const topic = this.channels.has(rawTopic) ? rawTopic : rawTopic.replace(/^realtime:/, '');
     const entry = this.channels.get(topic);
     if (!entry) return;
 

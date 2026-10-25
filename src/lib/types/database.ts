@@ -66,6 +66,8 @@ export interface Database {
           output_volume: number;
           allow_direct_messages: 'everyone' | 'friends' | 'none';
           allow_friend_requests: 'everyone' | 'friends_of_friends' | 'none';
+          profile_visibility?: 'everyone' | 'friends' | 'nobody';
+          presence_visibility?: 'everyone' | 'friends' | 'nobody';
           email_notifications: boolean;
           desktop_notifications: boolean;
           updated_at: string;
@@ -82,6 +84,8 @@ export interface Database {
           output_volume?: number;
           allow_direct_messages?: 'everyone' | 'friends' | 'none';
           allow_friend_requests?: 'everyone' | 'friends_of_friends' | 'none';
+          profile_visibility?: 'everyone' | 'friends' | 'nobody';
+          presence_visibility?: 'everyone' | 'friends' | 'nobody';
           email_notifications?: boolean;
           desktop_notifications?: boolean;
           updated_at?: string;
@@ -98,6 +102,8 @@ export interface Database {
           output_volume?: number;
           allow_direct_messages?: 'everyone' | 'friends' | 'none';
           allow_friend_requests?: 'everyone' | 'friends_of_friends' | 'none';
+          profile_visibility?: 'everyone' | 'friends' | 'nobody';
+          presence_visibility?: 'everyone' | 'friends' | 'nobody';
           email_notifications?: boolean;
           desktop_notifications?: boolean;
           updated_at?: string;

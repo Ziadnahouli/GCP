@@ -125,16 +125,21 @@ npm install
 ```
 
 ### 2. Run Database Migrations in Supabase
-In your Supabase Dashboard SQL Editor:
-Execute migrations in numerical order from `00001_initial_schema.sql` through `00019_security_and_authorization_remediation.sql`.
+In your Supabase Dashboard SQL Editor or via Supabase CLI:
+Execute migrations in numerical order from `00001_initial_schema.sql` through `00028_realtime_authorization_hardening.sql`.
 
-### 3. Run Development Server
+### 3. Configure Supabase Realtime Authorization
+1. In the Supabase Dashboard, navigate to **Project Settings** > **Realtime**.
+2. Under Channel Authorization, ensure **Allow public access** is **DISABLED** (switched OFF).
+3. This guarantees that all private channels (`config: { private: true }`) require a valid JWT and are authoritatively governed by PostgreSQL RLS on `realtime.messages`. See [`docs/realtime-authz-manual-test.md`](file:///c:/Users/nahou/Desktop/GCP/docs/realtime-authz-manual-test.md) for automated and manual verification.
+
+### 4. Run Development Server
 ```bash
 npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### 4. Build Standalone Desktop Companion (Optional)
+### 5. Build Standalone Desktop Companion (Optional)
 ```bash
 npx @tauri-apps/cli dev
 ```

@@ -2,24 +2,38 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Lock, User, AtSign, Gamepad2, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react';
 import { useAuth } from './auth-provider';
 import { registerSchema, RegisterFormData } from '@/lib/validation/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
+import { getSafeRedirectUrl, consumePendingInvite } from '@/lib/auth/safe-redirect';
 
 export function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signUpWithPassword, user } = useAuth();
   const { toast } = useToast();
 
+  const getTargetUrl = React.useCallback(() => {
+    const rawRedirect = searchParams.get('redirectTo');
+    if (rawRedirect) {
+      return getSafeRedirectUrl(rawRedirect, '/');
+    }
+    const pendingInvite = consumePendingInvite();
+    if (pendingInvite) {
+      return `/invite/${pendingInvite}`;
+    }
+    return '/';
+  }, [searchParams]);
+
   React.useEffect(() => {
     if (user) {
-      router.push('/');
+      router.push(getTargetUrl());
     }
-  }, [user, router]);
+  }, [user, router, getTargetUrl]);
 
   const [formData, setFormData] = React.useState<RegisterFormData>({
     username: '',
@@ -76,9 +90,9 @@ export function RegisterForm() {
           description: `Welcome aboard, ${formData.displayName}!`,
           type: 'success',
         });
-        router.push('/');
+        router.push(getTargetUrl());
       }
-    } catch (err: unknown) {
+    } catch {
       setGeneralError('An unexpected error occurred during registration.');
     } finally {
       setLoading(false);
@@ -227,7 +241,14 @@ export function RegisterForm() {
 
       <div className="mt-6 text-center text-xs text-muted-foreground/70">
         Already have an account?{' '}
-        <Link href="/login" className="text-primary hover:underline font-medium">
+        <Link
+          href={
+            searchParams.get('redirectTo')
+              ? `/login?redirectTo=${encodeURIComponent(searchParams.get('redirectTo')!)}`
+              : '/login'
+          }
+          className="text-primary hover:underline font-medium"
+        >
           Log in
         </Link>
       </div>

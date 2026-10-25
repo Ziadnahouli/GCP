@@ -1,4 +1,13 @@
 {
   "extends": "next/core-web-vitals",
-  "ignorePatterns": ["apps/**", "desktop/**"]
+  "ignorePatterns": ["apps/**", "desktop/**"],
+  "rules": {
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.property.name='channel']",
+        "message": "Raw .channel() calls are banned to prevent duplicate connections and leaks. Use RealtimeHub instead."
+      }
+    ]
+  }
 }

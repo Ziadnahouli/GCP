@@ -660,6 +660,29 @@ export function useServersInternal() {
     [servers, user, notifyServersUpdate]
   );
 
+  const transferOwnership = React.useCallback(
+    async (serverId: string, newOwnerId: string): Promise<boolean> => {
+      if (!user || !supabase) return false;
+      try {
+        const { error } = await supabase.rpc('transfer_server_ownership', {
+          p_server_id: serverId,
+          p_new_owner_id: newOwnerId,
+        });
+        if (error) {
+          console.error('[useServers] Error transferring server ownership:', error);
+          return false;
+        }
+        await fetchServers();
+        notifyServersUpdate();
+        return true;
+      } catch (err) {
+        console.error('[useServers] Exception transferring server ownership:', err);
+        return false;
+      }
+    },
+    [user, fetchServers, notifyServersUpdate]
+  );
+
   const updateMemberRole = React.useCallback(
     async (serverId: string, userId: string, newRole: Server['members'][0]['role']): Promise<boolean> => {
       const updated = servers.map((srv) => {
@@ -1199,6 +1222,7 @@ export function useServersInternal() {
     deleteChannel,
     joinServer,
     leaveServer,
+    transferOwnership,
     updateMemberRole,
     kickMember,
     banMember,

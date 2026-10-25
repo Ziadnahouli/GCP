@@ -49,6 +49,10 @@ vi.mock('@/lib/supabase/client', () => ({
       }),
     }),
     removeChannel: () => {},
+    rpc: () => Promise.resolve({
+      data: { server_id: 's1', name: 'Test Server', member_count: 5, icon_url: null },
+      error: null,
+    }),
     from: () => ({
       select: () => ({
         eq: () => ({

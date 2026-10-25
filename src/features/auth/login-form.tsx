@@ -2,24 +2,38 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Lock, Gamepad2, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 import { useAuth } from './auth-provider';
 import { loginSchema, LoginFormData } from '@/lib/validation/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
+import { getSafeRedirectUrl, getPendingInvite, consumePendingInvite } from '@/lib/auth/safe-redirect';
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signInWithPassword, user } = useAuth();
   const { toast } = useToast();
 
+  const getTargetUrl = React.useCallback(() => {
+    const rawRedirect = searchParams.get('redirectTo');
+    if (rawRedirect) {
+      return getSafeRedirectUrl(rawRedirect, '/');
+    }
+    const pendingInvite = consumePendingInvite();
+    if (pendingInvite) {
+      return `/invite/${pendingInvite}`;
+    }
+    return '/';
+  }, [searchParams]);
+
   React.useEffect(() => {
     if (user) {
-      router.push('/');
+      router.push(getTargetUrl());
     }
-  }, [user, router]);
+  }, [user, router, getTargetUrl]);
 
   const [formData, setFormData] = React.useState<LoginFormData>({
     email: '',
@@ -63,7 +77,7 @@ export function LoginForm() {
           description: 'Successfully signed in to Nexus.',
           type: 'success',
         });
-        router.push('/');
+        router.push(getTargetUrl());
       }
     } catch {
       setGeneralError('An unexpected error occurred. Please try again.');
@@ -149,7 +163,14 @@ export function LoginForm() {
 
       <div className="mt-6 text-center text-xs text-muted-foreground/70">
         Need an account?{' '}
-        <Link href="/register" className="text-primary hover:underline font-medium">
+        <Link
+          href={
+            searchParams.get('redirectTo')
+              ? `/register?redirectTo=${encodeURIComponent(searchParams.get('redirectTo')!)}`
+              : '/register'
+          }
+          className="text-primary hover:underline font-medium"
+        >
           Create one now
         </Link>
       </div>

@@ -9,9 +9,9 @@ const SRC_DIR = path.resolve(__dirname, '../src');
 // Committed baseline thresholds (ratchet ceilings: current count cannot exceed these)
 // Updated based on executed count from src/ tree
 const BASELINE_CEILINGS = {
-  emptyCatchBlocks: 221,
-  anyTypeUsage: 262,
-  consoleLogUsage: 59,
+  emptyCatchBlocks: 218,
+  anyTypeUsage: 255,
+  consoleLogUsage: 58,
 };
 
 function walkDir(dir, fileList = []) {

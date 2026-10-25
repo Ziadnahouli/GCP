@@ -39,6 +39,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   output_volume: 100,
   allow_direct_messages: 'everyone',
   allow_friend_requests: 'everyone',
+  profile_visibility: 'everyone',
+  presence_visibility: 'everyone',
   email_notifications: true,
   desktop_notifications: true,
   notif_dms: true,

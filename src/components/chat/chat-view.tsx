@@ -97,6 +97,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   const [newMessagesDividerId, setNewMessagesDividerId] = React.useState<string | null>(null);
   const lastMarkedCountRef = React.useRef<number>(-1);
 
+  React.useEffect(() => {
+    lastMarkedCountRef.current = -1;
+    setNewMessagesDividerId(null);
+  }, [conversationId]);
+
   const checkAndMarkRead = React.useCallback(() => {
     if (!conversationId || !markConversationAsRead) return;
     const isVisible = typeof document !== 'undefined' && !document.hidden;
@@ -114,6 +119,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     if (!conversationId || !markConversationAsRead) return;
     if (messages.length === 0) return;
 
+    if (lastMarkedCountRef.current === -1) {
+      lastMarkedCountRef.current = messages.length;
+      return;
+    }
+
     const isVisible = typeof document !== 'undefined' && !document.hidden;
     const isFocused = typeof document !== 'undefined' && (typeof document.hasFocus === 'function' ? document.hasFocus() : true);
     const isAtBottom = isNearBottomRef.current;
@@ -123,15 +133,16 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       markConversationAsRead(conversationId);
       setNewMessagesDividerId(null);
     } else {
-      // User is not actively looking at messages: place the "New Messages" divider at the first unseen message
+      // User is not actively looking at messages: place the "New Messages" divider at the first incoming message
       if (!newMessagesDividerId && lastMarkedCountRef.current >= 0 && messages.length > lastMarkedCountRef.current) {
-        const firstUnread = messages[lastMarkedCountRef.current];
-        if (firstUnread) {
-          setNewMessagesDividerId(firstUnread.id);
+        const incomingMessages = messages.slice(lastMarkedCountRef.current);
+        const firstIncomingOther = incomingMessages.find((m) => m.sender_id !== user?.id) || incomingMessages[0];
+        if (firstIncomingOther) {
+          setNewMessagesDividerId(firstIncomingOther.id);
         }
       }
     }
-  }, [conversationId, markConversationAsRead, messages, newMessagesDividerId]);
+  }, [conversationId, markConversationAsRead, messages, newMessagesDividerId, user?.id]);
 
   React.useEffect(() => {
     const onVisibilityOrFocus = () => {

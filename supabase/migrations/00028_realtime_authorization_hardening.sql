@@ -98,11 +98,11 @@ BEGIN
 
     clean_topic := regexp_replace(p_topic, '^realtime:', '');
 
-    -- 1. User signaling inboxes (R1): Only the owner can LISTEN to their own incoming signals
+    -- 1. User signaling inboxes (R1): Owner can listen, and permitted senders can join to broadcast
     IF clean_topic ~* '^user-signals-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
         sub_matches := regexp_match(clean_topic, '^user-signals-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$', 'i');
         matched_id := sub_matches[1]::uuid;
-        RETURN p_user_id = matched_id;
+        RETURN p_user_id = matched_id OR public.can_user_signal_target(p_user_id, matched_id);
     END IF;
 
     -- 2. User-private topics: user:<id>, user:<id>:*, user_notifications_<id>, devices_sync_<id>

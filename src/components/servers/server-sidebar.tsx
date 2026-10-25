@@ -15,6 +15,7 @@ import {
   Radio,
   MicOff,
   VolumeX,
+  LogOut,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Server, Channel, ChannelType, hasServerPermission } from '@/lib/types/server';
@@ -38,6 +39,7 @@ interface ServerSidebarProps {
   onUpdateChannel?: (channelId: string, updates: { name?: string; topic?: string | null }) => Promise<unknown>;
   onDeleteChannel?: (channelId: string) => Promise<unknown>;
   onConnectVoiceChannel?: (channel: Channel) => void;
+  onLeaveServer?: (serverId: string) => Promise<void>;
 }
 
 export function ServerSidebar({
@@ -49,6 +51,7 @@ export function ServerSidebar({
   onUpdateChannel,
   onDeleteChannel,
   onConnectVoiceChannel,
+  onLeaveServer,
 }: ServerSidebarProps) {
   const router = useRouter();
   const { user } = useAuth();
@@ -346,6 +349,30 @@ export function ServerSidebar({
               >
                 <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Invite Squadmates</span>
+              </button>
+
+              <div className="h-[1px] bg-white/[0.06] my-1" />
+
+              <button
+                onClick={async () => {
+                  setShowMenu(false);
+                  if (onLeaveServer) {
+                    if (server.owner_id === user?.id) {
+                      toast({
+                        title: 'Cannot Leave Server',
+                        description: 'You are the server owner. Transfer ownership in Server Settings or delete the server.',
+                        type: 'error',
+                      });
+                      onOpenServerSettings?.();
+                    } else if (confirm(`Leave ${server.name}?`)) {
+                      await onLeaveServer(server.id);
+                    }
+                  }
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Leave Server</span>
               </button>
             </div>
           )}

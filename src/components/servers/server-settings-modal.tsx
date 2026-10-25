@@ -1617,19 +1617,30 @@ export function ServerSettingsModal({
                   </div>
                 )}
 
-                {onLeaveServer && !isOwner && (
+                {onLeaveServer && (
                   <div className="p-4 rounded-xl border border-white/[0.08] bg-surface-panel/40 space-y-3">
                     <div className="flex items-center gap-2 text-foreground font-bold text-xs">
                       <LogOut className="w-4 h-4 text-muted-foreground" />
                       <span>Leave Server</span>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Remove yourself from this server. You can only rejoin if you have an invite link or server ID.
+                      {isOwner
+                        ? 'As the owner, you must transfer ownership to another member before leaving.'
+                        : 'Remove yourself from this server. You can rejoin using an invite link.'}
                     </p>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={async () => {
+                        if (isOwner) {
+                          toast({
+                            title: 'Transfer Ownership Required',
+                            description: 'Please go to the Members tab and transfer ownership before leaving.',
+                            type: 'error',
+                          });
+                          setActiveTab('members');
+                          return;
+                        }
                         if (confirm(`Leave ${server.name}?`)) {
                           await onLeaveServer(server.id);
                           onOpenChange(false);

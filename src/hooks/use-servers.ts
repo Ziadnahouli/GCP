@@ -1255,7 +1255,37 @@ export function ServersProvider({ children }: { children: React.ReactNode }) {
 export function useServers(): UseServersReturn {
   const context = React.useContext(ServersContext);
   if (!context) {
-    throw new Error('useServers must be used within a ServersProvider');
+    return {
+      servers: [],
+      activeServer: null,
+      channels: [],
+      isLoading: false,
+      error: null,
+      fetchServers: async () => {},
+      createServer: async () => ({ success: false }),
+      updateServer: async () => ({ success: false }),
+      deleteServer: async () => ({ success: false }),
+      joinServer: async () => ({ success: false }),
+      leaveServer: async () => false,
+      transferOwnership: async () => ({ success: false }),
+      createChannel: async () => ({ success: false }),
+      updateChannel: async () => ({ success: false }),
+      deleteChannel: async () => ({ success: false }),
+      createInvite: async () => ({ invite: null, error: null }),
+      kickMember: async () => ({ success: false }),
+      banMember: async () => ({ success: false }),
+      unbanMember: async () => ({ success: false }),
+      timeoutMember: async () => ({ success: false, error: null }),
+      getBannedUsers: async () => [],
+      getAuditLogs: async () => [],
+      getMemberRoles: async () => [],
+      assignRole: async () => ({ success: false }),
+      removeRole: async () => ({ success: false }),
+      createRole: async () => ({ success: false }),
+      updateRole: async () => ({ success: false }),
+      deleteRole: async () => ({ success: false }),
+      updateRolePermissions: async () => ({ success: false }),
+    } as unknown as UseServersReturn;
   }
   return context;
 }

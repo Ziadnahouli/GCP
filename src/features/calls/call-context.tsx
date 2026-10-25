@@ -1977,7 +1977,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         // R7: Verify caller identity against public.call_sessions before ringing or answering
         if (payload.conversationId && supabase) {
           try {
-            const { data: verifiedSession } = await supabase
+            let sessionRes = await supabase
               .from('call_sessions')
               .select('id, caller_id, status')
               .eq('conversation_id', payload.conversationId)
@@ -1987,9 +1987,33 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               .limit(1)
               .maybeSingle();
 
-            if (!verifiedSession) {
-              console.warn('[CallSignaling] Dropping unverified incoming_call beacon (no matching call_sessions in DB):', payload);
-              return;
+            // If in-flight race condition between websocket broadcast and DB insert, wait 150ms and retry once
+            if (!sessionRes.data) {
+              await new Promise((resolve) => setTimeout(resolve, 150));
+              sessionRes = await supabase
+                .from('call_sessions')
+                .select('id, caller_id, status')
+                .eq('conversation_id', payload.conversationId)
+                .eq('caller_id', payload.callerId)
+                .in('status', ['ringing', 'active'])
+                .order('started_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            }
+
+            if (!sessionRes.data) {
+              // Direct check of blocks table before dropping
+              const { data: isBlocked } = await supabase
+                .from('blocks')
+                .select('id')
+                .or(`and(blocker_id.eq.${user.id},blocked_id.eq.${payload.callerId}),and(blocker_id.eq.${payload.callerId},blocked_id.eq.${user.id})`)
+                .limit(1)
+                .maybeSingle();
+
+              if (isBlocked) {
+                console.warn('[CallSignaling] Dropping call beacon from blocked peer:', payload.callerId);
+                return;
+              }
             }
           } catch (e) {
             console.warn('[CallSignaling] DB verification query error:', e);
@@ -2108,7 +2132,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setPeerUserId(payload.callerId);
 
         // L6: Respect Do Not Disturb (DND)
-        const isDnd = profile?.status === 'dnd';
+        const isDnd = profileRef.current?.status === 'dnd' || profile?.status === 'dnd';
         if (isDnd) {
           console.debug('[CallSignaling] Callee is in Do Not Disturb mode. Suppressing audible ringtone.');
         } else {
@@ -2296,8 +2320,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .on('broadcast', { event: 'call_ended' }, () => {
+        RingtonePlayer.stopAll();
+        if (ringtoneRef.current) {
+          ringtoneRef.current.stop();
+          ringtoneRef.current = null;
+        }
+        if (calleeRingingTimerRef.current) {
+          clearTimeout(calleeRingingTimerRef.current);
+          calleeRingingTimerRef.current = null;
+        }
+        setIncomingCall(null);
+        incomingCallRef.current = null;
+        setCallStatus('idle');
+        callStatusRef.current = 'idle';
+        activeConversationIdRef.current = null;
+        setActiveConversationId(null);
+        peerUserIdRef.current = null;
+        setPeerUserId(null);
         stopMediaTracksRef.current();
-        toast({ title: 'Call Ended', description: 'Squadmate disconnected from voice room.', type: 'info' });
+        toast({ title: 'Call Ended', description: 'Call was cancelled or ended.', type: 'info' });
       })
       .on(
         'postgres_changes',
@@ -2308,7 +2349,40 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         },
         async (changePayload: { new?: { id?: string; status?: string; caller_id?: string; conversation_id?: string; is_video?: boolean } }) => {
           const row = changePayload?.new;
-          if (!row || row.status !== 'ringing' || row.caller_id === user.id) return;
+          if (!row) return;
+
+          // If active incoming ringing was ended or rejected by caller/server
+          if (row.status === 'ended' || row.status === 'rejected') {
+            const isMatch =
+              (row.conversation_id && incomingCallRef.current?.conversationId === row.conversation_id) ||
+              (row.id && (incomingCallRef.current?.id === row.id || dbCallSessionIdRef.current === row.id)) ||
+              !row.conversation_id;
+
+            if (callStatusRef.current === 'incoming_ringing' && isMatch) {
+              RingtonePlayer.stopAll();
+              if (ringtoneRef.current) {
+                ringtoneRef.current.stop();
+                ringtoneRef.current = null;
+              }
+              if (calleeRingingTimerRef.current) {
+                clearTimeout(calleeRingingTimerRef.current);
+                calleeRingingTimerRef.current = null;
+              }
+              setIncomingCall(null);
+              incomingCallRef.current = null;
+              setCallStatus('idle');
+              callStatusRef.current = 'idle';
+              activeConversationIdRef.current = null;
+              setActiveConversationId(null);
+              peerUserIdRef.current = null;
+              setPeerUserId(null);
+              stopMediaTracksRef.current();
+              toast({ title: 'Call Cancelled', description: 'Caller cancelled the call.', type: 'info' });
+            }
+            return;
+          }
+
+          if (row.status !== 'ringing' || row.caller_id === user.id) return;
           if (callStatusRef.current !== 'idle' || activeConversationIdRef.current) return;
 
           // Check if current user is a member of this conversation and fetch details in parallel
@@ -2698,6 +2772,32 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       };
       activeCallPayloadRef.current = initialCallPayload;
 
+      // Persist call session to database immediately so callee verifies caller identity seamlessly
+      try {
+        if (supabase) {
+          supabase
+            .from('call_sessions')
+            .insert({
+              conversation_id: conversationId,
+              caller_id: user.id,
+              livekit_room_name: `call-room-${conversationId}`,
+              is_video: video,
+              status: 'ringing',
+              started_at: new Date().toISOString(),
+            })
+            .select('id')
+            .maybeSingle()
+            .then(({ data: sessData }) => {
+              if (sessData) {
+                dbCallSessionIdRef.current = sessData.id;
+                if (activeCallPayloadRef.current) {
+                  activeCallPayloadRef.current.id = sessData.id;
+                }
+              }
+            }, () => {});
+        }
+      } catch {}
+
       // Send immediate incoming_call signal so callee rings instantly
       sendSignalToUser(recipientId, 'incoming_call', initialCallPayload);
       sendDirectSignal(`user-signals-${recipientId}`, 'incoming_call', initialCallPayload);
@@ -2715,27 +2815,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           sendDirectSignal(`user-signals-${recipientId}`, 'incoming_call', activeCallPayloadRef.current);
         }
       }, 750);
-
-      // Persist call session to database
-      try {
-        supabase
-          .from('call_sessions')
-          .insert({
-            conversation_id: conversationId,
-            caller_id: user.id,
-            livekit_room_name: `call-room-${conversationId}`,
-            is_video: video,
-            status: 'ringing',
-            started_at: new Date().toISOString(),
-          })
-          .select('id')
-          .maybeSingle()
-          .then(({ data: sessData }: any) => {
-            if (sessData) {
-              dbCallSessionIdRef.current = sessData.id;
-            }
-          }, () => {});
-      } catch {}
 
       // Realtime postgres_changes listener on call_sessions for this conversation
       if (conversationId && supabase) {

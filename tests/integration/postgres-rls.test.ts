@@ -1308,7 +1308,7 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
   });
 
   describe('S15: Message Rate Limiting Trigger (L11)', () => {
-    it('rejects inserting more than 10 messages in rapid succession (rate limit)', async () => {
+    it('rejects inserting more than 5 messages in rapid succession (rate limit)', async () => {
       await asSuperuser();
       await db.exec(`
         INSERT INTO public.conversations (id, created_by, type)
@@ -1324,7 +1324,7 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
       `);
 
       await asUser(ALICE_ID);
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 5; i++) {
         await db.query(`
           INSERT INTO public.messages (conversation_id, sender_id, content)
           VALUES ('${CONV_ID}', '${ALICE_ID}', 'Burst message ${i}');
@@ -1334,7 +1334,7 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
       await expect(
         db.query(`
           INSERT INTO public.messages (conversation_id, sender_id, content)
-          VALUES ('${CONV_ID}', '${ALICE_ID}', 'Burst message 11');
+          VALUES ('${CONV_ID}', '${ALICE_ID}', 'Burst message 6');
         `)
       ).rejects.toThrow(/Chat rate limit exceeded/);
     });

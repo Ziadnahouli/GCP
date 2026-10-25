@@ -274,6 +274,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
                     onDeleteChannel={async (chanId) => {
                       await deleteChannel(activeServer.id, chanId);
                     }}
+                    onLeaveServer={handleLeaveServer}
                   />
                 ) : (
                   <Sidebar

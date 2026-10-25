@@ -39,6 +39,9 @@ import {
   Flag,
   ArrowDown,
   Clock,
+  Ban,
+  Phone,
+  Copy,
 } from 'lucide-react';
 import { ForwardModal } from '@/components/chat/forward-modal';
 import { ReportModal } from '@/components/social/report-modal';
@@ -49,6 +52,8 @@ import { useChannelMessages } from '@/hooks/use-channel-messages';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useSocial } from '@/hooks/use-social';
 import { useConversations } from '@/hooks/use-conversations';
+import { useServers } from '@/hooks/use-servers';
+import { useCallActions } from '@/features/calls/call-context';
 import { useServerVoice } from '@/hooks/use-server-voice';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
@@ -113,9 +118,33 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   const router = useRouter();
   const { user, profile } = useAuth();
   const { getOrCreateDirectConversation } = useConversations();
+  const { blockUser } = useSocial();
+  const { timeoutMember, kickMember, banMember } = useServers();
+  const { startCall } = useCallActions();
   const { messages, sendMessage, retryMessage } = useChannelMessages(channel.id);
   const voice = useServerVoice(channel.id, server.id, server.name, channel.name);
   const { toast } = useToast();
+
+  const [memberContextMenu, setMemberContextMenu] = React.useState<{
+    x: number;
+    y: number;
+    member: {
+      id: string;
+      display_name: string;
+      username: string;
+      role: string;
+    };
+  } | null>(null);
+
+  React.useEffect(() => {
+    const handleClose = () => setMemberContextMenu(null);
+    window.addEventListener('click', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
+  }, []);
 
   const [inputText, setInputText] = React.useState('');
   const [isSending, setIsSending] = React.useState(false);
@@ -1687,13 +1716,23 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 <div
                   key={m.id}
                   onClick={() => !isMe && handleStartDirectChat(m.id, m.display_name)}
+                  onContextMenu={(e) => {
+                    if (isMe) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setMemberContextMenu({
+                      x: Math.min(e.clientX, typeof window !== 'undefined' ? window.innerWidth - 220 : e.clientX),
+                      y: Math.min(e.clientY, typeof window !== 'undefined' ? window.innerHeight - 300 : e.clientY),
+                      member: m,
+                    });
+                  }}
                   className={cn(
-                    'flex items-center justify-between p-1.5 rounded-md transition-colors group',
+                    'flex items-center justify-between p-1.5 rounded-md transition-colors group select-none',
                     isMe
                       ? 'bg-white/[0.02] opacity-80 cursor-default'
                       : 'hover:bg-white/[0.04] cursor-pointer'
                   )}
-                  title={isMe ? 'You' : `Send private message to ${m.display_name}`}
+                  title={isMe ? 'You' : `Right click for actions or left click to message ${m.display_name}`}
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <Avatar
@@ -1766,6 +1805,152 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
         open={Boolean(reportingMessage)}
         onOpenChange={(op) => !op && setReportingMessage(null)}
       />
+
+      {/* Squad Member Right-Click Context Menu */}
+      {memberContextMenu && (
+        <div
+          style={{ left: memberContextMenu.x, top: memberContextMenu.y }}
+          className="fixed z-50 w-52 rounded-xl bg-card border border-white/[0.12] shadow-2xl p-1.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-2.5 py-1 text-[10px] font-semibold text-muted-foreground uppercase border-b border-white/[0.06] mb-1 truncate flex items-center justify-between">
+            <span className="truncate">{memberContextMenu.member.display_name}</span>
+            <span className="font-mono text-[9px] opacity-60">@{memberContextMenu.member.username}</span>
+          </div>
+
+          <button
+            onClick={() => {
+              handleStartDirectChat(memberContextMenu.member.id, memberContextMenu.member.display_name);
+              setMemberContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-white/[0.08] transition-colors text-left"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-primary" /> Send Message
+          </button>
+
+          <button
+            onClick={async () => {
+              const { conversationId } = await getOrCreateDirectConversation(memberContextMenu.member.id);
+              if (conversationId) {
+                startCall(memberContextMenu.member.id, conversationId, false);
+              }
+              setMemberContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-white/[0.08] transition-colors text-left"
+          >
+            <Phone className="w-3.5 h-3.5 text-emerald-400" /> Start Call
+          </button>
+
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(memberContextMenu.member.id);
+              toast({ title: 'Copied', description: 'User ID copied to clipboard.', type: 'info' });
+              setMemberContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/[0.08] transition-colors text-left"
+          >
+            <Copy className="w-3.5 h-3.5" /> Copy User ID
+          </button>
+
+          {/* Moderation Actions (Test 2.1) */}
+          {(server.owner_id === user?.id ||
+            currentMember?.role === 'admin' ||
+            currentMember?.role === 'moderator' ||
+            hasServerPermission(server, user?.id, 'kick_members')) && (
+            <>
+              <div className="my-1 border-t border-white/[0.06]" />
+              <button
+                onClick={async () => {
+                  const res = await timeoutMember(server.id, memberContextMenu.member.id, 60, '60-second test timeout');
+                  if (res.success) {
+                    toast({
+                      title: 'Member Timed Out',
+                      description: `${memberContextMenu.member.display_name} timed out for 60 seconds.`,
+                      type: 'info',
+                    });
+                  } else {
+                    toast({ title: 'Timeout Failed', description: res.error || 'Failed to timeout member', type: 'error' });
+                  }
+                  setMemberContextMenu(null);
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors text-left"
+              >
+                <Clock className="w-3.5 h-3.5" /> Timeout (60 Seconds)
+              </button>
+
+              <button
+                onClick={async () => {
+                  const mins = prompt('Enter timeout duration in minutes (0 to remove):', '60');
+                  if (mins === null) return;
+                  const numMins = parseInt(mins, 10);
+                  if (isNaN(numMins)) return;
+                  const seconds = numMins * 60;
+                  const reason = prompt('Reason for timeout:', 'Violation of server rules') || 'Moderator timeout';
+                  const res = await timeoutMember(server.id, memberContextMenu.member.id, seconds, reason);
+                  if (res.success) {
+                    toast({
+                      title: seconds > 0 ? 'Member Timed Out' : 'Timeout Removed',
+                      description: seconds > 0 ? `Timed out for ${numMins} minutes.` : 'Member can now chat.',
+                      type: 'info',
+                    });
+                  } else {
+                    toast({ title: 'Timeout Failed', description: res.error || 'Failed', type: 'error' });
+                  }
+                  setMemberContextMenu(null);
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors text-left"
+              >
+                <Clock className="w-3.5 h-3.5" /> Timeout...
+              </button>
+
+              <button
+                onClick={async () => {
+                  if (confirm(`Are you sure you want to kick ${memberContextMenu.member.display_name}?`)) {
+                    const ok = await kickMember(server.id, memberContextMenu.member.id);
+                    if (ok) {
+                      toast({ title: 'Member Kicked', description: `${memberContextMenu.member.display_name} was removed from the server.`, type: 'info' });
+                    } else {
+                      toast({ title: 'Kick Failed', description: 'Failed to kick member', type: 'error' });
+                    }
+                  }
+                  setMemberContextMenu(null);
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
+              >
+                <Ban className="w-3.5 h-3.5" /> Kick Member
+              </button>
+
+              <button
+                onClick={async () => {
+                  const reason = prompt(`Reason for banning ${memberContextMenu.member.display_name}:`, 'Violating squad conduct');
+                  if (reason === null) return;
+                  const res = await banMember(server.id, memberContextMenu.member.id, reason);
+                  if (res.success) {
+                    toast({ title: 'Member Banned', description: `${memberContextMenu.member.display_name} was banned.`, type: 'info' });
+                  } else {
+                    toast({ title: 'Ban Failed', description: res.error || 'Failed', type: 'error' });
+                  }
+                  setMemberContextMenu(null);
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
+              >
+                <Ban className="w-3.5 h-3.5" /> Ban Member
+              </button>
+            </>
+          )}
+
+          <div className="my-1 border-t border-white/[0.06]" />
+          <button
+            onClick={() => {
+              blockUser(memberContextMenu.member.id, memberContextMenu.member.display_name);
+              setMemberContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
+          >
+            <Ban className="w-3.5 h-3.5" /> Block User
+          </button>
+        </div>
+      )}
     </div>
   );
 }

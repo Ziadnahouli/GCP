@@ -59,6 +59,24 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
   const [addUsernameInput, setAddUsernameInput] = React.useState('');
   const [isSendingRequest, setIsSendingRequest] = React.useState(false);
   const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
+  const [contextMenu, setContextMenu] = React.useState<{
+    x: number;
+    y: number;
+    friendId: string;
+    friendshipId: string;
+    displayName: string;
+    username: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    const handleClose = () => setContextMenu(null);
+    window.addEventListener('click', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
+  }, []);
 
   const onlineCount = friends.filter((f) => isUserOnline(f.friend.id)).length;
 
@@ -488,6 +506,18 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                           : "border-white/[0.05] bg-surface-default/50 hover:bg-surface-hover/70 hover:border-white/[0.10]"
                       )}
                       onClick={() => handleStartChat(item.friend.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu({
+                          x: Math.min(e.clientX, typeof window !== 'undefined' ? window.innerWidth - 200 : e.clientX),
+                          y: Math.min(e.clientY, typeof window !== 'undefined' ? window.innerHeight - 220 : e.clientY),
+                          friendId: item.friend.id,
+                          friendshipId: item.id,
+                          displayName: item.friend.display_name,
+                          username: item.friend.username,
+                        });
+                      }}
                     >
                       {/* Left: Avatar & Info */}
                       <div className="flex items-center gap-3 min-w-0">
@@ -611,6 +641,65 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
           </div>
         )}
       </div>
+
+      {/* Floating Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          className="fixed z-50 w-48 rounded-xl bg-card border border-white/[0.12] shadow-2xl p-1.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-2.5 py-1 text-[10px] font-semibold text-muted-foreground uppercase border-b border-white/[0.06] mb-1 truncate">
+            {contextMenu.displayName}
+          </div>
+          <button
+            onClick={() => {
+              handleStartChat(contextMenu.friendId);
+              setContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-white/[0.08] transition-colors text-left"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-primary" /> Send Message
+          </button>
+          <button
+            onClick={() => {
+              handleCallFriend(contextMenu.friendId, false);
+              setContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-white/[0.08] transition-colors text-left"
+          >
+            <Phone className="w-3.5 h-3.5 text-emerald-400" /> Voice Call
+          </button>
+          <button
+            onClick={() => {
+              handleCallFriend(contextMenu.friendId, true);
+              setContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-white/[0.08] transition-colors text-left"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-purple-400" /> Video Call
+          </button>
+          <div className="my-1 border-t border-white/[0.06]" />
+          <button
+            onClick={() => {
+              blockUser(contextMenu.friendId, contextMenu.displayName);
+              setContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
+          >
+            <Ban className="w-3.5 h-3.5" /> Block User
+          </button>
+          <button
+            onClick={() => {
+              removeFriend(contextMenu.friendshipId, contextMenu.displayName);
+              setContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Remove Friend
+          </button>
+        </div>
+      )}
     </div>
   );
 }

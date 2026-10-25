@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Users, Gamepad2, ArrowRight, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
-import { useServers } from '@/hooks/use-servers';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { savePendingInvite } from '@/lib/auth/safe-redirect';
 import { Button } from '@/components/ui/button';
@@ -23,7 +22,6 @@ export default function InviteLandingPage() {
   const params = useParams();
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const { servers, joinServer } = useServers();
   const { toast } = useToast();
 
   const code = (params?.code as string) || '';
@@ -88,10 +86,28 @@ export default function InviteLandingPage() {
     };
   }, [code]);
 
-  const isAlreadyMember = React.useMemo(() => {
-    if (!preview || !servers) return false;
-    return servers.some((s) => s.id === preview.server_id);
-  }, [preview, servers]);
+  const [isAlreadyMember, setIsAlreadyMember] = React.useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+    if (user?.id && preview?.server_id) {
+      const supabase = getBrowserClient();
+      supabase
+        .from('server_members')
+        .select('server_id')
+        .eq('server_id', preview.server_id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (active && data) {
+            setIsAlreadyMember(true);
+          }
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [user?.id, preview?.server_id]);
 
   const handleAcceptInvite = async () => {
     if (!user) {
@@ -99,29 +115,35 @@ export default function InviteLandingPage() {
       return;
     }
 
-    if (isAlreadyMember) {
-      router.push(`/?s=${preview?.server_id}`);
+    if (isAlreadyMember && preview?.server_id) {
+      router.push(`/?s=${preview.server_id}`);
       return;
     }
 
     setJoining(true);
     try {
-      const res = await joinServer(code);
-      if (res.success && res.server) {
-        toast({
-          title: 'Joined Server!',
-          description: `Welcome to ${res.server.name}!`,
-          type: 'success',
-        });
-        const firstChan = res.server.channels?.[0]?.id || '';
-        router.push(firstChan ? `/?s=${res.server.id}&ch=${firstChan}` : `/?s=${res.server.id}`);
-      } else {
+      const supabase = getBrowserClient();
+      const { data: joinRes, error: joinErr } = await supabase.rpc('join_server_with_invite', {
+        p_code: code.trim(),
+      });
+
+      if (joinErr) {
         toast({
           title: 'Join Failed',
-          description: res.error || 'Failed to join server.',
+          description: joinErr.message || 'Failed to join server.',
           type: 'error',
         });
+        return;
       }
+
+      const resData = joinRes as { id?: string; server_id?: string } | null;
+      const joinedServerId = resData?.id || resData?.server_id || preview?.server_id;
+      toast({
+        title: 'Joined Server!',
+        description: `Welcome to ${preview?.name || 'the server'}!`,
+        type: 'success',
+      });
+      router.push(joinedServerId ? `/?s=${joinedServerId}` : '/');
     } catch {
       toast({
         title: 'Error',

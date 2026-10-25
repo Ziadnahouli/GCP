@@ -36,7 +36,6 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { useMessages } from '@/hooks/use-messages';
 import { useConversations } from '@/hooks/use-conversations';
 import { useCallActions } from '@/features/calls/call-context';
-import { usePresence } from '@/features/presence/presence-context';
 import { Message, MessageAttachment } from '@/lib/types/messaging';
 import { useToast } from '@/components/ui/toast';
 import { getBrowserClient } from '@/lib/supabase/client';
@@ -87,7 +86,6 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   } = useMessages(conversationId);
 
   const { startCall } = useCallActions();
-  const { getUserStatus } = usePresence();
   const { toast } = useToast();
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
@@ -261,12 +259,31 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     setReplyingTo(null);
   };
 
-  const handleEditMessage = (msg: Message) => {
+  const handleReply = React.useCallback((m: Message) => setReplyingTo(m), []);
+  const handleEdit = React.useCallback((msg: Message) => {
     const updated = prompt('Edit message:', msg.content || '');
     if (updated !== null && updated.trim() && updated !== msg.content) {
       editMessage(msg.id, updated.trim());
     }
-  };
+  }, [editMessage]);
+  const handleDelete = React.useCallback((id: string) => deleteMessage(id), [deleteMessage]);
+  const handleTogglePin = React.useCallback(
+    (id: string) => {
+      const target = messages.find((m) => m.id === id);
+      togglePinMessage(id, Boolean(target?.is_pinned));
+    },
+    [messages, togglePinMessage]
+  );
+  const handleForward = React.useCallback((m: Message) => setForwardingMessage(m), []);
+  const handleReport = React.useCallback((m: Message) => setReportingMessage(m), []);
+  const handleReactionAdd = React.useCallback((id: string, emoji: string) => {
+    addReaction(id, emoji);
+  }, [addReaction]);
+  const handleReactionRemove = React.useCallback((id: string, emoji: string) => {
+    removeReaction(id, emoji);
+  }, [removeReaction]);
+  const handleRetry = React.useCallback((m: Message) => retryMessage(m.id), [retryMessage]);
+  const handleSelectMedia = React.useCallback((att: MessageAttachment) => setSelectedMediaModal(att), []);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-background overflow-hidden relative">
@@ -274,7 +291,6 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       <ChatHeader
         conversation={effectiveConversation}
         currentUserId={user?.id}
-        getUserStatus={getUserStatus}
         showSearch={showSearchInput}
         onToggleSearch={() => {
           setShowSearchInput((prev) => !prev);
@@ -347,16 +363,16 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
                     currentUserId={user?.id}
                     isGrouped={isGrouped}
                     isNewUnreadDivider={msg.id === newMessagesDividerId}
-                    onReply={(m) => setReplyingTo(m)}
-                    onEdit={handleEditMessage}
-                    onDelete={(id) => deleteMessage(id)}
-                    onTogglePin={(id) => togglePinMessage(id, msg.is_pinned)}
-                    onForward={(m) => setForwardingMessage(m)}
-                    onReport={(m) => setReportingMessage(m)}
-                    onReactionAdd={(id, emoji) => addReaction(id, emoji)}
-                    onReactionRemove={(id, emoji) => removeReaction(id, emoji)}
-                    onRetry={(m) => retryMessage(m.id)}
-                    onSelectMedia={(att) => setSelectedMediaModal(att)}
+                    onReply={handleReply}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onTogglePin={handleTogglePin}
+                    onForward={handleForward}
+                    onReport={handleReport}
+                    onReactionAdd={handleReactionAdd}
+                    onReactionRemove={handleReactionRemove}
+                    onRetry={handleRetry}
+                    onSelectMedia={handleSelectMedia}
                   />
                 </React.Fragment>
               );

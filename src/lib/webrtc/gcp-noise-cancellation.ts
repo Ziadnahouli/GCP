@@ -16,7 +16,6 @@
  *   → Processed MediaStreamTrack for WebRTC transmission
  */
 
-import { loadRnnoiseWasmBinary, loadRnnoiseWasmModule } from './rnnoise-wasm-binary';
 import {
   applyProcessingPolicy,
   updateAudioEngineDiagnostics,
@@ -217,10 +216,35 @@ export async function createGcpNoisePipeline(
     };
 
     // Load RNNoise WASM module and binary
-    const [wasmBinary, wasmModule] = await Promise.all([
-      loadRnnoiseWasmBinary(),
-      loadRnnoiseWasmModule().catch(() => null),
-    ]);
+    let wasmBinary: ArrayBuffer | Uint8Array;
+    let wasmModule: WebAssembly.Module | null = null;
+
+    try {
+      if (typeof window !== 'undefined' && typeof fetch === 'function') {
+        const res = await fetch('/worklets/rnnoise.wasm');
+        if (res.ok) {
+          wasmBinary = await res.arrayBuffer();
+          try {
+            wasmModule = await WebAssembly.compile(wasmBinary);
+          } catch {
+            wasmModule = null;
+          }
+        } else {
+          throw new Error('Static wasm fetch status: ' + res.status);
+        }
+      } else {
+        throw new Error('Non-browser environment');
+      }
+    } catch {
+      // Lazy offline fallback: import 152KB base64 on-demand
+      const { loadRnnoiseWasmBinary, loadRnnoiseWasmModule } = await import('./rnnoise-wasm-binary');
+      const [bin, mod] = await Promise.all([
+        loadRnnoiseWasmBinary(),
+        loadRnnoiseWasmModule().catch(() => null),
+      ]);
+      wasmBinary = bin;
+      wasmModule = mod;
+    }
 
     // Bounded initialization promise (3000ms max timeout)
     const initPromise = new Promise<void>((resolve, reject) => {

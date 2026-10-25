@@ -82,7 +82,7 @@ export function OfflineBanner() {
         variant="outline"
         onClick={handleRetry}
         disabled={isChecking}
-        className="h-6 px-2 text-xs border-warning/40 text-warning hover:bg-warning/20 hover:text-warning shrink-0"
+        className="h-6 px-2 text-xs border-warning/40 text-warning hover:bg-warning/20 hover:text-foreground shrink-0"
       >
         <RefreshCw className={`w-3 h-3 mr-1 ${isChecking ? 'animate-spin' : ''}`} />
         Reconnect

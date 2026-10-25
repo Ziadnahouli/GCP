@@ -18,7 +18,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   return (
     <React.Suspense
       fallback={
-        <div className="h-screen w-screen flex items-center justify-center bg-background text-muted-foreground text-sm font-medium">
+        <div className="h-dvh w-full flex items-center justify-center bg-background text-muted-foreground text-sm font-medium">
           Loading Nexus Platform...
         </div>
       }

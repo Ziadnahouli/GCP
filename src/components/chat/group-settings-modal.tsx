@@ -227,7 +227,7 @@ export function GroupSettingsModal({
                   return (
                     <div
                       key={member.id}
-                      className="flex items-center justify-between p-2.5 rounded-xl bg-surface-default border border-border hover:bg-surface-default transition"
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-surface-default border border-border hover:bg-surface-hover transition"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Avatar
@@ -289,7 +289,7 @@ export function GroupSettingsModal({
                   variant="ghost"
                   onClick={handleLeave}
                   disabled={isLeaving}
-                  className="text-xs text-danger hover:text-danger hover:bg-danger/10"
+                  className="text-xs text-danger hover:text-danger/90 hover:bg-danger/10"
                 >
                   {isLeaving ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <LogOut className="w-3 h-3 mr-1.5" />}
                   Leave Squad
@@ -341,7 +341,7 @@ export function GroupSettingsModal({
                           'flex items-center justify-between p-2 rounded-xl transition cursor-pointer border',
                           isSelected
                             ? 'bg-primary/15 border-primary/40 text-foreground'
-                            : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
+                            : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-hover'
                         )}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">

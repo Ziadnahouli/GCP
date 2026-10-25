@@ -17,11 +17,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { UserStatus } from '@/lib/types/profile';
 import { Conversation } from '@/lib/types/messaging';
+import { useUserPresence } from '@/features/presence/presence-context';
 
 interface ChatHeaderProps {
   conversation: Conversation | null;
   currentUserId?: string;
-  getUserStatus: (userId?: string) => UserStatus;
+  getUserStatus?: (userId?: string) => UserStatus;
   showSearch: boolean;
   onToggleSearch: () => void;
   searchQuery: string;
@@ -60,7 +61,8 @@ export function ChatHeader({
     : otherMember?.display_name || 'Direct conversation';
 
   const username = otherMember?.username;
-  const liveStatus = getUserStatus(otherMemberId);
+  const directPresence = useUserPresence(otherMemberId);
+  const liveStatus = getUserStatus ? getUserStatus(otherMemberId) : directPresence;
 
   return (
     <header className="h-[52px] min-h-[52px] border-b border-border px-3 sm:px-4 flex items-center justify-between shrink-0 bg-background select-none z-10">

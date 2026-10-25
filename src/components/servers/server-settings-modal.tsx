@@ -51,6 +51,7 @@ import { useServers } from '@/hooks/use-servers';
 import { useToast } from '@/components/ui/toast';
 import { useModalEscape } from '@/hooks/use-modal-escape';
 import { cn } from '@/lib/utils';
+import { DEFAULT_ROLE_COLORS, ROLE_PRESET_COLORS } from '@/lib/design/colors';
 
 interface ServerSettingsModalProps {
   open: boolean;
@@ -174,7 +175,7 @@ export function ServerSettingsModal({
   // Custom Role creation state
   const [showCreateRole, setShowCreateRole] = React.useState(false);
   const [newRoleName, setNewRoleName] = React.useState('');
-  const [newRoleColor, setNewRoleColor] = React.useState('#6366f1');
+  const [newRoleColor, setNewRoleColor] = React.useState<string>(DEFAULT_ROLE_COLORS.defaultNewRole);
   const [newRolePermissions, setNewRolePermissions] = React.useState<ServerPermission[]>([
     'send_messages',
     'connect_voice',
@@ -322,13 +323,13 @@ export function ServerSettingsModal({
 
   // Combine built-in roles with custom server roles
   const allAvailableRoles = [
-    { id: 'admin', name: 'Admin', color: '#6366f1', is_custom: false },
-    { id: 'moderator', name: 'Moderator', color: '#10b981', is_custom: false },
-    { id: 'member', name: 'Member', color: '#94a3b8', is_custom: false },
+    { id: 'admin', name: 'Admin', color: DEFAULT_ROLE_COLORS.admin, is_custom: false },
+    { id: 'moderator', name: 'Moderator', color: DEFAULT_ROLE_COLORS.moderator, is_custom: false },
+    { id: 'member', name: 'Member', color: DEFAULT_ROLE_COLORS.member, is_custom: false },
     ...(server.roles || []),
   ];
 
-  const PRESET_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#06b6d4'];
+  const PRESET_COLORS = ROLE_PRESET_COLORS;
 
   if (!open || !mounted || typeof document === 'undefined') return null;
 
@@ -840,7 +841,7 @@ export function ServerSettingsModal({
                                 'p-2 rounded-lg border text-xs cursor-pointer transition-colors flex items-start gap-2',
                                 isChecked
                                   ? 'border-primary/50 bg-primary/10 text-foreground'
-                                  : 'border-border bg-surface-default text-muted-foreground hover:bg-surface-default'
+                                  : 'border-border bg-surface-default text-muted-foreground hover:bg-surface-hover'
                               )}
                             >
                               <div className={cn(
@@ -1298,7 +1299,7 @@ export function ServerSettingsModal({
                                   fetchInvites(server.id).then(setInvitesList);
                                 }
                               }}
-                              className="text-xs text-danger hover:text-danger hover:bg-danger/10 h-7"
+                              className="text-xs text-danger hover:text-danger/90 hover:bg-danger/10 h-7"
                             >
                               Revoke
                             </Button>
@@ -1389,7 +1390,7 @@ export function ServerSettingsModal({
                                 fetchBans(server.id).then(setBansList);
                               }
                             }}
-                            className="text-xs bg-success hover:bg-success text-white h-7 font-medium"
+                            className="text-xs bg-success hover:bg-success/90 active:bg-success/80 text-primary-foreground h-7 font-medium"
                           >
                             Unban & Restore
                           </Button>

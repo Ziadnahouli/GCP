@@ -325,7 +325,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   allowDms === opt.id
                     ? 'bg-primary/20 border-primary text-foreground'
-                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
+                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-hover'
                 )}
               >
                 <div className="font-semibold">{opt.label}</div>
@@ -355,7 +355,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   allowFriendReqs === opt.id
                     ? 'bg-primary/20 border-primary text-foreground'
-                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
+                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-hover'
                 )}
               >
                 <div className="font-semibold">{opt.label}</div>
@@ -385,7 +385,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   profileVisibility === opt.id
                     ? 'bg-primary/20 border-primary text-foreground'
-                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
+                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-hover'
                 )}
               >
                 <div className="font-semibold">{opt.label}</div>
@@ -415,7 +415,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   presenceVisibility === opt.id
                     ? 'bg-primary/20 border-primary text-foreground'
-                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
+                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-hover'
                 )}
               >
                 <div className="font-semibold">{opt.label}</div>
@@ -560,7 +560,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
             variant="ghost"
             onClick={handleSignOutOtherSessions}
             disabled={isSigningOutOthers}
-            className="text-xs text-danger hover:text-danger hover:bg-danger/10 border border-danger/20"
+            className="text-xs text-danger hover:text-danger/90 hover:bg-danger/10 border border-danger/20"
           >
             {isSigningOutOthers ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <LogOut className="w-3 h-3 mr-1.5" />}
             Sign Out Other Sessions
@@ -587,7 +587,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                     "p-3.5 rounded-2xl border flex items-center justify-between transition-all",
                     isCurrent
                       ? "bg-primary/[0.04] border-primary/20"
-                      : "bg-surface-default border-border hover:border-border"
+                      : "bg-surface-default border-border hover:border-border-strong"
                   )}
                 >
                   <div className="flex items-center gap-3">
@@ -623,7 +623,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                       size="sm"
                       variant="ghost"
                       onClick={() => handleRevokeDevice(dev.device_id)}
-                      className="h-7 px-2.5 text-xs text-danger hover:text-danger hover:bg-danger/10 border border-danger/20"
+                      className="h-7 px-2.5 text-xs text-danger hover:text-danger/90 hover:bg-danger/10 border border-danger/20"
                     >
                       <LogOut className="w-3 h-3 mr-1" />
                       Revoke
@@ -685,7 +685,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
           ) : (
             <div className="p-3 rounded-xl bg-black/40 border border-danger/40 space-y-3">
               <p className="text-xs text-danger font-semibold">
-                Type <span className="underline font-mono text-white">DELETE</span> to confirm permanent account purge:
+                Type <span className="underline font-mono text-foreground font-bold">DELETE</span> to confirm permanent account purge:
               </p>
               <div className="flex gap-2">
                 <Input

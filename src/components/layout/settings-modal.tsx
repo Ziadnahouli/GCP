@@ -22,13 +22,25 @@ import { Switch } from '@/components/ui/switch';
 import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import {
-  ProfileTab,
-  VoiceAudioTab,
-  KeybindsTab,
-  SecurityTab,
-  AppearanceTab,
-} from './settings';
+import dynamic from 'next/dynamic';
+import { ProfileTab } from './settings/ProfileTab';
+
+const VoiceAudioTab = dynamic(() => import('./settings/VoiceAudioTab').then((m) => m.VoiceAudioTab), {
+  loading: () => <div className="p-8 text-xs text-muted-foreground animate-pulse">Loading Voice & Audio...</div>,
+  ssr: false,
+});
+const SecurityTab = dynamic(() => import('./settings/SecurityTab').then((m) => m.SecurityTab), {
+  loading: () => <div className="p-8 text-xs text-muted-foreground animate-pulse">Loading Security...</div>,
+  ssr: false,
+});
+const KeybindsTab = dynamic(() => import('./settings/KeybindsTab').then((m) => m.KeybindsTab), {
+  loading: () => <div className="p-8 text-xs text-muted-foreground animate-pulse">Loading Keybinds...</div>,
+  ssr: false,
+});
+const AppearanceTab = dynamic(() => import('./settings/AppearanceTab').then((m) => m.AppearanceTab), {
+  loading: () => <div className="p-8 text-xs text-muted-foreground animate-pulse">Loading Appearance...</div>,
+  ssr: false,
+});
 
 interface SettingsModalProps {
   open: boolean;

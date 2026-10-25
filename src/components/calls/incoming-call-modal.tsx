@@ -107,6 +107,7 @@ export function IncomingCallModal() {
                 size="sm"
                 onClick={rejectCall}
                 className="flex-1 gap-1.5 h-8 text-xs"
+                aria-label={isGroup ? 'Dismiss group call' : 'Decline call'}
               >
                 <PhoneOff className="w-3.5 h-3.5" />
                 <span>{isGroup ? 'Dismiss' : 'Decline'}</span>
@@ -116,7 +117,8 @@ export function IncomingCallModal() {
                 variant="primary"
                 size="sm"
                 onClick={acceptCall}
-                className="flex-1 gap-1.5 h-8 text-xs bg-status-online hover:bg-status-online text-primary-foreground"
+                className="flex-1 gap-1.5 h-8 text-xs bg-status-online hover:bg-status-online/90 active:bg-status-online/80 text-primary-foreground"
+                aria-label="Accept call"
               >
                 {incomingCall.isVideo ? <Video className="w-3.5 h-3.5" /> : <Phone className="w-3.5 h-3.5" />}
                 <span>Accept</span>
@@ -173,6 +175,7 @@ export function IncomingCallModal() {
             size="lg"
             onClick={rejectCall}
             className="flex-1 gap-2 min-h-[48px] text-xs font-semibold"
+            aria-label={isGroup ? 'Dismiss group call' : 'Decline call'}
           >
             <PhoneOff className="w-4 h-4" />
             <span>{isGroup ? 'Dismiss' : 'Decline'}</span>
@@ -182,7 +185,8 @@ export function IncomingCallModal() {
             variant="primary"
             size="lg"
             onClick={acceptCall}
-            className="flex-1 gap-2 min-h-[48px] text-xs font-semibold bg-status-online hover:bg-status-online text-primary-foreground"
+            className="flex-1 gap-2 min-h-[48px] text-xs font-semibold bg-status-online hover:bg-status-online/90 active:bg-status-online/80 text-primary-foreground"
+            aria-label="Accept call"
           >
             {incomingCall.isVideo ? <Video className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
             <span>Accept</span>

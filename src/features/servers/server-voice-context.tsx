@@ -5,7 +5,7 @@ import * as React from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
-import { SoundboardClip, soundboardEngine } from '@/lib/soundboard/audio-engine';
+import type { SoundboardClip } from '@/lib/soundboard/audio-engine';
 import { DEFAULT_RTC_CONFIG, cleanIceCandidate } from '@/lib/webrtc/ice-config';
 import { createGcpNoisePipeline, GcpNoisePipeline, NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
 import { getUserMediaAudioConstraints, applyProcessingPolicy } from '@/lib/webrtc/audio-processing-policy';
@@ -16,11 +16,10 @@ import {
   setupRemoteAudioElement,
   cleanupAllMeshPeers,
 } from './voice-mesh';
-import {
+import type {
   Room,
   RoomEvent,
   Track,
-  createLocalAudioTrack,
   RemoteTrack,
   RemoteParticipant,
 } from 'livekit-client';
@@ -316,7 +315,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
   // LiveKit Authoritative Remote Audio Attacher
   // Binds remote tracks to DOM <audio> elements with gesture unlock retry logic
   const attachLiveKitAudioTrack = React.useCallback((track: RemoteTrack, peerId: string) => {
-    if (track.kind !== Track.Kind.Audio) return;
+    if ((track.kind as string) !== 'audio') return;
 
     if (track.mediaStreamTrack) {
       track.mediaStreamTrack.enabled = !isDeafenedRef.current;
@@ -978,6 +977,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           const tokenData = await tokenRes.json();
           if (tokenData.isConfigured && tokenData.token && tokenData.url) {
             console.log('[LiveKit Voice] Connecting to LiveKit Cloud SFU at', tokenData.url, 'for room', roomName);
+            const { Room, RoomEvent, Track } = await import('livekit-client');
             const lkRoom = new Room({
               adaptiveStream: true,
               dynacast: true,
@@ -1599,9 +1599,14 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
         .on('broadcast', { event: 'voice_rtc_signal' }, ({ payload }: { payload: any }) => {
           handleRtcSignal(payload);
         })
-        .on('broadcast', { event: 'soundboard' }, ({ payload }: { payload: SoundboardClip }) => {
+        .on('broadcast', { event: 'soundboard' }, async ({ payload }: { payload: SoundboardClip }) => {
           if (payload && !isDeafenedRef.current) {
-            soundboardEngine.playClip(payload);
+            try {
+              const { soundboardEngine } = await import('@/lib/soundboard/audio-engine');
+              soundboardEngine.playClip(payload);
+            } catch (err) {
+              void err;
+            }
           }
         });
 
@@ -2094,6 +2099,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
       if (livekitRoomRef.current?.localParticipant) {
         try {
+          const { Track } = await import('livekit-client');
           const pub = livekitRoomRef.current.localParticipant.getTrackPublication(Track.Source.Camera);
           if (pub && pub.track) {
             livekitRoomRef.current.localParticipant.unpublishTrack(pub.track);
@@ -2126,6 +2132,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
         if (livekitRoomRef.current?.localParticipant && vTrack) {
           try {
+            const { Track } = await import('livekit-client');
             await livekitRoomRef.current.localParticipant.publishTrack(vTrack, { source: Track.Source.Camera });
           } catch (lkErr) {
             console.warn('[LiveKit] Error publishing camera track:', lkErr);
@@ -2161,6 +2168,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
       if (livekitRoomRef.current?.localParticipant) {
         try {
+          const { Track } = await import('livekit-client');
           const pub = livekitRoomRef.current.localParticipant.getTrackPublication(Track.Source.ScreenShare);
           if (pub && pub.track) {
             livekitRoomRef.current.localParticipant.unpublishTrack(pub.track);
@@ -2188,7 +2196,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
         const videoTrack = sStream.getVideoTracks()[0];
         if (videoTrack) {
-          videoTrack.onended = () => {
+          videoTrack.onended = async () => {
             if (screenStreamRef.current) {
               screenStreamRef.current.getTracks().forEach((t) => t.stop());
               screenStreamRef.current = null;
@@ -2199,6 +2207,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
             if (livekitRoomRef.current?.localParticipant) {
               try {
+                const { Track } = await import('livekit-client');
                 const pub = livekitRoomRef.current.localParticipant.getTrackPublication(Track.Source.ScreenShare);
                 if (pub && pub.track) {
                   livekitRoomRef.current.localParticipant.unpublishTrack(pub.track);
@@ -2227,6 +2236,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
         if (livekitRoomRef.current?.localParticipant && videoTrack) {
           try {
+            const { Track } = await import('livekit-client');
             await livekitRoomRef.current.localParticipant.publishTrack(videoTrack, { source: Track.Source.ScreenShare });
           } catch (lkErr) {
             console.warn('[LiveKit] Error publishing screen share:', lkErr);
@@ -2308,8 +2318,13 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
   // Broadcast soundboard clip
   const broadcastSoundboard = React.useCallback(
-    (clip: SoundboardClip) => {
-      soundboardEngine.playClip(clip);
+    async (clip: SoundboardClip) => {
+      try {
+        const { soundboardEngine } = await import('@/lib/soundboard/audio-engine');
+        soundboardEngine.playClip(clip);
+      } catch (err) {
+        void err;
+      }
       if (realtimeChannelRef.current) {
         try {
           realtimeChannelRef.current.send({
@@ -2317,7 +2332,9 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
             event: 'soundboard',
             payload: clip,
           });
-        } catch {}
+        } catch (sendErr) {
+          void sendErr;
+        }
       }
     },
     []

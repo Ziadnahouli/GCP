@@ -11,6 +11,77 @@ import { setBoundedMap } from '@/lib/utils';
 
 const MAX_PRESENCE_ENTRIES = 1000;
 
+type PresenceListener = () => void;
+
+class PresenceStore {
+  private statusMap: Map<string, UserStatus> = new Map();
+  private listeners: Set<PresenceListener> = new Set();
+  private userListeners: Map<string, Set<() => void>> = new Map();
+
+  getStatus(userId: string | null | undefined): UserStatus {
+    if (!userId) return 'offline';
+    return this.statusMap.get(userId) || 'offline';
+  }
+
+  isOnline(userId: string | null | undefined): boolean {
+    const s = this.getStatus(userId);
+    return s === 'online' || s === 'idle' || s === 'dnd';
+  }
+
+  getSnapshot = (): Map<string, UserStatus> => {
+    return this.statusMap;
+  };
+
+  subscribe = (listener: PresenceListener): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  subscribeUser = (userId: string, listener: () => void): (() => void) => {
+    if (!this.userListeners.has(userId)) {
+      this.userListeners.set(userId, new Set());
+    }
+    const set = this.userListeners.get(userId)!;
+    set.add(listener);
+    return () => {
+      set.delete(listener);
+      if (set.size === 0) {
+        this.userListeners.delete(userId);
+      }
+    };
+  };
+
+  setEntireMap(newMap: Map<string, UserStatus>) {
+    const changedUserIds = new Set<string>();
+    newMap.forEach((st, uid) => {
+      if (this.statusMap.get(uid) !== st) {
+        changedUserIds.add(uid);
+      }
+    });
+    this.statusMap.forEach((_, uid) => {
+      if (!newMap.has(uid)) {
+        changedUserIds.add(uid);
+      }
+    });
+
+    if (changedUserIds.size === 0) return;
+
+    this.statusMap = newMap;
+
+    changedUserIds.forEach((uid) => {
+      const userSubs = this.userListeners.get(uid);
+      if (userSubs) {
+        userSubs.forEach((cb) => cb());
+      }
+    });
+    this.listeners.forEach((cb) => cb());
+  }
+}
+
+export const globalPresenceStore = new PresenceStore();
+
 interface PresenceContextType {
   onlineUsers: Map<string, UserStatus>;
   getUserStatus: (userId: string | null | undefined) => UserStatus;
@@ -106,6 +177,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         }
       });
 
+      globalPresenceStore.setEntireMap(currentMap);
       setOnlineUsers(currentMap);
     };
 
@@ -329,9 +401,9 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
       if (user && userId === user.id) {
         return profile?.status || 'online';
       }
-      return onlineUsers.get(userId) || 'offline';
+      return globalPresenceStore.getStatus(userId);
     },
-    [user, profile?.status, onlineUsers]
+    [user?.id, profile?.status]
   );
 
   const isUserOnline = React.useCallback(
@@ -342,13 +414,47 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     [getUserStatus]
   );
 
+  const value = React.useMemo<PresenceContextType>(() => ({
+    onlineUsers,
+    getUserStatus,
+    isUserOnline,
+  }), [onlineUsers, getUserStatus, isUserOnline]);
+
   return (
-    <PresenceContext.Provider value={{ onlineUsers, getUserStatus, isUserOnline }}>
+    <PresenceContext.Provider value={value}>
       {children}
     </PresenceContext.Provider>
   );
 }
 
-export function usePresence() {
-  return React.useContext(PresenceContext);
+export function useUserPresence(userId: string | null | undefined): UserStatus {
+  const { user, profile } = useAuth();
+  const isMe = Boolean(user && userId === user.id);
+
+  const subscribe = React.useCallback(
+    (callback: () => void) => {
+      if (!userId || isMe) return () => {};
+      return globalPresenceStore.subscribeUser(userId, callback);
+    },
+    [userId, isMe]
+  );
+
+  const getSnapshot = React.useCallback(() => {
+    if (isMe) return profile?.status || 'online';
+    return globalPresenceStore.getStatus(userId);
+  }, [userId, isMe, profile?.status]);
+
+  return React.useSyncExternalStore(subscribe, getSnapshot, () => 'offline');
+}
+
+export function usePresence(): PresenceContextType;
+export function usePresence(userId: string | null | undefined): UserStatus;
+export function usePresence(userId?: string | null | undefined): PresenceContextType | UserStatus {
+  const context = React.useContext(PresenceContext);
+  const singleStatus = useUserPresence(userId);
+
+  if (userId !== undefined) {
+    return singleStatus;
+  }
+  return context;
 }

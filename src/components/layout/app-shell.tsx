@@ -36,7 +36,7 @@ import {
 import { useAuth } from '@/features/auth/auth-provider';
 import { useServers } from '@/hooks/use-servers';
 import { useServerVoiceContext } from '@/features/servers/server-voice-context';
-import { useCallState, useCallActions, useCallStats } from '@/features/calls/call-context';
+import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { useNotifications } from '@/hooks/use-notifications';
 import { ServerRail } from '@/components/servers/server-rail';
 import { ServerSidebar } from '@/components/servers/server-sidebar';
@@ -107,7 +107,6 @@ export function AppShell({ children }: AppShellProps) {
   const serverVoice = useServerVoiceContext();
   const callState = useCallState();
   const callActions = useCallActions();
-  const { stats } = useCallStats();
   const {
     notifications,
     unreadCount: notificationsCount,
@@ -200,7 +199,7 @@ export function AppShell({ children }: AppShellProps) {
 
   if (isLoading) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background text-foreground space-y-4">
+      <div className="h-dvh w-full flex flex-col items-center justify-center bg-background text-foreground space-y-4">
         <div className="w-10 h-10 rounded-2xl bg-primary-subtle border border-primary/20 flex items-center justify-center text-primary animate-pulse">
           <Gamepad2 className="w-5 h-5" />
         </div>
@@ -360,7 +359,7 @@ export function AppShell({ children }: AppShellProps) {
   );
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-foreground font-sans antialiased">
+    <div className="flex flex-col h-dvh w-full overflow-hidden bg-background text-foreground font-sans antialiased">
       {/* Non-blocking offline/reconnecting banner */}
       <OfflineBanner />
 
@@ -513,22 +512,25 @@ export function AppShell({ children }: AppShellProps) {
           )}
 
           {/* Mobile Bottom Tab Bar (56px + safe-area) */}
-          <nav className="sm:hidden h-14 bg-surface-rail border-t border-border flex items-center justify-around px-2 shrink-0 z-20 select-none pb-[env(safe-area-inset-bottom)]">
+          <nav className="sm:hidden h-mobile-tab-bar bg-surface-rail border-t border-border flex items-center justify-around px-2 shrink-0 z-20 select-none">
             <button
               onClick={() => {
                 setMobileTab('home');
                 router.push('/');
               }}
               className={cn(
-                'flex flex-col items-center justify-center p-1 rounded-control text-xs transition-colors min-w-[56px]',
+                'flex flex-col items-center justify-center p-1 rounded-control text-caption transition-colors min-w-[56px] min-h-[44px] relative touch-target-44',
                 mobileTab === 'home' && !selectedConversationId && !selectedServerId
                   ? 'text-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
               )}
               title="Home (Friends & Activity)"
             >
+              {mobileTab === 'home' && !selectedConversationId && !selectedServerId && (
+                <span className="absolute top-0 w-8 h-0.5 rounded-full bg-primary" />
+              )}
               <Users className="w-5 h-5" />
-              <span className="text-xs mt-0.5">Home</span>
+              <span className="text-caption mt-0.5 font-medium">Home</span>
             </button>
 
             <button
@@ -540,15 +542,18 @@ export function AppShell({ children }: AppShellProps) {
                 setTabletDrawerOpen(true);
               }}
               className={cn(
-                'flex flex-col items-center justify-center p-1 rounded-control text-xs transition-colors min-w-[56px]',
+                'flex flex-col items-center justify-center p-1 rounded-control text-caption transition-colors min-w-[56px] min-h-[44px] relative touch-target-44',
                 mobileTab === 'messages' || selectedConversationId
                   ? 'text-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
               )}
               title="Messages"
             >
+              {(mobileTab === 'messages' || selectedConversationId) && (
+                <span className="absolute top-0 w-8 h-0.5 rounded-full bg-primary" />
+              )}
               <MessageSquare className="w-5 h-5" />
-              <span className="text-xs mt-0.5">Messages</span>
+              <span className="text-caption mt-0.5 font-medium">Messages</span>
             </button>
 
             <button
@@ -557,37 +562,43 @@ export function AppShell({ children }: AppShellProps) {
                 setTabletDrawerOpen(true);
               }}
               className={cn(
-                'flex flex-col items-center justify-center p-1 rounded-control text-xs transition-colors min-w-[56px]',
+                'flex flex-col items-center justify-center p-1 rounded-control text-caption transition-colors min-w-[56px] min-h-[44px] relative touch-target-44',
                 mobileTab === 'servers' || selectedServerId
                   ? 'text-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
               )}
               title="Servers"
             >
+              {(mobileTab === 'servers' || selectedServerId) && (
+                <span className="absolute top-0 w-8 h-0.5 rounded-full bg-primary" />
+              )}
               <Gamepad2 className="w-5 h-5" />
-              <span className="text-xs mt-0.5">Servers</span>
+              <span className="text-caption mt-0.5 font-medium">Servers</span>
             </button>
 
             <button
               onClick={() => setShowNotificationsPopover((prev) => !prev)}
               className={cn(
-                'flex flex-col items-center justify-center p-1 rounded-control text-xs transition-colors min-w-[56px] relative',
+                'flex flex-col items-center justify-center p-1 rounded-control text-caption transition-colors min-w-[56px] min-h-[44px] relative touch-target-44',
                 showNotificationsPopover
                   ? 'text-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
               )}
               title="Inbox"
             >
+              {showNotificationsPopover && (
+                <span className="absolute top-0 w-8 h-0.5 rounded-full bg-primary" />
+              )}
               <Bell className="w-5 h-5" />
               {notificationsCount > 0 && (
                 <span className="absolute top-1 right-3.5 w-2 h-2 rounded-full bg-primary" />
               )}
-              <span className="text-xs mt-0.5">Inbox</span>
+              <span className="text-caption mt-0.5 font-medium">Inbox</span>
             </button>
 
             <button
               onClick={() => setShowUserSettings(true)}
-              className="flex flex-col items-center justify-center p-1 rounded-control text-xs text-muted-foreground hover:text-foreground transition-colors min-w-[56px]"
+              className="flex flex-col items-center justify-center p-1 rounded-control text-caption text-muted-foreground hover:text-foreground transition-colors min-w-[56px] min-h-[44px] relative touch-target-44"
               title="You (Profile & Settings)"
             >
               <Avatar
@@ -597,7 +608,7 @@ export function AppShell({ children }: AppShellProps) {
                 showStatus
                 size={20}
               />
-              <span className="text-xs mt-0.5">You</span>
+              <span className="text-caption mt-0.5 font-medium">You</span>
             </button>
           </nav>
         </div>
@@ -765,7 +776,6 @@ export function AppShell({ children }: AppShellProps) {
           isNoiseSuppressionEnabled={callState.isNoiseSuppressionEnabled}
           isLiveKitActive={callState.isLiveKitActive}
           participants={callState.participants}
-          stats={stats}
           localStream={callState.localStream}
           remoteStream={callState.remoteStream}
           screenStream={callState.screenStream}

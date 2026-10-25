@@ -54,7 +54,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
             defaultValue={defaultValue}
             onChange={handleChange}
             className={cn(
-              'flex min-h-[64px] w-full rounded-card border bg-card p-2.5 text-xs md:text-sm text-foreground ring-offset-background transition-all duration-fast ease-pro',
+              'flex min-h-[64px] w-full rounded-card border bg-card p-2.5 text-xs sm:text-sm max-sm:text-md text-foreground ring-offset-background transition-all duration-fast ease-pro',
               'placeholder:text-muted-foreground/60',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:border-primary',
               'disabled:cursor-not-allowed disabled:opacity-50 resize-y',

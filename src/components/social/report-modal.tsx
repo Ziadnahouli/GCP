@@ -119,7 +119,7 @@ export function ReportModal({
                     'p-2.5 rounded-xl border text-left transition cursor-pointer',
                     selectedReason === r.id
                       ? 'bg-danger/15 border-danger/40 text-foreground'
-                      : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
+                      : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-hover'
                   )}
                 >
                   <div className="text-xs font-semibold">{r.label}</div>

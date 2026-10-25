@@ -305,10 +305,10 @@ export function ServerSidebar({
                   {server.name ? server.name.charAt(0).toUpperCase() : 'S'}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className="font-semibold text-xs text-foreground truncate group-hover:text-primary transition-colors leading-tight">
+                  <h2 className="font-semibold text-body text-foreground truncate group-hover:text-primary transition-colors leading-tight">
                     {server.name}
                   </h2>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                  <div className="flex items-center gap-1.5 text-meta text-muted-foreground mt-0.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-status-online shrink-0" />
                     <span className="truncate">{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
                   </div>
@@ -433,12 +433,15 @@ export function ServerSidebar({
                     key={channel.id}
                     onClick={() => onSelectChannel(channel)}
                     className={cn(
-                      'group flex items-center justify-between px-2.5 h-8 rounded-control text-xs font-medium cursor-pointer transition-colors relative',
+                      'group flex items-center justify-between px-2.5 h-8 max-sm:h-14 rounded-control text-meta font-medium cursor-pointer transition-colors relative',
                       isActive
                         ? 'bg-surface-active text-foreground font-semibold'
                         : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
                     )}
                   >
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-r" />
+                    )}
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <Hash
                         className={cn(
@@ -446,7 +449,7 @@ export function ServerSidebar({
                           isActive ? 'text-primary' : 'text-muted-foreground'
                         )}
                       />
-                      <span className="truncate">{channel.name}</span>
+                      <span className="truncate text-body">{channel.name}</span>
                     </div>
 
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -527,7 +530,7 @@ export function ServerSidebar({
                         }
                       }}
                       className={cn(
-                        'group flex items-center justify-between px-2.5 h-8 rounded-control text-xs font-medium cursor-pointer transition-colors',
+                        'group flex items-center justify-between px-2.5 h-8 max-sm:h-14 rounded-control text-meta font-medium cursor-pointer transition-colors relative',
                         isVoiceConnectedToThis
                           ? 'bg-primary-subtle text-primary font-semibold'
                           : isSelected
@@ -535,6 +538,9 @@ export function ServerSidebar({
                           : 'hover:bg-surface-hover text-muted-foreground hover:text-foreground'
                       )}
                     >
+                      {isSelected && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-r" />
+                      )}
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <Volume2
                           className={cn(
@@ -542,7 +548,7 @@ export function ServerSidebar({
                             isVoiceConnectedToThis ? 'text-primary' : 'text-muted-foreground'
                           )}
                         />
-                        <span className="truncate">{channel.name}</span>
+                        <span className="truncate text-body">{channel.name}</span>
                       </div>
 
                       <div className="flex items-center gap-1.5">

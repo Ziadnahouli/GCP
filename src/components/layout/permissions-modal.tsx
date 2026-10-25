@@ -22,8 +22,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
-import { soundboardEngine } from '@/lib/soundboard/audio-engine';
 import { getUserMediaAudioConstraints } from '@/lib/webrtc/audio-processing-policy';
 
 const PERMISSIONS_STORAGE_KEY = 'nexus_permissions_configured_v1';

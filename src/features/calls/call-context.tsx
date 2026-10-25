@@ -6,8 +6,8 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { useToast } from '@/components/ui/toast';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { DiagnosticsStats } from '@/components/calls/network-diagnostics';
-import { soundboardEngine, SoundboardClip } from '@/lib/soundboard/audio-engine';
+import type { DiagnosticsStats } from '@/components/calls/network-diagnostics';
+import type { SoundboardClip } from '@/lib/soundboard/audio-engine';
 import { createGcpNoisePipeline, GcpNoisePipeline, NoiseCancellationMode } from '@/lib/webrtc/gcp-noise-cancellation';
 import { getUserMediaAudioConstraints, applyProcessingPolicy } from '@/lib/webrtc/audio-processing-policy';
 import { tuneTrackForSpeech, tuneAudioSender, tuneOpusSdp } from '@/lib/webrtc/opus-transport-tuning';
@@ -2356,7 +2356,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .on('broadcast', { event: 'soundboard_play' }, async ({ payload }) => {
         if (payload?.clip && payload.senderId !== user.id) {
           console.log('[CallSoundboard] Remote soundboard clip received via mailbox:', payload.clip.name);
-          soundboardEngine.playClip(payload.clip);
+          try {
+            const { soundboardEngine } = await import('@/lib/soundboard/audio-engine');
+            soundboardEngine.playClip(payload.clip);
+          } catch (err) {
+            void err;
+          }
           toast({
             title: `${payload.senderName || 'Squadmate'} played ${payload.clip.name}`,
             description: `${payload.clip.icon || '🔊'} Soundboard`,
@@ -3403,7 +3408,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .on('broadcast', { event: 'soundboard_play' }, async ({ payload }) => {
         if (payload?.clip && payload.senderId !== user.id) {
           console.log('[CallSoundboard] Remote soundboard clip received via room:', payload.clip.name);
-          soundboardEngine.playClip(payload.clip);
+          try {
+            const { soundboardEngine } = await import('@/lib/soundboard/audio-engine');
+            soundboardEngine.playClip(payload.clip);
+          } catch (err) {
+            void err;
+          }
           toast({
             title: `${payload.senderName || 'Squadmate'} played ${payload.clip.name}`,
             description: `${payload.clip.icon || '🔊'} Soundboard`,
@@ -3891,7 +3901,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       .on('broadcast', { event: 'soundboard_play' }, async ({ payload }) => {
         if (payload?.clip && payload.senderId !== user.id) {
           console.log('[CallSoundboard] Remote soundboard clip received via callee room:', payload.clip.name);
-          soundboardEngine.playClip(payload.clip);
+          try {
+            const { soundboardEngine } = await import('@/lib/soundboard/audio-engine');
+            soundboardEngine.playClip(payload.clip);
+          } catch (err) {
+            void err;
+          }
           toast({
             title: `${payload.senderName || 'Squadmate'} played ${payload.clip.name}`,
             description: `${payload.clip.icon || '🔊'} Soundboard`,

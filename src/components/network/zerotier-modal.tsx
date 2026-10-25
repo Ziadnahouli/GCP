@@ -220,7 +220,7 @@ export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
                   onChange={(e) => setVirtualIp(e.target.value)}
                   placeholder="e.g. 10.147.19.42"
                   aria-label="Your ZeroTier IP"
-                  className="flex-1 min-w-0 px-2 py-1 rounded-md border border-border bg-surface-default text-foreground text-xs font-mono focus:outline-none focus:border-border"
+                  className="flex-1 min-w-0 px-2 py-1 rounded-md border border-border bg-surface-default text-foreground text-xs font-mono focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 />
                 <Button type="submit" size="sm" variant="ghost" className="h-7 px-2 text-xs font-medium text-primary">
                   <Save className="w-3 h-3 mr-1" /> Save
@@ -238,7 +238,7 @@ export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
                   onChange={(e) => setPeerVirtualIp(e.target.value)}
                   placeholder="e.g. 10.147.19.78"
                   aria-label="Squadmate's ZeroTier IP"
-                  className="flex-1 min-w-0 px-2 py-1 rounded-md border border-border bg-surface-default text-foreground text-xs font-mono focus:outline-none focus:border-border"
+                  className="flex-1 min-w-0 px-2 py-1 rounded-md border border-border bg-surface-default text-foreground text-xs font-mono focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 />
                 <Button type="submit" size="sm" variant="ghost" className="h-7 px-2 text-xs font-medium text-primary">
                   <Save className="w-3 h-3 mr-1" /> Save
@@ -299,7 +299,7 @@ export function ZeroTierModal({ open, onOpenChange }: ZeroTierModalProps) {
               maxLength={16}
               placeholder="e.g. 8056c2e21c000001"
               aria-label="ZeroTier 16-Digit Network ID"
-              className="flex-1 px-3 py-2 rounded-lg border border-border bg-surface-default text-foreground text-xs font-mono tracking-wider focus:outline-none focus:border-border"
+              className="flex-1 px-3 py-2 rounded-lg border border-border bg-surface-default text-foreground text-xs font-mono tracking-wider focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring"
             />
             <Button type="submit" size="sm" className="font-medium px-4 text-xs">
               Sync Network

@@ -67,7 +67,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             defaultValue={defaultValue}
             onChange={handleChange}
             className={cn(
-              'flex h-8 w-full rounded-card border bg-card px-2.5 py-1 text-xs md:text-sm text-foreground ring-offset-background transition-all duration-fast ease-pro',
+              'flex h-8 w-full rounded-card border bg-card px-2.5 py-1 text-xs sm:text-sm max-sm:text-md text-foreground ring-offset-background transition-all duration-fast ease-pro',
               'min-h-[32px] max-sm:min-h-[44px]',
               'placeholder:text-muted-foreground/60',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:border-primary',

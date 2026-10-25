@@ -156,12 +156,12 @@ export function VoiceLoungePopup() {
     return (
       <>
         {createPortal(
-          <div className="flex flex-col h-screen w-screen bg-card text-white overflow-hidden select-none font-sans">
+          <div className="dark flex flex-col h-dvh w-full bg-card text-foreground overflow-hidden select-none font-sans">
             {/* PiP Header */}
             <div className="h-9 px-3 border-b border-border flex items-center justify-between shrink-0 bg-card">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" />
-                <span className="text-xs font-semibold text-white truncate">
+                <span className="text-xs font-semibold text-foreground truncate">
                   {serverVoice.activeChannelName ? `#${serverVoice.activeChannelName}` : 'Voice Lounge'}
                 </span>
                 <span className="text-xs px-1.5 py-0.5 rounded bg-success/10 text-success border border-success/20 font-mono">
@@ -177,7 +177,7 @@ export function VoiceLoungePopup() {
                   } catch {}
                   setPipWindow(null);
                 }}
-                className="p-1 rounded text-white/70 hover:text-foreground hover:bg-surface-hover transition-colors"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
                 title="Dock back into app"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -196,10 +196,10 @@ export function VoiceLoungePopup() {
                   />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-medium text-white truncate">
+                  <div className="text-xs font-medium text-foreground truncate">
                     {serverVoice.isMicMuted ? 'Muted' : isSpeaking ? 'Transmitting audio...' : 'Connected'}
                   </div>
-                  <div className="text-xs text-white/60 flex items-center gap-1">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1">
                     <Users className="w-2.5 h-2.5" />
                     <span>{participants.length + 1} in lounge</span>
                   </div>
@@ -217,7 +217,7 @@ export function VoiceLoungePopup() {
                   'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
                   serverVoice.isMicMuted
                     ? 'bg-danger/20 text-danger hover:bg-danger/30'
-                    : 'bg-surface-hover text-white hover:bg-surface-hover'
+                    : 'bg-surface-hover text-foreground hover:bg-surface-active'
                 )}
                 title={serverVoice.isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
               >
@@ -232,7 +232,7 @@ export function VoiceLoungePopup() {
                   'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
                   serverVoice.isDeafened
                     ? 'bg-danger/20 text-danger hover:bg-danger/30'
-                    : 'bg-surface-hover text-white hover:bg-surface-hover'
+                    : 'bg-surface-hover text-foreground hover:bg-surface-active'
                 )}
                 title={serverVoice.isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
               >
@@ -247,7 +247,7 @@ export function VoiceLoungePopup() {
                   'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
                   serverVoice.isScreenSharing
                     ? 'bg-primary/25 text-primary hover:bg-primary/35 shadow-sm'
-                    : 'bg-surface-hover text-white/60 hover:text-foreground hover:bg-surface-hover'
+                    : 'bg-surface-hover text-muted-foreground hover:text-foreground hover:bg-surface-active'
                 )}
                 title={serverVoice.isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
               >
@@ -262,7 +262,7 @@ export function VoiceLoungePopup() {
                   'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
                   serverVoice.isCameraOn
                     ? 'bg-success/20 text-success hover:bg-success/30'
-                    : 'bg-surface-hover text-white/60 hover:text-foreground hover:bg-surface-hover'
+                    : 'bg-surface-hover text-muted-foreground hover:text-foreground hover:bg-surface-active'
                 )}
                 title={serverVoice.isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
               >
@@ -279,7 +279,7 @@ export function VoiceLoungePopup() {
                   setPipWindow(null);
                   serverVoice.disconnectVoice();
                 }}
-                className="p-2 rounded-xl bg-danger hover:bg-danger text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
+                className="p-2 rounded-xl bg-danger hover:bg-danger/90 active:bg-danger/95 text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
                 title="Disconnect"
               >
                 <PhoneOff className="w-4 h-4" />
@@ -308,7 +308,7 @@ export function VoiceLoungePopup() {
               } catch {}
               setPipWindow(null);
             }}
-            className="px-2.5 py-1 rounded-lg bg-surface-hover hover:bg-surface-hover text-xs font-medium text-foreground transition-colors shrink-0"
+            className="px-2.5 py-1 rounded-lg bg-surface-hover hover:bg-surface-active text-xs font-medium text-foreground transition-colors shrink-0"
           >
             Restore to App
           </button>
@@ -433,7 +433,7 @@ export function VoiceLoungePopup() {
             'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
             serverVoice.isMicMuted
               ? 'bg-danger/20 text-danger hover:bg-danger/30'
-              : 'bg-surface-hover text-foreground hover:bg-surface-hover'
+              : 'bg-surface-hover text-foreground hover:bg-surface-active'
           )}
           title={serverVoice.isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
           aria-label="Toggle Microphone"
@@ -449,7 +449,7 @@ export function VoiceLoungePopup() {
             'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
             serverVoice.isDeafened
               ? 'bg-danger/20 text-danger hover:bg-danger/30'
-              : 'bg-surface-hover text-foreground hover:bg-surface-hover'
+              : 'bg-surface-hover text-foreground hover:bg-surface-active'
           )}
           title={serverVoice.isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
           aria-label="Toggle Deafen"
@@ -465,7 +465,7 @@ export function VoiceLoungePopup() {
             'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
             serverVoice.isScreenSharing
               ? 'bg-primary/25 text-primary hover:bg-primary/35 shadow-sm'
-              : 'bg-surface-hover text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+              : 'bg-surface-hover text-muted-foreground hover:text-foreground hover:bg-surface-active'
           )}
           title={serverVoice.isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
           aria-label="Toggle Screen Share"
@@ -481,7 +481,7 @@ export function VoiceLoungePopup() {
             'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
             serverVoice.isCameraOn
               ? 'bg-success/20 text-success hover:bg-success/30'
-              : 'bg-surface-hover text-muted-foreground hover:text-foreground hover:bg-surface-hover'
+              : 'bg-surface-hover text-muted-foreground hover:text-foreground hover:bg-surface-active'
           )}
           title={serverVoice.isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
           aria-label="Toggle Camera"
@@ -493,7 +493,7 @@ export function VoiceLoungePopup() {
         <button
           type="button"
           onClick={serverVoice.disconnectVoice}
-          className="p-2 rounded-xl bg-danger hover:bg-danger text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
+          className="p-2 rounded-xl bg-danger hover:bg-danger/90 active:bg-danger/95 text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
           title="Disconnect from Lounge"
           aria-label="Disconnect"
         >

@@ -6,9 +6,18 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { useServerVoiceContext } from '@/features/servers/server-voice-context';
 import { Avatar } from '@/components/ui/avatar';
+import dynamic from 'next/dynamic';
 import { StatusSelector } from './status-selector';
-import { SettingsModal } from './settings-modal';
-import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
+
+const SettingsModal = dynamic(
+  () => import('./settings-modal').then((m) => m.SettingsModal),
+  { ssr: false }
+);
+
+const SoundboardModal = dynamic(
+  () => import('@/components/soundboard/soundboard-modal').then((m) => m.SoundboardModal),
+  { ssr: false }
+);
 import { UserStatus } from '@/lib/types/profile';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';

@@ -13,8 +13,12 @@ import {
 import { useAuth } from '@/features/auth/auth-provider';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { SettingsModal } from '@/components/layout/settings-modal';
+import dynamic from 'next/dynamic';
+
+const SettingsModal = dynamic(
+  () => import('@/components/layout/settings-modal').then((m) => m.SettingsModal),
+  { ssr: false }
+);
 import { FriendsView } from '@/components/social/friends-view';
 import { ChatView } from '@/components/chat/chat-view';
 import { ChannelView } from '@/components/servers/channel-view';

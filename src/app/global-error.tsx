@@ -23,7 +23,7 @@ export default function GlobalError({
           </div>
 
           <div className="space-y-2">
-            <h1 className="text-xl font-bold tracking-tight text-white">Critical System Error</h1>
+            <h1 className="text-xl font-bold tracking-tight text-foreground">Critical System Error</h1>
             <p className="text-xs text-muted-foreground leading-relaxed">
               Nexus failed to initialize the root application layout.
             </p>
@@ -31,7 +31,7 @@ export default function GlobalError({
 
           <button
             onClick={() => reset()}
-            className="w-full flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-primary hover:bg-primary text-white font-semibold text-xs transition-all shadow-lg active:scale-95"
+            className="w-full flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-hover/90 text-primary-foreground font-semibold text-xs transition-all shadow-lg active:scale-95"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Reload Application</span>

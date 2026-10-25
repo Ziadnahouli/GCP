@@ -808,7 +808,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
               'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
               noiseMode === 'off'
                 ? 'bg-danger/10 border-danger/40 ring-1 ring-danger'
-                : 'bg-surface-default border-border hover:bg-surface-default'
+                : 'bg-surface-default border-border hover:bg-surface-hover'
             )}
           >
             <div>
@@ -829,7 +829,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
               'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
               noiseMode === 'light'
                 ? 'bg-primary-subtle border-primary/30 ring-1 ring-ring'
-                : 'bg-surface-default border-border hover:bg-surface-default'
+                : 'bg-surface-default border-border hover:bg-surface-hover'
             )}
           >
             <div>
@@ -851,7 +851,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
               'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
               noiseMode === 'balanced'
                 ? 'bg-primary/15 border-primary/50 ring-1 ring-primary/40'
-                : 'bg-surface-default border-border hover:bg-surface-default'
+                : 'bg-surface-default border-border hover:bg-surface-hover'
             )}
           >
             <div>
@@ -873,7 +873,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
               'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
               noiseMode === 'strong'
                 ? 'bg-success/15 border-success/50 ring-1 ring-success'
-                : 'bg-surface-default border-border hover:bg-surface-default'
+                : 'bg-surface-default border-border hover:bg-surface-hover'
             )}
           >
             <div>
@@ -966,7 +966,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
           'flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all',
           pushToTalk
             ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/30'
-            : 'bg-surface-default border-border hover:bg-surface-default'
+            : 'bg-surface-default border-border hover:bg-surface-hover'
         )}
       >
         <div className="space-y-0.5">
@@ -979,7 +979,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            Hold keyboard hotkey (<kbd className="px-1 py-0.5 rounded bg-surface-active text-white font-mono text-xs">Space</kbd> or <kbd className="px-1 py-0.5 rounded bg-surface-active text-white font-mono text-xs">V</kbd>) to transmit mic audio.
+            Hold keyboard hotkey (<kbd className="px-1 py-0.5 rounded bg-surface-active text-foreground font-mono text-xs">Space</kbd> or <kbd className="px-1 py-0.5 rounded bg-surface-active text-foreground font-mono text-xs">V</kbd>) to transmit mic audio.
             {pushToTalk && (
               <span className="block text-xs text-primary/80 mt-1">
                 💡 Gaming Tip: When playing external games outside the browser window, web browsers sandbox keyboard input. Switch to Voice Activity with neural noise suppression for seamless background gaming audio!

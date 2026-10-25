@@ -77,6 +77,12 @@ const config: Config = {
         lg: ['1.25rem', { lineHeight: '1.75rem' }],     // 20px / 28px
         xl: ['1.5rem', { lineHeight: '2rem' }],          // 24px / 32px
         '2xl': ['2rem', { lineHeight: '2.5rem' }],       // 32px / 40px
+        // Semantic type scale (Clean Pro D1)
+        title: ['1rem', { lineHeight: '1.5rem', letterSpacing: '-0.01em' }], // 16px / 24px
+        body: ['0.875rem', { lineHeight: '1.25rem' }],                       // 14px / 20px
+        label: ['0.8125rem', { lineHeight: '1.125rem' }],                     // 13px / 18px
+        meta: ['0.75rem', { lineHeight: '1rem' }],                           // 12px / 16px
+        caption: ['0.75rem', { lineHeight: '1rem' }],                        // 12px / 16px
       },
       borderRadius: {
         control: '6px',

@@ -38,7 +38,7 @@ interface ChatMessageRowProps {
   onSelectMedia: (attachment: MessageAttachment) => void;
 }
 
-export function ChatMessageRow({
+function ChatMessageRowComponent({
   message,
   currentUserId,
   isGrouped = false,
@@ -76,11 +76,11 @@ export function ChatMessageRow({
       {/* Accent New Messages Divider */}
       {isNewUnreadDivider && (
         <div className="my-3 flex items-center gap-3 px-4 select-none">
-          <div className="h-px bg-primary flex-1" />
-          <span className="px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-            New
+          <div className="h-px bg-primary/40 flex-1" />
+          <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-meta font-medium">
+            New Messages
           </span>
-          <div className="h-px bg-primary flex-1" />
+          <div className="h-px bg-primary/40 flex-1" />
         </div>
       )}
 
@@ -88,7 +88,7 @@ export function ChatMessageRow({
       <div
         className={cn(
           'relative flex gap-3 px-4 transition-colors duration-fast ease-pro hover:bg-surface-hover/50',
-          isGrouped ? 'py-0.5' : 'pt-2 pb-0.5',
+          isGrouped ? 'py-0.5' : 'pt-3 pb-0.5',
           isPinned && 'bg-primary-subtle/30',
           isFailed && 'bg-danger/10'
         )}
@@ -96,7 +96,7 @@ export function ChatMessageRow({
         {/* Left Gutter: Avatar or Compact Hover Timestamp */}
         <div className="w-8 shrink-0 flex items-start justify-center pt-0.5 select-none">
           {isGrouped ? (
-            <span className="text-xs text-muted-foreground opacity-0 group-hover/row:opacity-100 transition-opacity">
+            <span className="text-meta text-muted-foreground tabular-nums opacity-0 group-hover/row:opacity-100 transition-opacity">
               {timeString}
             </span>
           ) : (
@@ -112,21 +112,21 @@ export function ChatMessageRow({
         <div className="min-w-0 flex-1">
           {/* Header Line (Only if not grouped) */}
           {!isGrouped && (
-            <div className="flex items-baseline gap-2 mb-0.5 select-none">
-              <span className="text-xs font-semibold text-foreground truncate">
+            <div className="flex items-baseline gap-2 mb-1 select-none">
+              <span className="text-body font-semibold text-foreground truncate">
                 {message.sender?.display_name || 'User'}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-meta text-muted-foreground">
                 @{message.sender?.username || 'user'}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-meta text-muted-foreground tabular-nums">
                 {timeString}
               </span>
               {message.is_edited && (
-                <span className="text-xs text-muted-foreground italic">(edited)</span>
+                <span className="text-meta text-muted-foreground italic">(edited)</span>
               )}
               {isPinned && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                <span className="inline-flex items-center gap-1 text-meta font-medium text-primary">
                   <Pin className="w-3 h-3" /> Pinned
                 </span>
               )}
@@ -135,7 +135,7 @@ export function ChatMessageRow({
 
           {/* Compact Reply Quote */}
           {message.reply_to && !isGrouped && (
-            <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground bg-surface-hover/40 px-2 py-0.5 rounded-control border-l-2 border-primary max-w-xl truncate">
+            <div className="mb-1 flex items-center gap-1.5 text-meta text-muted-foreground bg-surface-hover/40 px-2 py-0.5 rounded-control border-l-2 border-primary max-w-xl truncate">
               <Reply className="w-3 h-3 text-primary shrink-0" />
               <span className="font-medium text-foreground">
                 @{message.reply_to.sender?.username || 'user'}:
@@ -147,7 +147,7 @@ export function ChatMessageRow({
           )}
 
           {/* Body Text */}
-          <div className="text-sm leading-relaxed text-foreground select-text break-words">
+          <div className="text-body leading-5 text-foreground select-text break-words">
             <MessageContent content={message.content} isMe={isMe} />
           </div>
 
@@ -173,6 +173,7 @@ export function ChatMessageRow({
                         alt={att.file_name}
                         className="max-h-64 w-auto object-cover rounded-card"
                         loading="lazy"
+                        decoding="async"
                       />
                     </button>
                   );
@@ -256,7 +257,7 @@ export function ChatMessageRow({
                     )}
                   >
                     <span>{rec.emoji}</span>
-                    <span className="text-xs font-semibold">{rec.count}</span>
+                    <span className="text-meta font-semibold tabular-nums">{rec.count}</span>
                   </button>
                 );
               })}
@@ -377,3 +378,5 @@ export function ChatMessageRow({
     </div>
   );
 }
+
+export const ChatMessageRow = React.memo(ChatMessageRowComponent);

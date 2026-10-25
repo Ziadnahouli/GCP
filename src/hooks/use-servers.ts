@@ -15,6 +15,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { supabase } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { DEFAULT_ROLE_COLORS } from '@/lib/design/colors';
 
 const STORAGE_KEY = 'nexus_gaming_servers_store';
 
@@ -1194,7 +1195,7 @@ export function useServersInternal() {
               id: roleIdOrName.toLowerCase(),
               name: roleIdOrName.charAt(0).toUpperCase() + roleIdOrName.slice(1),
               permissions,
-              color: '#6366f1',
+              color: DEFAULT_ROLE_COLORS.defaultNewRole,
               is_custom: false,
             });
           }

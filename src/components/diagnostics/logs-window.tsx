@@ -371,7 +371,7 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
               variant="outline"
               size="sm"
               onClick={clearLogs}
-              className="h-8 px-2 text-xs text-danger hover:text-danger hover:bg-danger/10"
+              className="h-8 px-2 text-xs text-danger hover:text-danger/90 hover:bg-danger/10"
               title="Clear log history"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -498,7 +498,7 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
               variant="ghost"
               size="sm"
               onClick={reconnectRealtime}
-              className="h-6 px-2 text-xs text-primary hover:text-primary hover:bg-primary-subtle"
+              className="h-6 px-2 text-xs text-primary hover:text-primary-hover hover:bg-primary-subtle"
               title="Reset Supabase Realtime WebSocket connections"
             >
               Reset Sockets

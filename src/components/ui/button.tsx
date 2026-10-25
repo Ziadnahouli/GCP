@@ -26,12 +26,12 @@ const buttonVariants = cva(
           'bg-primary-subtle text-primary hover:bg-primary-subtle/80 border border-primary/20',
       },
       size: {
-        sm: 'h-7 px-2.5 text-xs min-h-[28px]',
-        md: 'h-8 px-3 text-xs md:text-sm min-h-[32px] max-sm:min-h-[44px]',
-        default: 'h-8 px-3 text-xs md:text-sm min-h-[32px] max-sm:min-h-[44px]',
+        sm: 'h-7 px-2.5 text-xs min-h-[28px] touch-target-44',
+        md: 'h-8 px-3 text-xs md:text-sm min-h-[32px] max-sm:min-h-[44px] touch-target-44',
+        default: 'h-8 px-3 text-xs md:text-sm min-h-[32px] max-sm:min-h-[44px] touch-target-44',
         lg: 'h-10 px-4 text-sm font-medium min-h-[40px] max-sm:min-h-[44px]',
-        icon: 'h-8 w-8 min-h-[32px] min-w-[32px] max-sm:min-h-[44px] max-sm:min-w-[44px] p-0',
-        iconSm: 'h-7 w-7 min-h-[28px] min-w-[28px] p-0',
+        icon: 'h-8 w-8 min-h-[32px] min-w-[32px] max-sm:min-h-[44px] max-sm:min-w-[44px] touch-target-44 p-0',
+        iconSm: 'h-7 w-7 min-h-[28px] min-w-[28px] touch-target-44 p-0',
       },
     },
     defaultVariants: {

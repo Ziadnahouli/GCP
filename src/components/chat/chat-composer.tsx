@@ -58,6 +58,7 @@ export function ChatComposer({
   const [mentionIndex, setMentionIndex] = React.useState(0);
   const [cursorPos, setCursorPos] = React.useState(0);
   const [mentionDismissed, setMentionDismissed] = React.useState(false);
+  const [isFocused, setIsFocused] = React.useState(false);
 
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -87,6 +88,23 @@ export function ChatComposer({
     }
   }, [content, conversationId]);
 
+  // Ensure composer stays above the mobile keyboard
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const handleViewportChange = () => {
+      if (document.activeElement === textareaRef.current) {
+        textareaRef.current?.scrollIntoView({ block: 'nearest' });
+      }
+    };
+    const vp = window.visualViewport;
+    vp.addEventListener('resize', handleViewportChange);
+    vp.addEventListener('scroll', handleViewportChange);
+    return () => {
+      vp.removeEventListener('resize', handleViewportChange);
+      vp.removeEventListener('scroll', handleViewportChange);
+    };
+  }, []);
+
   // Auto-resize textarea height
   React.useEffect(() => {
     const el = textareaRef.current;
@@ -97,12 +115,12 @@ export function ChatComposer({
 
   // Active mention matching based on text immediately before cursor (e.g. "hi @al" -> "al")
   const activeMentionMatch = React.useMemo(() => {
-    if (mentionDismissed) return null;
+    if (mentionDismissed || !isFocused) return null;
     const textBeforeCursor = content.slice(0, cursorPos);
     const match = textBeforeCursor.match(/(?:^|\s)@([a-zA-Z0-9_\-\.]*)$/);
     if (!match) return null;
     return match[1].toLowerCase();
-  }, [content, cursorPos, mentionDismissed]);
+  }, [content, cursorPos, mentionDismissed, isFocused]);
 
   const filteredMentionCandidates = React.useMemo(() => {
     if (activeMentionMatch === null || mentionCandidates.length === 0) return [];
@@ -113,7 +131,7 @@ export function ChatComposer({
     );
   }, [activeMentionMatch, mentionCandidates]);
 
-  const showMentions = filteredMentionCandidates.length > 0;
+  const showMentions = isFocused && !mentionDismissed && filteredMentionCandidates.length > 0;
 
   React.useEffect(() => {
     setMentionIndex(0);
@@ -237,7 +255,7 @@ export function ChatComposer({
   const isOverLimit = content.length > MAX_CHAR_LIMIT;
 
   return (
-    <div className="border-t border-border bg-background select-none">
+    <div className="border-t border-border bg-background select-none pb-safe">
       {/* File Previews Strip */}
       {selectedFiles.length > 0 && (
         <div className="p-2.5 bg-surface-sidebar border-b border-border flex items-center gap-2 overflow-x-auto">
@@ -302,7 +320,7 @@ export function ChatComposer({
           {/* Mention Candidates Autocomplete */}
           {showMentions && (
             <div className="absolute bottom-full left-0 mb-2 w-72 max-h-52 overflow-y-auto rounded-card bg-popover border border-border shadow-popover p-1 z-dropdown">
-              <div className="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border mb-1">
+              <div className="px-2 py-1 text-meta font-medium text-muted-foreground border-b border-border mb-1">
                 Mention members
               </div>
               <div className="space-y-0.5">
@@ -315,12 +333,12 @@ export function ChatComposer({
                       handleSelectMentionCandidate(m.username);
                     }}
                     className={cn(
-                      'w-full flex items-center gap-2 px-2 py-1.5 rounded-control text-xs text-left transition-colors',
+                      'w-full flex items-center gap-2 px-2 py-1.5 rounded-control text-meta text-left transition-colors',
                       idx === mentionIndex ? 'bg-surface-hover text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
                     )}
                   >
                     {m.isSpecial ? (
-                      <div className="w-5 h-5 rounded bg-warning/20 text-warning font-bold flex items-center justify-center text-xs">
+                      <div className="w-5 h-5 rounded bg-warning/20 text-warning font-bold flex items-center justify-center text-meta">
                         @
                       </div>
                     ) : (
@@ -349,6 +367,13 @@ export function ChatComposer({
             disabled={Boolean(disabledReason)}
             placeholder={disabledReason ? disabledReason : (placeholder || 'Type a message...')}
             value={content}
+            onFocus={() => {
+              setIsFocused(true);
+              setMentionDismissed(false);
+            }}
+            onBlur={() => {
+              setTimeout(() => setIsFocused(false), 200);
+            }}
             onChange={(e) => {
               setContent(e.target.value);
               setCursorPos(e.target.selectionStart || 0);
@@ -362,7 +387,7 @@ export function ChatComposer({
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            className="w-full bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none resize-none min-h-[36px] max-h-[180px] leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed select-text"
+            className="w-full bg-transparent px-3 py-2 text-body max-sm:text-md text-foreground placeholder:text-muted-foreground outline-none resize-none min-h-[36px] max-h-[180px] leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed select-text"
           />
 
           {/* Bottom Toolbar: Attachments, Emoji, Soundboard, Character Counter, Send */}
@@ -407,7 +432,7 @@ export function ChatComposer({
               {isOverThreshold && (
                 <span
                   className={cn(
-                    'text-xs font-mono',
+                    'text-meta font-medium tabular-nums',
                     isOverLimit ? 'text-danger font-bold' : 'text-muted-foreground'
                   )}
                 >
@@ -426,7 +451,7 @@ export function ChatComposer({
                   (!content.trim() && selectedFiles.length === 0)
                 }
                 isLoading={isSending}
-                className="h-7 px-2.5 gap-1.5 text-xs font-medium"
+                className="h-7 px-2.5 gap-1.5 text-body font-medium"
                 aria-label="Send message"
               >
                 <span>Send</span>

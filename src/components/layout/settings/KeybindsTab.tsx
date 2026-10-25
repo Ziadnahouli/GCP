@@ -34,7 +34,7 @@ export function KeybindsTab() {
               <div className="text-xs font-semibold text-foreground">{item.action}</div>
               <div className="text-xs text-muted-foreground/70">{item.desc}</div>
             </div>
-            <kbd className="px-2.5 py-1 rounded-lg bg-black/60 border border-border shadow-inner font-mono text-xs font-bold text-white tracking-wider">
+            <kbd className="px-2.5 py-1 rounded-lg bg-surface-active border border-border shadow-inner font-mono text-xs font-bold text-foreground tracking-wider">
               {item.key}
             </kbd>
           </div>

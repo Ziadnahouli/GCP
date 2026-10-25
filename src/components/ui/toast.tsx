@@ -106,7 +106,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={contextValue}>
       {children}
       <div
-        className="fixed z-toast flex flex-col justify-end gap-2 max-w-sm w-[calc(100%-2rem)] sm:w-full pointer-events-none max-h-[calc(100vh-2rem)] overflow-hidden max-sm:bottom-4 max-sm:left-1/2 max-sm:-translate-x-1/2 sm:bottom-4 sm:right-4 sm:p-2"
+        className="fixed z-toast flex flex-col justify-end gap-2 max-w-sm w-[calc(100%-2rem)] sm:w-full pointer-events-none max-h-[calc(100dvh-2rem)] overflow-hidden max-sm:bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] max-sm:left-1/2 max-sm:-translate-x-1/2 sm:bottom-4 sm:right-4 sm:p-2"
         aria-live="polite"
         role="region"
         aria-label="Notifications"

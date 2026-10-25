@@ -9,6 +9,7 @@ import { AuthContextType } from '@/lib/types/auth';
 import { UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { audioSessionCoordinator } from '@/lib/webrtc/audio-session-coordinator';
+import { DEFAULT_BANNER_COLOR } from '@/lib/design/colors';
 
 const AuthContext = React.createContext<AuthContextType | null>(null);
 
@@ -18,7 +19,7 @@ const DEFAULT_PROFILE: UserProfile = {
   display_name: 'Apex Striker',
   avatar_url: null,
   banner_url: null,
-  banner_color: '#7c3aed',
+  banner_color: DEFAULT_BANNER_COLOR,
   bio: 'Tactical gamer & squad leader. Ready for competitive matches.',
   custom_status: 'In Lobby • Ready up!',
   status: 'online',
@@ -155,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   username: candidateUsername,
                   display_name: candidateDisplayName,
                   status: 'online',
-                  banner_color: '#7c3aed',
+                  banner_color: DEFAULT_BANNER_COLOR,
                 },
                 { onConflict: 'id' }
               )

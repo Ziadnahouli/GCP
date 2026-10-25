@@ -63,6 +63,7 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
 
   const [inviteCode, setInviteCode] = React.useState<string | null>(null);
   const [isGenerating, setIsGenerating] = React.useState(false);
+  const [generationError, setGenerationError] = React.useState<string | null>(null);
   const [copiedLink, setCopiedLink] = React.useState(false);
   const [search, setSearch] = React.useState('');
   const [invitedMap, setInvitedMap] = React.useState<Record<string, boolean>>({});
@@ -71,14 +72,16 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
   const [expiresInHours, setExpiresInHours] = React.useState<number>(168);
   const [maxUses, setMaxUses] = React.useState<number>(0);
 
-  const generateInvite = React.useCallback(async () => {
+  const generateInvite = React.useCallback(async (hours = expiresInHours, uses = maxUses) => {
     if (!server?.id || !user) return;
     setIsGenerating(true);
+    setGenerationError(null);
     try {
-      const res = await createInvite(server.id, maxUses, expiresInHours);
+      const res = await createInvite(server.id, uses, hours);
       if (res.invite?.code) {
         setInviteCode(res.invite.code);
       } else if (res.error) {
+        setGenerationError(res.error);
         toast({
           title: 'Could not create invite',
           description: res.error,
@@ -86,9 +89,11 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
         });
       }
     } catch {
+      const err = 'Failed to generate server invite.';
+      setGenerationError(err);
       toast({
         title: 'Error',
-        description: 'Failed to generate server invite.',
+        description: err,
         type: 'error',
       });
     } finally {
@@ -103,9 +108,10 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
   }, [open, server?.id, generateInvite]);
 
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nexus.app';
-  const fullInviteUrl = inviteCode ? `${origin}/invite/${inviteCode}` : `${origin}/invite/${server.id}`;
+  const fullInviteUrl = inviteCode ? `${origin}/invite/${inviteCode}` : '';
 
   const handleCopyLink = () => {
+    if (!fullInviteUrl) return;
     navigator.clipboard.writeText(fullInviteUrl);
     setCopiedLink(true);
     toast({
@@ -182,14 +188,22 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
             Server invite link
           </label>
           <div className="flex items-center gap-2">
-            <Input
-              readOnly
-              value={fullInviteUrl}
-              className="font-mono text-xs select-all bg-surface-sidebar"
-            />
+            {isGenerating ? (
+              <div className="h-8 flex-1 rounded-card bg-surface-sidebar border border-border animate-pulse flex items-center px-3 text-xs text-muted-foreground">
+                Generating unique invite code...
+              </div>
+            ) : (
+              <Input
+                readOnly
+                value={fullInviteUrl}
+                placeholder={generationError ? 'Invite unavailable' : 'Generating code...'}
+                className="font-mono text-xs select-all bg-surface-sidebar"
+              />
+            )}
             <Button
               variant={copiedLink ? 'secondary' : 'primary'}
               size="sm"
+              disabled={isGenerating || !inviteCode}
               onClick={handleCopyLink}
               className="gap-1.5 shrink-0"
             >
@@ -197,6 +211,20 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
               <span>{copiedLink ? 'Copied' : 'Copy'}</span>
             </Button>
           </div>
+
+          {generationError && (
+            <div className="p-2 rounded-control bg-danger/10 border border-danger/20 text-xs text-danger flex items-center justify-between gap-2 mt-1.5">
+              <span>{generationError}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => generateInvite(expiresInHours, maxUses)}
+                className="h-6 px-2 text-xs text-danger hover:text-danger/90 hover:bg-danger/10 shrink-0"
+              >
+                Retry
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Expiration & Max Uses Controls */}
@@ -208,7 +236,12 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
             <select
               id="invite-expire-select"
               value={expiresInHours}
-              onChange={(e) => setExpiresInHours(parseInt(e.target.value, 10))}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                setExpiresInHours(val);
+                setInviteCode(null);
+                generateInvite(val, maxUses);
+              }}
               className="w-full px-2.5 py-1.5 rounded-control border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring"
             >
               {EXPIRY_OPTIONS.map((opt) => (
@@ -226,7 +259,12 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
             <select
               id="invite-maxuses-select"
               value={maxUses}
-              onChange={(e) => setMaxUses(parseInt(e.target.value, 10))}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                setMaxUses(val);
+                setInviteCode(null);
+                generateInvite(expiresInHours, val);
+              }}
               className="w-full px-2.5 py-1.5 rounded-control border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring"
             >
               {MAX_USES_OPTIONS.map((opt) => (
@@ -293,7 +331,7 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
                     <Button
                       variant={isInvited ? 'secondary' : 'outline'}
                       size="sm"
-                      disabled={isInvited || isBusy}
+                      disabled={isInvited || isBusy || isGenerating || !inviteCode}
                       isLoading={isBusy}
                       onClick={() => handleDirectInvite(f.friend.id, name)}
                       className="h-7 text-xs px-2.5 shrink-0"

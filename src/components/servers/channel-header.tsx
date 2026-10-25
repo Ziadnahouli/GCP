@@ -71,7 +71,7 @@ export function ChannelHeader({
           ) : (
             <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
           )}
-          <h2 className="font-semibold text-xs md:text-sm text-foreground truncate">
+          <h2 className="font-semibold text-body text-foreground truncate">
             {channel.name}
           </h2>
         </div>
@@ -79,7 +79,7 @@ export function ChannelHeader({
         {isVoiceChannel ? (
           <Badge
             variant={isVoiceConnected ? 'accent' : isConnectingVoice ? 'warning' : 'outline'}
-            className="hidden sm:inline-flex items-center gap-1.5 text-xs px-2 py-0.5"
+            className="hidden sm:inline-flex items-center gap-1.5 text-meta px-2 py-0.5"
           >
             <span
               className={cn(
@@ -103,7 +103,7 @@ export function ChannelHeader({
           channel.topic && (
             <>
               <span className="w-1 h-1 rounded-full bg-border shrink-0 hidden sm:inline-block" />
-              <span className="text-xs text-muted-foreground truncate hidden sm:inline-block max-w-sm font-normal">
+              <span className="text-meta text-muted-foreground truncate hidden sm:inline-block max-w-sm font-normal">
                 {channel.topic}
               </span>
             </>

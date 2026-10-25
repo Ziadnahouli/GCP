@@ -41,7 +41,24 @@ import { EmptyState } from '@/components/ui/states';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
 import { useCallActions } from '@/features/calls/call-context';
-import { usePresence } from '@/features/presence/presence-context';
+import { usePresence, useUserPresence } from '@/features/presence/presence-context';
+
+function FriendAvatar({
+  friend,
+}: {
+  friend: { avatar_url?: string | null; display_name: string; id: string };
+}) {
+  const status = useUserPresence(friend.id);
+  return (
+    <Avatar
+      src={friend.avatar_url}
+      name={friend.display_name}
+      status={status}
+      showStatus
+      size="32"
+    />
+  );
+}
 
 interface FriendsViewProps {
   onOpenConversation?: (conversationId: string) => void;
@@ -278,7 +295,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         size="sm"
                         variant="ghost"
                         onClick={() => cancelRequest(req.id)}
-                        className="text-xs text-danger hover:text-danger hover:bg-danger/10 h-7 px-2"
+                        className="text-xs text-danger hover:text-danger/90 hover:bg-danger/10 h-7 px-2"
                       >
                         Cancel
                       </Button>
@@ -385,7 +402,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         size="sm"
                         variant="ghost"
                         onClick={() => cancelRequest(req.id)}
-                        className="text-xs text-danger hover:text-danger hover:bg-danger/10 h-7 px-2"
+                        className="text-xs text-danger hover:text-danger/90 hover:bg-danger/10 h-7 px-2"
                       >
                         Cancel
                       </Button>
@@ -502,31 +519,25 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         >
                           {/* Left: Avatar + Names */}
                           <div className="flex items-center gap-3 min-w-0">
-                            <Avatar
-                              src={item.friend.avatar_url}
-                              name={item.friend.display_name}
-                              status={liveStatus}
-                              showStatus
-                              size="32"
-                            />
+                            <FriendAvatar friend={item.friend} />
                             <div className="min-w-0 truncate">
                               <div className="flex items-center gap-2">
                                 <span className={cn(
-                                  "text-xs truncate",
+                                  "text-body truncate",
                                   unreadCount > 0 ? "font-bold text-foreground" : "font-medium text-foreground"
                                 )}>
                                   {item.friend.display_name}
                                 </span>
-                                <span className="text-xs text-muted-foreground truncate">
+                                <span className="text-meta text-muted-foreground truncate">
                                   @{item.friend.username}
                                 </span>
                                 {unreadCount > 0 && (
-                                  <Badge variant="accent" className="h-4 px-1 text-xs">
+                                  <Badge variant="accent" className="h-4 px-1 text-meta">
                                     {unreadCount}
                                   </Badge>
                                 )}
                               </div>
-                              <div className="text-xs text-muted-foreground truncate">
+                              <div className="text-meta text-muted-foreground truncate">
                                 {item.friend.game_activity ? (
                                   <span className="text-primary font-medium">
                                     Playing {item.friend.game_activity}
@@ -601,15 +612,17 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
+                                  variant="destructive"
                                   onClick={() => removeFriend(item.id, item.friend.display_name)}
-                                  className="text-xs gap-2 text-danger focus:text-danger"
+                                  className="text-xs gap-2"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                   <span>Remove friend</span>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
+                                  variant="destructive"
                                   onClick={() => blockUser(item.friend.id, item.friend.display_name)}
-                                  className="text-xs gap-2 text-danger focus:text-danger"
+                                  className="text-xs gap-2"
                                 >
                                   <Ban className="w-3.5 h-3.5" />
                                   <span>Block user</span>
@@ -648,15 +661,17 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         </ContextMenuItem>
                         <ContextMenuSeparator />
                         <ContextMenuItem
+                          variant="destructive"
                           onClick={() => blockUser(item.friend.id, item.friend.display_name)}
-                          className="text-xs gap-2 text-danger focus:text-danger"
+                          className="text-xs gap-2"
                         >
                           <Ban className="w-3.5 h-3.5" />
                           <span>Block user</span>
                         </ContextMenuItem>
                         <ContextMenuItem
+                          variant="destructive"
                           onClick={() => removeFriend(item.id, item.friend.display_name)}
-                          className="text-xs gap-2 text-danger focus:text-danger"
+                          className="text-xs gap-2"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           <span>Remove friend</span>

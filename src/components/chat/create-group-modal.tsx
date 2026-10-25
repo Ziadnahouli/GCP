@@ -155,7 +155,7 @@ export function CreateGroupModal({ open, onOpenChange, onGroupCreated }: CreateG
                         'flex items-center justify-between p-2 rounded-xl transition cursor-pointer border',
                         isSelected
                           ? 'bg-primary/15 border-primary/40 text-foreground'
-                          : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
+                          : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-hover'
                       )}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">

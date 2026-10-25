@@ -62,22 +62,22 @@ export function NavHeader({
   }, []);
 
   return (
-    <header className="relative h-12 border-b border-border bg-surface-header px-3 sm:px-4 flex items-center justify-between shrink-0 select-none z-30">
+    <header className="relative h-[52px] min-h-[52px] border-b border-border bg-surface-header px-3 sm:px-4 flex items-center justify-between shrink-0 select-none z-30">
       {/* Title & Mobile Menu Trigger */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         {onOpenMobileMenu && (
           <button
             onClick={onOpenMobileMenu}
-            className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground hover:bg-surface-default rounded-lg transition-colors"
+            className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground hover:bg-surface-default rounded-lg transition-colors touch-target-44"
             title="Open Server & Channels Menu"
             aria-label="Open Navigation Menu"
           >
             <Menu className="w-4 h-4" />
           </button>
         )}
-        <h1 className="text-xs font-semibold text-foreground tracking-tight truncate">{title}</h1>
+        <h1 className="text-body font-semibold text-foreground tracking-tight truncate">{title}</h1>
         {subtitle && (
-          <span className="text-xs text-muted-foreground/70 hidden sm:inline truncate font-normal">
+          <span className="text-meta text-muted-foreground hidden sm:inline truncate font-normal">
             / {subtitle}
           </span>
         )}
@@ -89,7 +89,7 @@ export function NavHeader({
         <button
           type="button"
           onClick={() => setShowSearchModal(true)}
-          className="w-full h-7 pl-8 pr-3 text-xs rounded-lg bg-surface-default/70 border border-border hover:border-border text-muted-foreground/70 hover:text-foreground text-left flex items-center justify-between transition-colors font-normal cursor-pointer"
+          className="w-full h-7 pl-8 pr-3 text-xs rounded-lg bg-surface-default/70 border border-border hover:border-border-strong text-muted-foreground/70 hover:text-foreground text-left flex items-center justify-between transition-colors font-normal cursor-pointer"
           aria-label="Quick search command palette"
         >
           <span>Search...</span>
@@ -141,7 +141,7 @@ export function NavHeader({
 
         {/* Cloud Sync Status Indicator */}
         <div
-          className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs text-muted-foreground font-mono bg-surface-default border border-border"
+          className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-md text-meta font-medium text-muted-foreground bg-surface-default border border-border"
           title={isConfigured ? 'Supabase Realtime Synced' : 'Local Sandbox Mode'}
         >
           <span className={cn('w-1.5 h-1.5 rounded-full', isConfigured ? 'bg-success' : 'bg-warning')} />

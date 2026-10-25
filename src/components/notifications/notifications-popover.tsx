@@ -140,7 +140,7 @@ export function NotificationsPopover({
       className={cn(
         'group relative flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer text-left',
         item.is_read
-          ? 'bg-surface-default border-border hover:bg-surface-default text-muted-foreground'
+          ? 'bg-surface-default border-border hover:bg-surface-hover text-muted-foreground'
           : 'bg-primary/5 border-primary/20 hover:bg-primary/10 text-foreground'
       )}
     >

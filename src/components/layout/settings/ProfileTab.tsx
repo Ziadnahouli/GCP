@@ -14,15 +14,9 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { PROFILE_BANNER_PRESETS, DEFAULT_BANNER_COLOR } from '@/lib/design/colors';
 
-export const PRESET_BANNERS = [
-  { name: 'Cosmic Violet', color: '#7c3aed' },
-  { name: 'Cyber Cyan', color: '#0284c7' },
-  { name: 'Emerald Ops', color: '#059669' },
-  { name: 'Crimson Flare', color: '#e11d48' },
-  { name: 'Solar Gold', color: '#d97706' },
-  { name: 'Obsidian Zinc', color: '#27272a' },
-];
+export const PRESET_BANNERS = PROFILE_BANNER_PRESETS;
 
 export const PRESENCE_OPTIONS: { status: UserStatus; label: string; desc: string; color: string; border: string }[] = [
   {
@@ -63,7 +57,7 @@ export function ProfileTab() {
   const [username, setUsername] = React.useState(profile?.username || '');
   const [bio, setBio] = React.useState(profile?.bio || '');
   const [customStatus, setCustomStatus] = React.useState(profile?.custom_status || '');
-  const [bannerColor, setBannerColor] = React.useState(profile?.banner_color || '#7c3aed');
+  const [bannerColor, setBannerColor] = React.useState(profile?.banner_color || DEFAULT_BANNER_COLOR);
   const [avatarUrl, setAvatarUrl] = React.useState(profile?.avatar_url || '');
   const [presenceStatus, setPresenceStatus] = React.useState<UserStatus>(profile?.status || 'online');
   const [isSaving, setIsSaving] = React.useState(false);
@@ -74,7 +68,7 @@ export function ProfileTab() {
       setUsername(profile.username || '');
       setBio(profile.bio || '');
       setCustomStatus(profile.custom_status || '');
-      setBannerColor(profile.banner_color || '#7c3aed');
+      setBannerColor(profile.banner_color || DEFAULT_BANNER_COLOR);
       setAvatarUrl(profile.avatar_url || '');
       setPresenceStatus(profile.status || 'online');
     }
@@ -124,7 +118,7 @@ export function ProfileTab() {
           style={{ backgroundColor: bannerColor }}
         >
           <div className="absolute inset-0 bg-gradient-to-t from-card via-transparent to-transparent opacity-80" />
-          <div className="absolute top-2.5 right-3 bg-black/50 backdrop-blur-md px-2 py-0.5 rounded-md text-xs font-mono text-white/80 border border-border flex items-center gap-1">
+          <div className="absolute top-2.5 right-3 bg-surface-panel/80 backdrop-blur-md px-2 py-0.5 rounded-md text-xs font-mono text-foreground border border-border flex items-center gap-1">
             <Zap className="w-3 h-3 text-warning" />
             <span>NEXUS ID</span>
           </div>
@@ -290,7 +284,7 @@ export function ProfileTab() {
                   'flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all',
                   presenceStatus === opt.status
                     ? 'bg-surface-hover border-primary/50 ring-1 ring-primary/40'
-                    : 'bg-surface-default border-border hover:bg-surface-default'
+                    : 'bg-surface-default border-border hover:bg-surface-hover'
                 )}
               >
                 <span className={cn('w-2.5 h-2.5 rounded-full mt-1 shrink-0', opt.color)} />

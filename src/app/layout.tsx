@@ -4,6 +4,8 @@ import './globals.css';
 import { AuthProvider } from '@/features/auth/auth-provider';
 import { ToastProvider } from '@/components/ui/toast';
 
+import { THEME_META_COLORS } from '@/lib/design/colors';
+
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
@@ -12,30 +14,43 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Nexus - Gaming Communication Platform',
+  title: 'Nexus - Real-time Voice, Video & Community Platform',
   description:
-    'High-performance gaming communication platform featuring ultra-low latency voice, video, screen sharing, persistent chat, and ZeroTier LAN networking.',
+    'Ultra-low latency voice, high-definition video, collaborative screen sharing, persistent messaging, and virtual LAN networking.',
   keywords: [
-    'Gaming',
+    'Nexus',
     'Voice Chat',
-    'Discord Alternative',
+    'Video Calling',
+    'Screen Sharing',
+    'Community Platform',
     'WebRTC',
     'LiveKit',
     'ZeroTier',
-    'Screen Sharing',
     'Soundboard',
   ],
   authors: [{ name: 'Nexus Team' }],
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/favicon.ico',
+  },
+  openGraph: {
+    title: 'Nexus - Real-time Voice, Video & Community Platform',
+    description:
+      'Ultra-low latency voice, high-definition video, collaborative screen sharing, persistent messaging, and virtual LAN networking.',
+    type: 'website',
+    siteName: 'Nexus',
+  },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
   viewportFit: 'cover',
+  interactiveWidget: 'resizes-content',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f1115' },
+    { media: '(prefers-color-scheme: light)', color: THEME_META_COLORS.light },
+    { media: '(prefers-color-scheme: dark)', color: THEME_META_COLORS.dark },
   ],
 };
 
@@ -63,7 +78,9 @@ const themeInitScript = `
     if (storedReduceMotion === 'true') {
       root.setAttribute('data-reduce-motion', 'true');
     }
-  } catch (e) {}
+  } catch (e) {
+    /* ignore theme init errors */
+  }
 })();
 `;
 

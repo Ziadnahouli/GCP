@@ -90,7 +90,7 @@ export function VoiceConnectedBar({
         <button
           type="button"
           onClick={onDisconnect}
-          className="p-1.5 rounded-lg bg-danger/20 hover:bg-danger/30 border border-danger/40 text-danger hover:text-danger transition-all shadow-subtle group/disc"
+          className="p-1.5 rounded-lg bg-danger/20 hover:bg-danger/30 border border-danger/40 text-danger hover:text-danger/90 transition-all shadow-subtle group/disc"
           title="Disconnect from voice"
           aria-label="Disconnect"
         >

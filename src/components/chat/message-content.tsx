@@ -289,8 +289,8 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
                   className={cn(
                     'inline-flex items-center gap-0.5 underline underline-offset-2 break-all font-medium transition-colors',
                     isMe
-                      ? 'text-white hover:text-foreground/80'
-                      : 'text-primary hover:text-primary'
+                      ? 'text-primary-foreground underline hover:text-primary-foreground/90'
+                      : 'text-primary underline hover:text-primary-hover'
                   )}
                 >
                   <span>{part}</span>
@@ -377,7 +377,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
                         callActions.startCall(squadCallConvId, squadCallConvId, false);
                       }
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-success hover:bg-success text-white font-semibold text-xs shadow-md shadow-emerald-900/40 transition-all hover:scale-[1.02]"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-success hover:bg-success/90 active:bg-success/80 text-primary-foreground font-semibold text-xs shadow-md shadow-emerald-900/40 transition-all hover:scale-[1.02]"
                   >
                     <Phone className="w-3.5 h-3.5" />
                     <span>Join Voice</span>
@@ -492,8 +492,8 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
               className={cn(
                 'px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-all shadow-md',
                 existingServer
-                  ? 'bg-surface-hover hover:bg-surface-hover text-foreground border border-border'
-                  : 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/25'
+                  ? 'bg-surface-hover hover:bg-surface-active text-foreground border border-border'
+                  : 'bg-primary hover:bg-primary-hover active:bg-primary-hover/90 text-primary-foreground shadow-primary/25'
               )}
             >
               {isJoining ? (

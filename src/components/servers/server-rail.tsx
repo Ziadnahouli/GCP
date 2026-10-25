@@ -54,7 +54,7 @@ export function ServerRail({
                 onMouseEnter={() => setHoveredId('home')}
                 onMouseLeave={() => setHoveredId(null)}
                 className={cn(
-                  'w-9 h-9 rounded-[10px] flex items-center justify-center transition-all duration-150',
+                  'w-9 h-9 rounded-[10px] flex items-center justify-center transition-all duration-150 touch-target-44',
                   activeServerId === null
                     ? 'bg-primary text-primary-foreground shadow-subtle'
                     : 'bg-surface-hover text-muted-foreground hover:bg-surface-active hover:text-foreground'
@@ -101,7 +101,7 @@ export function ServerRail({
                       onMouseEnter={() => setHoveredId(server.id)}
                       onMouseLeave={() => setHoveredId(null)}
                       className={cn(
-                        'w-9 h-9 rounded-[10px] flex items-center justify-center font-semibold text-xs tracking-wide transition-all duration-150 border',
+                        'w-9 h-9 rounded-[10px] flex items-center justify-center font-semibold text-xs tracking-wide transition-all duration-150 border touch-target-44',
                         isActive
                           ? 'bg-card text-foreground border-primary shadow-subtle'
                           : 'bg-surface-hover border-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground'
@@ -125,7 +125,7 @@ export function ServerRail({
               <TooltipTrigger asChild>
                 <button
                   onClick={onOpenCreateServer}
-                  className="w-9 h-9 rounded-[10px] bg-surface-hover border border-dashed border-border text-muted-foreground hover:text-primary hover:border-primary/50 hover:bg-primary-subtle flex items-center justify-center transition-all duration-150"
+                  className="w-9 h-9 rounded-[10px] bg-surface-hover border border-dashed border-border text-muted-foreground hover:text-primary hover:border-primary/50 hover:bg-primary-subtle flex items-center justify-center transition-all duration-150 touch-target-44"
                   aria-label="Create a server"
                 >
                   <Plus className="w-4 h-4" />
@@ -144,7 +144,7 @@ export function ServerRail({
             <TooltipTrigger asChild>
               <button
                 onClick={() => onSelectServer(servers[0]?.id || null)}
-                className="w-9 h-9 rounded-[10px] text-muted-foreground hover:text-foreground hover:bg-surface-hover flex items-center justify-center transition-colors"
+                className="w-9 h-9 rounded-[10px] text-muted-foreground hover:text-foreground hover:bg-surface-hover flex items-center justify-center transition-colors touch-target-44"
                 aria-label="Featured communities"
               >
                 <Compass className="w-4 h-4" />

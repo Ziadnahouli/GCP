@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
+
+import { findFlatStates } from './find-flat-states.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,15 +17,12 @@ const BASELINE_CEILINGS = {
   rawColorClasses: 0,
   smallTextClasses: 0,
   whiteOpacityBorders: 0,
+  flatStateVariants: 0,
 };
 
-// Files permitted to contain hex strings (theme metadata, preset palettes, data fallback)
+// Files permitted to contain hex strings (central design color tokens and data swatches)
 const HEX_ALLOWLIST = new Set([
-  'app/layout.tsx',
-  'components/layout/settings/ProfileTab.tsx',
-  'components/layout/settings-modal.tsx',
-  'components/servers/server-settings-modal.tsx',
-  'features/auth/auth-provider.tsx',
+  'lib/design/colors.ts',
 ]);
 
 function walkDir(dir, fileList = []) {
@@ -117,6 +117,8 @@ function run() {
   console.log(`Scanning: ${SRC_DIR}`);
   const results = analyzeFiles();
 
+  const flatStates = findFlatStates();
+
   console.log(`Total analyzed source files: ${results.totalFiles}`);
   console.log(`- Empty catch blocks: ${results.emptyCatchBlocks} (Ceiling: ${BASELINE_CEILINGS.emptyCatchBlocks})`);
   console.log(`- Explicit 'any' usages: ${results.anyTypeUsage} (Ceiling: ${BASELINE_CEILINGS.anyTypeUsage})`);
@@ -125,8 +127,23 @@ function run() {
   console.log(`- Small text (<12px) classes: ${results.smallTextClasses} (Ceiling: ${BASELINE_CEILINGS.smallTextClasses})`);
   console.log(`- White/[0.0x] opacity borders: ${results.whiteOpacityBorders} (Ceiling: ${BASELINE_CEILINGS.whiteOpacityBorders})`);
   console.log(`- Non-allowlisted hex values: ${results.unallowedHexUsage} (Ceiling: 0)`);
+  console.log(`- Flat state variants: ${flatStates.length} (Ceiling: 0)`);
+
+  let contrastPassed = true;
+  try {
+    execSync(`node "${path.resolve(__dirname, 'check-contrast.mjs')}"`, { stdio: 'pipe' });
+    console.log(`- WCAG 2.2 Contrast Ratio: 100% PASS (>= 4.5:1 across all tokens & accents)`);
+  } catch (err) {
+    void err;
+    contrastPassed = false;
+  }
 
   let failed = false;
+
+  if (!contrastPassed) {
+    console.error(`❌ REGRESSION: WCAG 2.2 contrast ratio check failed! All token & accent pairs must have >= 4.5:1 ratio.`);
+    failed = true;
+  }
 
   if (results.emptyCatchBlocks > BASELINE_CEILINGS.emptyCatchBlocks) {
     console.error(`❌ REGRESSION: Empty catch blocks (${results.emptyCatchBlocks}) exceeded ceiling (${BASELINE_CEILINGS.emptyCatchBlocks})`);
@@ -154,6 +171,10 @@ function run() {
   }
   if (results.unallowedHexUsage > 0) {
     console.error(`❌ REGRESSION: Non-allowlisted hex colors (${results.unallowedHexUsage}) found! Must use semantic tokens.`);
+    failed = true;
+  }
+  if (flatStates.length > 0) {
+    console.error(`❌ REGRESSION: Flat state variants (${flatStates.length}) found! Hover/active/focus/disabled must not equal base utility.`);
     failed = true;
   }
 

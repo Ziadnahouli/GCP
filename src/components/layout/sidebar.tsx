@@ -12,12 +12,42 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
-import { usePresence } from '@/features/presence/presence-context';
+import { useUserPresence } from '@/features/presence/presence-context';
 import { useConversations } from '@/hooks/use-conversations';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { CreateGroupModal } from '@/components/chat/create-group-modal';
 import { cn } from '@/lib/utils';
+
+function ConversationItemAvatar({
+  otherMemberId,
+  title,
+  avatarUrl,
+  isGroup,
+}: {
+  otherMemberId?: string;
+  title: string;
+  avatarUrl?: string | null;
+  isGroup: boolean;
+}) {
+  const status = useUserPresence(otherMemberId);
+  if (isGroup) {
+    return (
+      <div className="w-6 h-6 rounded-control bg-secondary border border-border flex items-center justify-center text-muted-foreground shrink-0">
+        <Users className="w-3.5 h-3.5" />
+      </div>
+    );
+  }
+  return (
+    <Avatar
+      src={avatarUrl}
+      name={title}
+      status={status}
+      showStatus
+      size="24"
+    />
+  );
+}
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -35,7 +65,6 @@ export function Sidebar({
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useAuth();
-  const { getUserStatus } = usePresence();
   const { conversations } = useConversations();
   const [showCreateGroup, setShowCreateGroup] = React.useState(false);
   const [filterText, setFilterText] = React.useState('');
@@ -173,7 +202,7 @@ export function Sidebar({
                       router.push(`/?c=${conv.id}`);
                     }}
                     className={cn(
-                      'w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-control text-xs font-medium cursor-pointer transition-colors duration-fast ease-pro group relative text-left',
+                      'w-full flex items-center gap-2.5 px-2.5 rounded-control text-meta font-medium cursor-pointer transition-colors duration-fast ease-pro group relative text-left h-8 max-sm:h-14',
                       isSelected
                         ? 'bg-surface-active text-foreground font-semibold'
                         : hasUnread
@@ -182,36 +211,30 @@ export function Sidebar({
                     )}
                     title={title}
                   >
+                    {isSelected && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-r" />
+                    )}
                     <div className="relative shrink-0">
-                      {isGroup ? (
-                        <div className="w-7 h-7 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground shrink-0">
-                          <Users className="w-3.5 h-3.5" />
-                        </div>
-                      ) : (
-                        <Avatar
-                          src={otherMember?.avatar_url}
-                          name={title}
-                          status={getUserStatus(otherMemberId)}
-                          showStatus
-                          size="24"
-                        />
-                      )}
+                      <ConversationItemAvatar
+                        otherMemberId={otherMemberId}
+                        title={title}
+                        avatarUrl={otherMember?.avatar_url}
+                        isGroup={isGroup}
+                      />
                     </div>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1.5">
                         <span
                           className={cn(
-                            'truncate text-xs',
-                            hasUnread ? 'font-bold text-foreground' : isSelected ? 'font-semibold text-foreground' : 'text-foreground font-normal'
+                            'truncate text-body',
+                            hasUnread ? 'font-semibold text-foreground' : isSelected ? 'font-semibold text-foreground' : 'text-foreground font-normal'
                           )}
                         >
                           {title}
                         </span>
                         {hasUnread && (
-                          <Badge variant="accent" className="h-4 min-w-[16px] px-1 text-xs">
-                            {conv.unread_count && conv.unread_count > 99 ? '99+' : conv.unread_count}
-                          </Badge>
+                          <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
                         )}
                       </div>
                       {conv.last_message && (

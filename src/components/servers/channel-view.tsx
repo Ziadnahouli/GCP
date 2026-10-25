@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Server, Channel, ChannelMessage, hasServerPermission } from '@/lib/types/server';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useChannelMessages } from '@/hooks/use-channel-messages';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useSocial } from '@/hooks/use-social';
@@ -66,6 +67,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
   const [searchQuery, setSearchQuery] = React.useState('');
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const virtuosoRef = React.useRef<VirtuosoHandle>(null);
   const isNearBottomRef = React.useRef(true);
 
   // Reply, Forward, Report
@@ -475,161 +477,176 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
         ) : (
           /* Text Channel Chat Feed */
           <>
-            <div
-              ref={scrollContainerRef}
-              onScroll={handleScroll}
-              className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3"
-            >
-              {/* Channel Start Banner */}
-              <div className="py-4 space-y-2 border-b border-border mb-3">
-                <div className="w-10 h-10 rounded-control bg-surface-hover flex items-center justify-center text-primary">
-                  <Hash className="w-5 h-5" />
-                </div>
-                <h2 className="text-base font-semibold text-foreground tracking-tight">
-                  Welcome to #{channel.name}
-                </h2>
-                <p className="text-xs text-muted-foreground max-w-md leading-relaxed font-normal">
-                  This is the start of the #{channel.name} channel for {server.name}.
-                </p>
-              </div>
+            <div className="flex-1 relative overflow-hidden flex flex-col">
+              <Virtuoso
+                ref={virtuosoRef}
+                data={filteredMessages}
+                followOutput="auto"
+                alignToBottom
+                initialTopMostItemIndex={filteredMessages.length > 0 ? filteredMessages.length - 1 : 0}
+                atBottomStateChange={(atBottom) => {
+                  isNearBottomRef.current = atBottom;
+                  setIsScrolledUp(!atBottom);
+                }}
+                className="flex-1 no-scrollbar p-4 sm:p-5"
+                components={{
+                  Header: () => (
+                    <div className="py-4 space-y-2 border-b border-border mb-3">
+                      <div className="w-10 h-10 rounded-control bg-surface-hover flex items-center justify-center text-primary">
+                        <Hash className="w-5 h-5" />
+                      </div>
+                      <h2 className="text-base font-semibold text-foreground tracking-tight">
+                        Welcome to #{channel.name}
+                      </h2>
+                      <p className="text-xs text-muted-foreground max-w-md leading-relaxed font-normal">
+                        This is the start of the #{channel.name} channel for {server.name}.
+                      </p>
+                    </div>
+                  ),
+                }}
+                itemContent={(index, msg) => {
+                  const isOwner = msg.user_id === server.owner_id;
 
-              {filteredMessages.map((msg) => {
-                const isOwner = msg.user_id === server.owner_id;
-
-                return (
-                  <div
-                    key={msg.id}
-                    className="flex items-start gap-3 group rounded-control hover:bg-surface-hover p-2 -mx-2 transition-colors"
-                  >
+                  return (
                     <div
-                      className="cursor-pointer"
-                      onClick={() => handleStartDirectChat(msg.user_id, msg.profile?.display_name || 'Member')}
-                      title="Direct message"
+                      key={msg.id}
+                      className="flex items-start gap-3 group rounded-control hover:bg-surface-hover p-2 -mx-2 transition-colors mb-2"
                     >
-                      <Avatar
-                        src={msg.profile?.avatar_url}
-                        name={msg.profile?.display_name || 'Member'}
-                        size="32"
-                        className="mt-0.5 shrink-0"
-                      />
-                    </div>
+                      <div
+                        className="cursor-pointer"
+                        onClick={() => handleStartDirectChat(msg.user_id, msg.profile?.display_name || 'Member')}
+                        title="Direct message"
+                      >
+                        <Avatar
+                          src={msg.profile?.avatar_url}
+                          name={msg.profile?.display_name || 'Member'}
+                          size="32"
+                          className="mt-0.5 shrink-0"
+                        />
+                      </div>
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          onClick={() => handleStartDirectChat(msg.user_id, msg.profile?.display_name || 'Member')}
-                          className="font-medium text-xs text-foreground hover:text-primary cursor-pointer transition-colors"
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            onClick={() => handleStartDirectChat(msg.user_id, msg.profile?.display_name || 'Member')}
+                            className="font-semibold text-body text-foreground hover:text-primary cursor-pointer transition-colors"
+                          >
+                            {msg.profile?.display_name || 'Member'}
+                          </span>
+
+                          {isOwner && (
+                            <Badge variant="warning" className="text-caption px-1.5 py-0 gap-1">
+                              <Crown className="w-2.5 h-2.5" />
+                              Owner
+                            </Badge>
+                          )}
+
+                          <span className="text-meta text-muted-foreground tabular-nums">
+                            {(() => {
+                              try {
+                                const d = new Date(msg.created_at);
+                                return isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                              } catch {
+                                return '';
+                              }
+                            })()}
+                          </span>
+
+                          {msg.status === 'sending' && (
+                            <span className="flex items-center gap-1 text-meta text-muted-foreground">
+                              <Loader2 className="w-2.5 h-2.5 animate-spin text-primary" />
+                              <span>sending...</span>
+                            </span>
+                          )}
+
+                          {msg.status === 'failed' && (
+                            <span className="flex items-center gap-1.5 text-meta text-danger">
+                              <AlertCircle className="w-3 h-3" />
+                              <span>failed</span>
+                              <button
+                                type="button"
+                                onClick={() => retryMessage(msg.id)}
+                                className="text-meta text-primary hover:underline ml-1"
+                              >
+                                <RefreshCw className="w-2.5 h-2.5 inline mr-0.5" />
+                                Retry
+                              </button>
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-body text-foreground mt-1 leading-relaxed break-words font-normal">
+                          <MessageContent content={msg.content} />
+                        </div>
+                      </div>
+
+                      {/* Hover Action Bar */}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-card px-1 py-0.5 rounded-control border border-border shrink-0 ml-auto self-start">
+                        <button
+                          onClick={() => setReplyingTo(msg)}
+                          className="p-1 rounded-control text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
+                          title="Reply"
+                          aria-label="Reply"
                         >
-                          {msg.profile?.display_name || 'Member'}
-                        </span>
-
-                        {isOwner && (
-                          <Badge variant="warning" className="text-xs px-1.5 py-0 gap-1">
-                            <Crown className="w-2.5 h-2.5" />
-                            Owner
-                          </Badge>
-                        )}
-
-                        <span className="text-xs text-muted-foreground">
-                          {(() => {
-                            try {
-                              const d = new Date(msg.created_at);
-                              return isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                            } catch {
-                              return '';
-                            }
-                          })()}
-                        </span>
-
-                        {msg.status === 'sending' && (
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Loader2 className="w-2.5 h-2.5 animate-spin text-primary" />
-                            <span>sending...</span>
-                          </span>
-                        )}
-
-                        {msg.status === 'failed' && (
-                          <span className="flex items-center gap-1.5 text-xs text-danger">
-                            <AlertCircle className="w-3 h-3" />
-                            <span>failed</span>
-                            <button
-                              type="button"
-                              onClick={() => retryMessage(msg.id)}
-                              className="text-xs text-primary hover:underline ml-1"
-                            >
-                              <RefreshCw className="w-2.5 h-2.5 inline mr-0.5" />
-                              Retry
-                            </button>
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-xs text-foreground mt-1 leading-relaxed break-words font-normal">
-                        <MessageContent content={msg.content} />
-                      </div>
-                    </div>
-
-                    {/* Hover Action Bar */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-card px-1 py-0.5 rounded-control border border-border shrink-0 ml-auto self-start">
-                      <button
-                        onClick={() => setReplyingTo(msg)}
-                        className="p-1 rounded-control text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
-                        title="Reply"
-                        aria-label="Reply"
-                      >
-                        <Reply className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() =>
-                          setForwardingMessage({
-                            id: msg.id,
-                            content: msg.content,
-                            sender: msg.profile,
-                          })
-                        }
-                        className="p-1 rounded-control text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
-                        title="Forward"
-                        aria-label="Forward"
-                      >
-                        <Forward className="w-3 h-3" />
-                      </button>
-                      {msg.user_id !== user?.id && (
+                          <Reply className="w-3 h-3" />
+                        </button>
                         <button
                           onClick={() =>
-                            setReportingMessage({
+                            setForwardingMessage({
                               id: msg.id,
-                              user_id: msg.user_id,
+                              content: msg.content,
                               sender: msg.profile,
                             })
                           }
-                          className="p-1 rounded-control text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
-                          title="Report"
-                          aria-label="Report"
+                          className="p-1 rounded-control text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
+                          title="Forward"
+                          aria-label="Forward"
                         >
-                          <Flag className="w-3 h-3" />
+                          <Forward className="w-3 h-3" />
                         </button>
-                      )}
+                        {msg.user_id !== user?.id && (
+                          <button
+                            onClick={() =>
+                              setReportingMessage({
+                                id: msg.id,
+                                user_id: msg.user_id,
+                                sender: msg.profile,
+                              })
+                            }
+                            className="p-1 rounded-control text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
+                            title="Report"
+                            aria-label="Report"
+                          >
+                            <Flag className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Jump to latest button */}
-            {isScrolledUp && (
-              <button
-                onClick={() => {
-                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                  setIsScrolledUp(false);
-                  isNearBottomRef.current = true;
+                  );
                 }}
-                className="absolute bottom-20 right-6 z-30 px-3 py-1.5 rounded-full bg-primary text-primary-foreground font-semibold text-xs shadow-floating flex items-center gap-1.5 hover:bg-primary-hover transition"
-              >
-                <ArrowDown className="w-3.5 h-3.5" />
-                <span>Jump to latest</span>
-              </button>
-            )}
+              />
+
+              {/* Jump to latest button */}
+              {isScrolledUp && (
+                <button
+                  onClick={() => {
+                    if (virtuosoRef.current) {
+                      virtuosoRef.current.scrollToIndex({
+                        index: filteredMessages.length - 1,
+                        align: 'end',
+                        behavior: 'smooth',
+                      });
+                    }
+                    setIsScrolledUp(false);
+                    isNearBottomRef.current = true;
+                  }}
+                  className="absolute bottom-4 right-6 z-30 px-3 py-1.5 rounded-full bg-primary text-primary-foreground font-semibold text-xs shadow-floating flex items-center gap-1.5 hover:bg-primary-hover transition"
+                >
+                  <ArrowDown className="w-3.5 h-3.5" />
+                  <span>Jump to latest</span>
+                </button>
+              )}
+            </div>
 
             {/* Input Bar */}
             <div className="p-3 border-t border-border bg-surface-sidebar shrink-0">

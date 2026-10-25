@@ -7,12 +7,10 @@ import {
   Check,
   Search,
   Sparkles,
-  X,
   Send,
   Users,
   Clock,
   Hash,
-  Loader2,
 } from 'lucide-react';
 import { Server } from '@/lib/types/server';
 import { useSocial } from '@/hooks/use-social';
@@ -20,11 +18,17 @@ import { useServers } from '@/hooks/use-servers';
 import { useConversations } from '@/hooks/use-conversations';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
-import { getBrowserClient } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/auth-provider';
-import { useModalEscape } from '@/hooks/use-modal-escape';
+import { cn } from '@/lib/utils';
 
 interface InviteModalProps {
   open: boolean;
@@ -33,25 +37,24 @@ interface InviteModalProps {
 }
 
 const EXPIRY_OPTIONS = [
-  { label: '30 Minutes', hours: 1 },
-  { label: '1 Hour', hours: 1 },
-  { label: '1 Day', hours: 24 },
-  { label: '7 Days', hours: 168 },
+  { label: '30 minutes', hours: 1 },
+  { label: '1 hour', hours: 1 },
+  { label: '1 day', hours: 24 },
+  { label: '7 days', hours: 168 },
   { label: 'Never', hours: 0 },
 ];
 
 const MAX_USES_OPTIONS = [
-  { label: 'No Limit', uses: 0 },
-  { label: '1 Use', uses: 1 },
-  { label: '5 Uses', uses: 5 },
-  { label: '10 Uses', uses: 10 },
-  { label: '25 Uses', uses: 25 },
-  { label: '50 Uses', uses: 50 },
-  { label: '100 Uses', uses: 100 },
+  { label: 'No limit', uses: 0 },
+  { label: '1 use', uses: 1 },
+  { label: '5 uses', uses: 5 },
+  { label: '10 uses', uses: 10 },
+  { label: '25 uses', uses: 25 },
+  { label: '50 uses', uses: 50 },
+  { label: '100 uses', uses: 100 },
 ];
 
 export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
-  useModalEscape(open, onOpenChange);
   const { user } = useAuth();
   const { friends } = useSocial();
   const { createInvite } = useServers();
@@ -65,11 +68,9 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
   const [invitedMap, setInvitedMap] = React.useState<Record<string, boolean>>({});
   const [invitingId, setInvitingId] = React.useState<string | null>(null);
 
-  // Expiration and Max Uses state
-  const [expiresInHours, setExpiresInHours] = React.useState<number>(168); // 7 days default
-  const [maxUses, setMaxUses] = React.useState<number>(0); // Unlimited default
+  const [expiresInHours, setExpiresInHours] = React.useState<number>(168);
+  const [maxUses, setMaxUses] = React.useState<number>(0);
 
-  // Generate invite code when modal opens or settings change
   const generateInvite = React.useCallback(async () => {
     if (!server?.id || !user) return;
     setIsGenerating(true);
@@ -79,7 +80,7 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
         setInviteCode(res.invite.code);
       } else if (res.error) {
         toast({
-          title: 'Could Not Create Invite',
+          title: 'Could not create invite',
           description: res.error,
           type: 'error',
         });
@@ -99,163 +100,137 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
     if (open && server?.id) {
       generateInvite();
     }
-  }, [open, server?.id, expiresInHours, maxUses, generateInvite]);
+  }, [open, server?.id, generateInvite]);
 
-  if (!open) return null;
-
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nexus.gg';
-  const inviteLink = inviteCode ? `${origin}/invite/${inviteCode}` : `${origin}/invite/...`;
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nexus.app';
+  const fullInviteUrl = inviteCode ? `${origin}/invite/${inviteCode}` : `${origin}/invite/${server.id}`;
 
   const handleCopyLink = () => {
-    if (!inviteCode) return;
-    try {
-      navigator.clipboard.writeText(inviteLink);
-      setCopiedLink(true);
-      toast({
-        title: 'Invite Link Copied',
-        description: 'Share this link with your squadmates to let them join.',
-        type: 'success',
-      });
-      setTimeout(() => setCopiedLink(false), 2000);
-    } catch (err) {
-      void err;
-    }
+    navigator.clipboard.writeText(fullInviteUrl);
+    setCopiedLink(true);
+    toast({
+      title: 'Invite link copied',
+      description: 'Share this link with friends to join.',
+      type: 'info',
+    });
+    setTimeout(() => setCopiedLink(false), 2500);
   };
 
-  const handleSendInviteToFriend = async (friendId: string, friendName: string) => {
-    if (!user || !inviteCode) return;
+  const handleDirectInvite = async (friendId: string, friendName: string) => {
     setInvitingId(friendId);
     try {
       const { conversationId, error } = await getOrCreateDirectConversation(friendId);
       if (error || !conversationId) {
-        throw new Error(error || 'Failed to open DM');
+        toast({ title: 'Could not send invite', description: error || 'Failed', type: 'error' });
+        return;
       }
 
+      const inviteMessage = `Hey ${friendName}! Join my server "${server.name}":\n${fullInviteUrl}`;
+
+      const { getBrowserClient } = await import('@/lib/supabase/client');
       const supabase = getBrowserClient();
-      const inviteMsg = `Hey! Join my squad server "${server.name}" on Nexus: ${inviteLink}`;
 
-      const { error: msgErr } = await supabase.from('messages').insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: inviteMsg,
-      });
-
-      if (msgErr) throw msgErr;
+      if (supabase && user) {
+        await supabase.from('messages').insert({
+          conversation_id: conversationId,
+          user_id: user.id,
+          content: inviteMessage,
+        });
+      }
 
       setInvitedMap((prev) => ({ ...prev, [friendId]: true }));
       toast({
-        title: 'Invite Sent!',
-        description: `Sent server invite link directly to ${friendName}.`,
+        title: 'Invite sent',
+        description: `Direct invite sent to ${friendName}.`,
         type: 'success',
       });
-    } catch (err: any) {
-      toast({
-        title: 'Could Not Send Invite',
-        description: err?.message || 'Failed to send invite message.',
-        type: 'error',
-      });
+    } catch {
+      toast({ title: 'Error', description: 'Failed to send invite.', type: 'error' });
     } finally {
       setInvitingId(null);
     }
   };
 
-  const filteredFriends = friends.filter(
-    (f) =>
-      f.friend.display_name.toLowerCase().includes(search.toLowerCase()) ||
-      f.friend.username.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredFriends = friends.filter((f) => {
+    const term = search.toLowerCase();
+    return (
+      (f.friend?.display_name || '').toLowerCase().includes(term) ||
+      (f.friend?.username || '').toLowerCase().includes(term)
+    );
+  });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-background/80 backdrop-blur-md animate-in fade-in"
-        onClick={() => onOpenChange(false)}
-      />
-
-      {/* Modal Dialog */}
-      <div className="relative w-full max-w-md rounded-2xl border border-white/[0.08] bg-surface-panel p-4 sm:p-5 shadow-2xl shadow-black/90 z-10 animate-in zoom-in-95 duration-150 space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-control bg-primary-subtle text-primary flex items-center justify-center shrink-0">
               <UserPlus className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-foreground">Invite Squadmates</h3>
-              <p className="text-xs text-muted-foreground/70 truncate max-w-[260px]">
-                Invite players to &quot;{server.name}&quot;
-              </p>
+              <DialogTitle>Invite people to {server.name}</DialogTitle>
+              <DialogDescription>
+                Send an invite link or invite friends directly.
+              </DialogDescription>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            aria-label="Close dialog"
-            className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-white/[0.04] transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        </DialogHeader>
 
-        {/* 1-Click Shareable Link */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-              Invite Link
-            </label>
-            {isGenerating && (
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
-                <Loader2 className="w-3 h-3 animate-spin" /> Generating...
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 bg-white/[0.02] border border-white/[0.08] rounded-xl p-1.5 pl-3">
-            <span className="text-xs text-foreground/80 font-mono truncate flex-1 select-all">
-              {inviteLink}
-            </span>
+        {/* Invite Link Strip */}
+        <div className="space-y-1.5 pt-2">
+          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">
+            Server invite link
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              readOnly
+              value={fullInviteUrl}
+              className="font-mono text-xs select-all bg-surface-sidebar"
+            />
             <Button
+              variant={copiedLink ? 'secondary' : 'primary'}
               size="sm"
               onClick={handleCopyLink}
-              disabled={!inviteCode || isGenerating}
-              className="h-7 px-3 text-xs font-medium gap-1.5 shrink-0"
+              className="gap-1.5 shrink-0"
             >
-              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedLink ? 'Copied' : 'Copy Link'}</span>
+              {copiedLink ? <Check className="w-3.5 h-3.5 text-status-online" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedLink ? 'Copied' : 'Copy'}</span>
             </Button>
           </div>
         </div>
 
-        {/* Expiration and Max Uses selectors */}
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-              <Clock className="w-3 h-3 text-primary" /> Expire After
+        {/* Expiration & Max Uses Controls */}
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <div>
+            <label htmlFor="invite-expire-select" className="text-xs font-medium text-foreground block mb-1">
+              Expire after
             </label>
             <select
+              id="invite-expire-select"
               value={expiresInHours}
-              onChange={(e) => setExpiresInHours(Number(e.target.value))}
-              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-2 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary/50"
+              onChange={(e) => setExpiresInHours(parseInt(e.target.value, 10))}
+              className="w-full px-2.5 py-1.5 rounded-control border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring"
             >
               {EXPIRY_OPTIONS.map((opt) => (
-                <option key={opt.hours} value={opt.hours} className="bg-surface-panel text-foreground">
+                <option key={opt.label} value={opt.hours}>
                   {opt.label}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-              <Hash className="w-3 h-3 text-primary" /> Max Uses
+          <div>
+            <label htmlFor="invite-maxuses-select" className="text-xs font-medium text-foreground block mb-1">
+              Max uses
             </label>
             <select
+              id="invite-maxuses-select"
               value={maxUses}
-              onChange={(e) => setMaxUses(Number(e.target.value))}
-              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-2 py-1.5 text-foreground text-xs focus:outline-none focus:border-primary/50"
+              onChange={(e) => setMaxUses(parseInt(e.target.value, 10))}
+              className="w-full px-2.5 py-1.5 rounded-control border border-border bg-card text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-ring"
             >
               {MAX_USES_OPTIONS.map((opt) => (
-                <option key={opt.uses} value={opt.uses} className="bg-surface-panel text-foreground">
+                <option key={opt.label} value={opt.uses}>
                   {opt.label}
                 </option>
               ))}
@@ -263,80 +238,67 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
           </div>
         </div>
 
-        {/* Direct Invite Friends List */}
-        <div className="space-y-2 pt-1 border-t border-white/[0.06]">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-            <span>Invite Friends Directly</span>
-            <span className="text-[10px] font-mono lowercase">({friends.length} friends)</span>
+        {/* Direct Friends List */}
+        <div className="space-y-2 pt-3 border-t border-border">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Or invite a friend
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {friends.length} friends
+            </span>
           </div>
 
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-muted-foreground/50 absolute left-2.5 top-2.5" />
-            <input
+            <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-2.5 pointer-events-none" />
+            <Input
               type="text"
-              placeholder="Search friends to invite..."
+              placeholder="Search friends..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50"
+              className="pl-8 text-xs"
             />
           </div>
 
-          <div className="max-h-44 overflow-y-auto space-y-1 pr-1">
+          <div className="max-h-48 overflow-y-auto space-y-1 pt-1 no-scrollbar">
             {filteredFriends.length === 0 ? (
-              <div className="text-center py-4 text-xs text-muted-foreground/60 font-mono">
-                No friends found matching &quot;{search}&quot;
+              <div className="py-6 text-center text-xs text-muted-foreground">
+                {search ? 'No matching friends found' : 'No friends online to invite'}
               </div>
             ) : (
               filteredFriends.map((f) => {
+                const name = f.friend?.display_name || 'Friend';
                 const isInvited = Boolean(invitedMap[f.friend.id]);
-                const isInviting = invitingId === f.friend.id;
+                const isBusy = invitingId === f.friend.id;
 
                 return (
                   <div
-                    key={f.friend.id}
-                    className="flex items-center justify-between p-2 rounded-lg bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.04] transition-colors"
+                    key={f.id}
+                    className="flex items-center justify-between p-2 rounded-control hover:bg-surface-hover transition-colors"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <Avatar
-                        src={f.friend.avatar_url || null}
-                        name={f.friend.display_name}
-                        status={f.friend.status}
-                        showStatus
-                        size="sm"
+                        src={f.friend?.avatar_url || null}
+                        name={name}
+                        size="32"
                       />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium text-foreground truncate">
-                          {f.friend.display_name}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground/50 font-mono truncate">
-                          @{f.friend.username}
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-foreground truncate">{name}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          @{f.friend?.username || 'user'}
                         </div>
                       </div>
                     </div>
 
                     <Button
+                      variant={isInvited ? 'secondary' : 'outline'}
                       size="sm"
-                      variant={isInvited ? 'outline' : 'default'}
-                      disabled={isInvited || isInviting || !inviteCode}
-                      onClick={() => handleSendInviteToFriend(f.friend.id, f.friend.display_name)}
-                      className={cn(
-                        'h-7 text-xs px-2.5 font-medium transition-all shrink-0',
-                        isInvited && 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
-                      )}
+                      disabled={isInvited || isBusy}
+                      isLoading={isBusy}
+                      onClick={() => handleDirectInvite(f.friend.id, name)}
+                      className="h-7 text-xs px-2.5 shrink-0"
                     >
-                      {isInvited ? (
-                        <span className="flex items-center gap-1">
-                          <Check className="w-3 h-3" />
-                          <span>Sent</span>
-                        </span>
-                      ) : isInviting ? (
-                        <span>Sending...</span>
-                      ) : (
-                        <span className="flex items-center gap-1">
-                          <Send className="w-3 h-3" />
-                          <span>Invite</span>
-                        </span>
-                      )}
+                      {isInvited ? 'Invited' : 'Invite'}
                     </Button>
                   </div>
                 );
@@ -344,7 +306,7 @@ export function InviteModal({ open, onOpenChange, server }: InviteModalProps) {
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

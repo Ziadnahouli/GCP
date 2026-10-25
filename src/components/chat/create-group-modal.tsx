@@ -93,7 +93,7 @@ export function CreateGroupModal({ open, onOpenChange, onGroupCreated }: CreateG
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-md w-full p-6 border border-white/[0.08] bg-[#0c0d14] text-foreground rounded-2xl shadow-2xl"
+        className="max-w-md w-full p-6 border border-border bg-card text-foreground rounded-2xl shadow-2xl"
         onClose={() => onOpenChange(false)}
       >
         <div className="space-y-4">
@@ -110,21 +110,21 @@ export function CreateGroupModal({ open, onOpenChange, onGroupCreated }: CreateG
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Group Name (Optional)
             </label>
             <Input
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               placeholder="e.g. Valorant Ranked Squad"
-              className="text-xs bg-white/[0.03] border-white/10"
+              className="text-xs bg-surface-default border-border"
               maxLength={40}
             />
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Select Squadmates ({selectedUserIds.length} selected)
               </label>
             </div>
@@ -135,7 +135,7 @@ export function CreateGroupModal({ open, onOpenChange, onGroupCreated }: CreateG
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search friends by name or handle..."
-                className="text-xs pl-8 bg-white/[0.03] border-white/10 h-8"
+                className="text-xs pl-8 bg-surface-default border-border h-8"
               />
             </div>
 
@@ -155,7 +155,7 @@ export function CreateGroupModal({ open, onOpenChange, onGroupCreated }: CreateG
                         'flex items-center justify-between p-2 rounded-xl transition cursor-pointer border',
                         isSelected
                           ? 'bg-primary/15 border-primary/40 text-foreground'
-                          : 'bg-white/[0.02] border-white/[0.04] text-muted-foreground hover:bg-white/[0.04]'
+                          : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
                       )}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -168,7 +168,7 @@ export function CreateGroupModal({ open, onOpenChange, onGroupCreated }: CreateG
                           <div className="text-xs font-semibold text-foreground truncate">
                             {f.friend.display_name}
                           </div>
-                          <div className="text-[10px] text-muted-foreground truncate">
+                          <div className="text-xs text-muted-foreground truncate">
                             @{f.friend.username}
                           </div>
                         </div>
@@ -179,7 +179,7 @@ export function CreateGroupModal({ open, onOpenChange, onGroupCreated }: CreateG
                           'w-5 h-5 rounded-md border flex items-center justify-center transition-colors',
                           isSelected
                             ? 'bg-primary border-primary text-black'
-                            : 'border-white/20 bg-transparent'
+                            : 'border-border bg-transparent'
                         )}
                       >
                         {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -191,7 +191,7 @@ export function CreateGroupModal({ open, onOpenChange, onGroupCreated }: CreateG
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
             <Button
               variant="ghost"
               size="sm"

@@ -25,6 +25,7 @@ const config: Config = {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
           hover: 'hsl(var(--primary-hover))',
+          subtle: 'hsl(var(--primary-subtle))',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
@@ -42,7 +43,13 @@ const config: Config = {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
         },
-        border: 'hsl(var(--border))',
+        success: 'hsl(var(--success))',
+        warning: 'hsl(var(--warning))',
+        danger: 'hsl(var(--danger))',
+        border: {
+          DEFAULT: 'hsl(var(--border))',
+          strong: 'hsl(var(--border-strong))',
+        },
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         surface: {
@@ -52,26 +59,54 @@ const config: Config = {
           active: 'hsl(var(--surface-active))',
           header: 'hsl(var(--surface-header))',
           sidebar: 'hsl(var(--surface-sidebar))',
+          rail: 'hsl(var(--surface-rail))',
           panel: 'hsl(var(--surface-panel))',
         },
         status: {
-          online: '#10b981',
-          idle: '#f59e0b',
-          dnd: '#f43f5e',
-          offline: '#64748b',
+          online: 'hsl(var(--status-online))',
+          idle: 'hsl(var(--status-idle))',
+          dnd: 'hsl(var(--status-dnd))',
+          offline: 'hsl(var(--status-offline))',
         },
       },
+      fontSize: {
+        xs: ['0.75rem', { lineHeight: '1rem' }],      // 12px / 16px
+        sm: ['0.8125rem', { lineHeight: '1.125rem' }], // 13px / 18px
+        base: ['0.875rem', { lineHeight: '1.25rem' }],  // 14px / 20px (Clean Pro body)
+        md: ['1rem', { lineHeight: '1.5rem' }],         // 16px / 24px
+        lg: ['1.25rem', { lineHeight: '1.75rem' }],     // 20px / 28px
+        xl: ['1.5rem', { lineHeight: '2rem' }],          // 24px / 32px
+        '2xl': ['2rem', { lineHeight: '2.5rem' }],       // 32px / 40px
+      },
       borderRadius: {
+        control: '6px',
+        card: '8px',
+        dialog: '12px',
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
+      zIndex: {
+        base: '0',
+        sticky: '10',
+        dropdown: '20',
+        sheet: '30',
+        dialog: '40',
+        toast: '50',
+        'call-overlay': '60',
+      },
+      transitionDuration: {
+        fast: '120ms',
+        normal: '180ms',
+        sheet: '240ms',
+      },
+      transitionTimingFunction: {
+        pro: 'cubic-bezier(0.2, 0, 0, 1)',
+      },
       boxShadow: {
-        'subtle': '0 1px 2px 0 rgba(0, 0, 0, 0.35)',
-        'panel': '0 4px 20px -2px rgba(0, 0, 0, 0.45)',
-        'modal': '0 12px 32px -4px rgba(0, 0, 0, 0.6)',
-        'glow': '0 0 16px -4px hsl(var(--primary) / 0.25)',
-        'glow-sm': '0 0 8px -2px hsl(var(--primary) / 0.20)',
+        subtle: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+        popover: 'var(--elevation-shadow)',
+        dialog: '0 16px 48px rgb(0 0 0 / 0.28)',
       },
       keyframes: {
         'accordion-down': {
@@ -90,7 +125,7 @@ const config: Config = {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        'pulse-subtle': 'pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'pulse-subtle': 'pulse-subtle 2s cubic-bezier(0.2, 0, 0, 1) infinite',
       },
     },
   },

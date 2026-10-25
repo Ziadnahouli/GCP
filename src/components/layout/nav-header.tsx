@@ -53,13 +53,13 @@ export function NavHeader({
   }, []);
 
   return (
-    <header className="relative h-12 border-b border-white/[0.06] bg-surface-header px-3 sm:px-4 flex items-center justify-between shrink-0 select-none z-30">
+    <header className="relative h-12 border-b border-border bg-surface-header px-3 sm:px-4 flex items-center justify-between shrink-0 select-none z-30">
       {/* Title & Mobile Menu Trigger */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         {onOpenMobileMenu && (
           <button
             onClick={onOpenMobileMenu}
-            className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground hover:bg-white/[0.04] rounded-lg transition-colors"
+            className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground hover:bg-surface-default rounded-lg transition-colors"
             title="Open Server & Channels Menu"
             aria-label="Open Navigation Menu"
           >
@@ -68,7 +68,7 @@ export function NavHeader({
         )}
         <h1 className="text-xs font-semibold text-foreground tracking-tight truncate">{title}</h1>
         {subtitle && (
-          <span className="text-[11px] text-muted-foreground/70 hidden sm:inline truncate font-normal">
+          <span className="text-xs text-muted-foreground/70 hidden sm:inline truncate font-normal">
             / {subtitle}
           </span>
         )}
@@ -80,11 +80,11 @@ export function NavHeader({
         <button
           type="button"
           onClick={() => setShowSearchModal(true)}
-          className="w-full h-7 pl-8 pr-3 text-xs rounded-lg bg-surface-default/70 border border-white/[0.06] hover:border-white/[0.12] text-muted-foreground/70 hover:text-foreground text-left flex items-center justify-between transition-colors font-normal cursor-pointer"
+          className="w-full h-7 pl-8 pr-3 text-xs rounded-lg bg-surface-default/70 border border-border hover:border-border text-muted-foreground/70 hover:text-foreground text-left flex items-center justify-between transition-colors font-normal cursor-pointer"
           aria-label="Quick search command palette"
         >
           <span>Search...</span>
-          <kbd className="text-[10px] font-mono text-muted-foreground/50 border border-white/[0.06] bg-white/[0.04] px-1.5 py-0.2 rounded">
+          <kbd className="text-xs font-mono text-muted-foreground/50 border border-border bg-surface-default px-1.5 py-0.2 rounded">
             Ctrl+K
           </kbd>
         </button>
@@ -96,7 +96,7 @@ export function NavHeader({
         <button
           type="button"
           onClick={() => setShowSearchModal(true)}
-          className="md:hidden p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
+          className="md:hidden p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-default transition-colors"
           title="Search"
           aria-label="Quick search"
         >
@@ -111,11 +111,11 @@ export function NavHeader({
               window.dispatchEvent(new CustomEvent('nexus-open-permissions-modal'));
             }
           }}
-          className="p-1.5 rounded-lg text-muted-foreground hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
           title="Hardware & Browser Permissions"
           aria-label="Hardware & Browser Permissions"
         >
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <ShieldCheck className="w-4 h-4 text-success" />
         </button>
 
         {/* ZeroTier Direct LAN Indicator */}
@@ -132,10 +132,10 @@ export function NavHeader({
 
         {/* Cloud Sync Status Indicator */}
         <div
-          className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] text-muted-foreground font-mono bg-white/[0.02] border border-white/[0.04]"
+          className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs text-muted-foreground font-mono bg-surface-default border border-border"
           title={isConfigured ? 'Supabase Realtime Synced' : 'Local Sandbox Mode'}
         >
-          <span className={cn('w-1.5 h-1.5 rounded-full', isConfigured ? 'bg-emerald-400' : 'bg-amber-400')} />
+          <span className={cn('w-1.5 h-1.5 rounded-full', isConfigured ? 'bg-success' : 'bg-warning')} />
           <span>{isConfigured ? 'Live' : 'Sandbox'}</span>
         </div>
 
@@ -147,14 +147,14 @@ export function NavHeader({
             'relative p-1.5 rounded-lg transition-colors',
             showNotifications
               ? 'bg-primary/15 text-primary'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'
+              : 'text-muted-foreground hover:text-foreground hover:bg-surface-default'
           )}
           title="Notifications Inbox"
           aria-label="Notifications Inbox"
         >
           <Bell className="w-4 h-4" />
           {unreadCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-[9px] font-bold font-mono text-primary-foreground flex items-center justify-center border border-[#0d0e15]">
+            <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-xs font-bold font-mono text-primary-foreground flex items-center justify-center border border-border">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}

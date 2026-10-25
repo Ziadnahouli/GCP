@@ -471,7 +471,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
         <div>
           <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
             <span>Voice & Video Studio</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success border border-success/30 font-medium">
               Hardware Linked
             </span>
           </h3>
@@ -502,7 +502,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                 } catch {}
                 if (isTestingMic) stopMicTest();
               }}
-              className="w-full bg-[#10121a] border border-white/[0.08] text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
+              className="w-full bg-card border border-border text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
             >
               {audioInputDevices.length === 0 ? (
                 <option value="">Default Microphone</option>
@@ -517,16 +517,16 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
           </div>
 
           {/* Live Mic Test & Dual VU Meters */}
-          <div className="rounded-xl border border-white/[0.08] bg-[#10121a] p-3.5 space-y-3">
+          <div className="rounded-xl border border-border bg-card p-3.5 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs font-bold text-foreground flex items-center gap-2">
                   <span>Microphone Studio Monitor</span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
                     {noiseMode.toUpperCase()}
                   </span>
                 </div>
-                <div className="text-[10px] text-muted-foreground">Test mic gain, noise reduction, and listen to processed audio</div>
+                <div className="text-xs text-muted-foreground">Test mic gain, noise reduction, and listen to processed audio</div>
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -535,8 +535,8 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                   disabled={isRecordingSample}
                   variant="outline"
                   className={cn(
-                    'text-xs rounded-lg border-white/[0.08] h-8 px-2.5',
-                    isRecordingSample && 'bg-amber-500/20 text-amber-400 border-amber-500/40 animate-pulse'
+                    'text-xs rounded-lg border-border h-8 px-2.5',
+                    isRecordingSample && 'bg-warning/20 text-warning border-warning/40 animate-pulse'
                   )}
                   title="Record 5 seconds of clean audio to hear what squadmates will hear"
                 >
@@ -548,8 +548,8 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                   onClick={startMicTest}
                   variant="outline"
                   className={cn(
-                    'text-xs rounded-lg border-white/[0.08] h-8 px-3',
-                    isTestingMic ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'hover:bg-primary/10'
+                    'text-xs rounded-lg border-border h-8 px-3',
+                    isTestingMic ? 'bg-danger/10 text-danger border-danger/30' : 'hover:bg-primary/10'
                   )}
                 >
                   {isTestingMic ? (
@@ -569,13 +569,13 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
             <div className="space-y-2 pt-1">
               {/* Raw Microphone Input */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[10px] font-semibold text-muted-foreground">
+                <div className="flex justify-between text-xs font-semibold text-muted-foreground">
                   <span>Input Level (Raw Microphone)</span>
                   <span className="font-mono">{micLevel}%</span>
                 </div>
-                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/[0.06]">
+                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-border">
                   <div
-                    className="h-full rounded-full transition-all duration-75 bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500"
+                    className="h-full rounded-full transition-all duration-75 bg-gradient-to-r from-success via-warning to-danger"
                     style={{ width: `${micLevel}%` }}
                   />
                 </div>
@@ -583,13 +583,13 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
 
               {/* Processed Clean Output */}
               <div className="space-y-1">
-                <div className="flex justify-between text-[10px] font-semibold text-emerald-400">
+                <div className="flex justify-between text-xs font-semibold text-success">
                   <span>Clean Output (What others hear)</span>
                   <span className="font-mono">{micLevelClean}%</span>
                 </div>
-                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/[0.06]">
+                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden p-0.5 border border-border">
                   <div
-                    className="h-full rounded-full transition-all duration-75 bg-gradient-to-r from-emerald-500 to-sky-400"
+                    className="h-full rounded-full transition-all duration-75 bg-gradient-to-r from-success to-primary"
                     style={{ width: `${micLevelClean}%` }}
                   />
                 </div>
@@ -598,7 +598,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
 
             {/* Room Noise Advice */}
             {roomNoiseAdvice && (
-              <div className="text-[10px] p-2 rounded-lg bg-white/[0.03] border border-white/[0.06] text-muted-foreground flex items-center gap-1.5">
+              <div className="text-xs p-2 rounded-lg bg-surface-default border border-border text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="w-3 h-3 text-primary shrink-0" />
                 <span>{roomNoiseAdvice}</span>
               </div>
@@ -606,8 +606,8 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
 
             {/* 5-second sample playback */}
             {sampleAudioUrl && (
-              <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
-                <div className="flex items-center gap-2 text-emerald-400 font-medium">
+              <div className="flex items-center justify-between p-2 rounded-lg bg-success/10 border border-success/20 text-xs">
+                <div className="flex items-center gap-2 text-success font-medium">
                   <Volume2 className="w-3.5 h-3.5" />
                   <span>5s Sample Ready — Listen to your clean voice</span>
                 </div>
@@ -624,7 +624,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                       }
                     }
                   }}
-                  className="px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-semibold flex items-center gap-1"
+                  className="px-2.5 py-1 rounded bg-success/20 hover:bg-success/30 text-success text-xs font-semibold flex items-center gap-1"
                 >
                   {isPlayingSample ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
                   <span>{isPlayingSample ? 'Stop' : 'Play Back'}</span>
@@ -651,7 +651,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                 setSelectedCamDevice(e.target.value);
                 if (isTestingCam) stopCamTest();
               }}
-              className="w-full bg-[#10121a] border border-white/[0.08] text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
+              className="w-full bg-card border border-border text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
             >
               {videoDevices.length === 0 ? (
                 <option value="">Default Webcam</option>
@@ -666,19 +666,19 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
           </div>
 
           {/* Live Webcam Preview Studio */}
-          <div className="rounded-xl border border-white/[0.08] bg-[#10121a] p-3.5 space-y-2.5">
+          <div className="rounded-xl border border-border bg-card p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs font-bold text-foreground">Webcam Preview Studio</div>
-                <div className="text-[10px] text-muted-foreground">Test camera exposure and lens framing</div>
+                <div className="text-xs text-muted-foreground">Test camera exposure and lens framing</div>
               </div>
               <Button
                 size="sm"
                 onClick={startCamTest}
                 variant="outline"
                 className={cn(
-                  'text-xs rounded-lg border-white/[0.08] h-8 px-3',
-                  isTestingCam ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'hover:bg-primary/10'
+                  'text-xs rounded-lg border-border h-8 px-3',
+                  isTestingCam ? 'bg-danger/10 text-danger border-danger/30' : 'hover:bg-primary/10'
                 )}
               >
                 {isTestingCam ? (
@@ -693,7 +693,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
               </Button>
             </div>
 
-            <div className="relative aspect-video w-full rounded-xl bg-black border border-white/[0.06] overflow-hidden flex items-center justify-center">
+            <div className="relative aspect-video w-full rounded-xl bg-black border border-border overflow-hidden flex items-center justify-center">
               <video
                 ref={camVideoRef}
                 autoPlay
@@ -711,8 +711,8 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                 </div>
               )}
               {isTestingCam && (
-                <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-xs font-mono text-success border border-success/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-ping" />
                   <span>CAMERA ACTIVE (1080p)</span>
                 </div>
               )}
@@ -735,7 +735,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                     localStorage.setItem('nexus_audio_output_device', val);
                   } catch {}
                 }}
-                className="flex-1 bg-[#10121a] border border-white/[0.08] text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
+                className="flex-1 bg-card border border-border text-foreground text-xs rounded-xl p-2.5 focus:border-primary focus:outline-none"
               >
                 {audioOutputDevices.length === 0 ? (
                   <option value="">Default Audio Output (System Default)</option>
@@ -756,7 +756,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                   'px-3 py-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap',
                   isTestingOutput
                     ? 'bg-primary/20 border-primary text-primary animate-pulse'
-                    : 'bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.08] text-foreground'
+                    : 'bg-surface-default border-border hover:bg-surface-hover text-foreground'
                 )}
                 title="Play live test chime through this output device"
               >
@@ -781,21 +781,21 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
       </div>
 
       {/* GCP Studio AI Neural Noise Suppression Selector */}
-      <div className="rounded-2xl border border-white/[0.08] bg-[#10121a] p-4 space-y-3">
+      <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
             <div className="text-xs font-bold text-foreground flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-primary animate-pulse" />
               <span>GCP Studio Neural Noise Suppression</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-success/20 text-success font-bold border border-success/30">
                 RNNoise WASM
               </span>
             </div>
-            <div className="text-[11px] text-muted-foreground">
+            <div className="text-xs text-muted-foreground">
               Client-side WebAssembly neural network. Removes computer fans, mechanical typing, and room noise in real-time.
             </div>
           </div>
-          <div className="text-[10px] font-mono text-muted-foreground bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/[0.06]">
+          <div className="text-xs font-mono text-muted-foreground bg-surface-default px-2.5 py-1 rounded-lg border border-border">
             0ms Cloud Latency • 100% Private
           </div>
         </div>
@@ -807,16 +807,16 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
             className={cn(
               'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
               noiseMode === 'off'
-                ? 'bg-rose-500/10 border-rose-500/40 ring-1 ring-rose-500/30'
-                : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                ? 'bg-danger/10 border-danger/40 ring-1 ring-danger'
+                : 'bg-surface-default border-border hover:bg-surface-default'
             )}
           >
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-bold text-foreground">Off</span>
-                <span className={cn('w-2 h-2 rounded-full', noiseMode === 'off' ? 'bg-rose-400' : 'bg-white/20')} />
+                <span className={cn('w-2 h-2 rounded-full', noiseMode === 'off' ? 'bg-danger' : 'bg-white/20')} />
               </div>
-              <p className="text-[10px] text-muted-foreground leading-tight">
+              <p className="text-xs text-muted-foreground leading-tight">
                 Raw mic pass-through. 0ms DSP.
               </p>
             </div>
@@ -828,20 +828,20 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
             className={cn(
               'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
               noiseMode === 'light'
-                ? 'bg-sky-500/15 border-sky-500/50 ring-1 ring-sky-500/40'
-                : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                ? 'bg-primary-subtle border-primary/30 ring-1 ring-ring'
+                : 'bg-surface-default border-border hover:bg-surface-default'
             )}
           >
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-bold text-foreground">Light</span>
-                <span className={cn('w-2 h-2 rounded-full', noiseMode === 'light' ? 'bg-sky-400' : 'bg-white/20')} />
+                <span className={cn('w-2 h-2 rounded-full', noiseMode === 'light' ? 'bg-primary' : 'bg-white/20')} />
               </div>
-              <p className="text-[10px] text-muted-foreground leading-tight">
+              <p className="text-xs text-muted-foreground leading-tight">
                 -26 dB floor. Preserves quiet whispers.
               </p>
             </div>
-            <span className="text-[9px] text-sky-400 font-bold mt-1.5">Gentle</span>
+            <span className="text-xs text-primary font-bold mt-1.5">Gentle</span>
           </div>
 
           {/* Balanced Mode */}
@@ -851,7 +851,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
               'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
               noiseMode === 'balanced'
                 ? 'bg-primary/15 border-primary/50 ring-1 ring-primary/40'
-                : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                : 'bg-surface-default border-border hover:bg-surface-default'
             )}
           >
             <div>
@@ -859,11 +859,11 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                 <span className="text-xs font-bold text-foreground">Balanced</span>
                 <span className={cn('w-2 h-2 rounded-full', noiseMode === 'balanced' ? 'bg-primary' : 'bg-white/20')} />
               </div>
-              <p className="text-[10px] text-muted-foreground leading-tight">
+              <p className="text-xs text-muted-foreground leading-tight">
                 -36 dB floor. Natural voice warmth.
               </p>
             </div>
-            <span className="text-[9px] text-primary font-bold mt-1.5">Recommended</span>
+            <span className="text-xs text-primary font-bold mt-1.5">Recommended</span>
           </div>
 
           {/* Strong Mode */}
@@ -872,36 +872,36 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
             className={cn(
               'p-2.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between text-left',
               noiseMode === 'strong'
-                ? 'bg-emerald-500/15 border-emerald-500/50 ring-1 ring-emerald-500/40'
-                : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                ? 'bg-success/15 border-success/50 ring-1 ring-success'
+                : 'bg-surface-default border-border hover:bg-surface-default'
             )}
           >
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-bold text-foreground">Strong</span>
-                <span className={cn('w-2 h-2 rounded-full', noiseMode === 'strong' ? 'bg-emerald-400' : 'bg-white/20')} />
+                <span className={cn('w-2 h-2 rounded-full', noiseMode === 'strong' ? 'bg-success' : 'bg-white/20')} />
               </div>
-              <p className="text-[10px] text-muted-foreground leading-tight">
+              <p className="text-xs text-muted-foreground leading-tight">
                 -40 dB floor. Eradicates loud typing & fans.
               </p>
             </div>
-            <span className="text-[9px] text-emerald-400 font-bold mt-1.5">Max Cut</span>
+            <span className="text-xs text-success font-bold mt-1.5">Max Cut</span>
           </div>
         </div>
 
         {/* Real-Time Engine Diagnostic Badge */}
-        <div className="mt-3 p-2.5 rounded-xl bg-black/30 border border-white/5 flex items-center justify-between text-xs">
+        <div className="mt-3 p-2.5 rounded-xl bg-black/30 border border-border flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             <span
               className={cn(
                 'w-2 h-2 rounded-full flex-shrink-0',
                 noiseMode === 'off'
-                  ? 'bg-zinc-500'
+                  ? 'bg-status-offline'
                   : liveEngineStatus.status === 'ready'
-                  ? 'bg-emerald-400 animate-pulse'
+                  ? 'bg-success animate-pulse'
                   : liveEngineStatus.status === 'fallback'
-                  ? 'bg-amber-400'
-                  : 'bg-blue-400'
+                  ? 'bg-warning'
+                  : 'bg-primary'
               )}
             />
             <div>
@@ -919,20 +919,20 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
                   <button
                     type="button"
                     onClick={() => handleSelectNoiseMode(noiseMode)}
-                    className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-medium text-[10px] border border-amber-500/30 transition-colors"
+                    className="px-2 py-0.5 rounded bg-warning/20 hover:bg-warning/30 text-warning font-medium text-xs border border-warning/30 transition-colors"
                   >
                     Retry RNNoise
                   </button>
                 )}
               </div>
               {liveEngineStatus.fallbackReason && noiseMode !== 'off' && liveEngineStatus.status === 'fallback' && (
-                <p className="text-[10px] text-amber-400/90 leading-tight mt-0.5 font-mono">
+                <p className="text-xs text-warning/90 leading-tight mt-0.5 font-mono">
                   Reason: {liveEngineStatus.fallbackReason}
                 </p>
               )}
             </div>
           </div>
-          <span className="text-[10px] text-muted-foreground font-mono flex-shrink-0">
+          <span className="text-xs text-muted-foreground font-mono flex-shrink-0">
             {noiseMode === 'off' ? '0 ms' : '~14 ms latency | 100% local'}
           </span>
         </div>
@@ -966,22 +966,22 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
           'flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all',
           pushToTalk
             ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/30'
-            : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+            : 'bg-surface-default border-border hover:bg-surface-default'
         )}
       >
         <div className="space-y-0.5">
           <div className="text-xs font-bold text-foreground flex items-center gap-2">
             <span>Push-to-Talk (PTT) Mode</span>
             {pushToTalk && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono font-semibold">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono font-semibold">
                 SPACE or V
               </span>
             )}
           </div>
-          <div className="text-[11px] text-muted-foreground">
-            Hold keyboard hotkey (<kbd className="px-1 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">Space</kbd> or <kbd className="px-1 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">V</kbd>) to transmit mic audio.
+          <div className="text-xs text-muted-foreground">
+            Hold keyboard hotkey (<kbd className="px-1 py-0.5 rounded bg-surface-active text-white font-mono text-xs">Space</kbd> or <kbd className="px-1 py-0.5 rounded bg-surface-active text-white font-mono text-xs">V</kbd>) to transmit mic audio.
             {pushToTalk && (
-              <span className="block text-[10px] text-primary/80 mt-1">
+              <span className="block text-xs text-primary/80 mt-1">
                 💡 Gaming Tip: When playing external games outside the browser window, web browsers sandbox keyboard input. Switch to Voice Activity with neural noise suppression for seamless background gaming audio!
               </span>
             )}
@@ -1015,7 +1015,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
             max="100"
             value={inputVol}
             onChange={(e) => setInputVol(Number(e.target.value))}
-            className="w-full accent-primary h-1.5 bg-white/10 rounded-lg cursor-pointer"
+            className="w-full accent-primary h-1.5 bg-surface-active rounded-lg cursor-pointer"
           />
         </div>
 
@@ -1030,7 +1030,7 @@ export function VoiceAudioTab({ activeTab, open = true }: VoiceAudioTabProps) {
             max="150"
             value={outputVol}
             onChange={(e) => setOutputVol(Number(e.target.value))}
-            className="w-full accent-primary h-1.5 bg-white/10 rounded-lg cursor-pointer"
+            className="w-full accent-primary h-1.5 bg-surface-active rounded-lg cursor-pointer"
           />
         </div>
       </div>

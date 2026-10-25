@@ -42,5 +42,9 @@ export interface UserSettings {
   notif_friend_requests?: boolean;
   notif_invites?: boolean;
   notif_missed_calls?: boolean;
+  theme_mode?: 'system' | 'light' | 'dark' | null;
+  density?: 'comfortable' | 'compact' | null;
+  text_scale?: string | null;
+  reduce_motion?: boolean | null;
   updated_at: string;
 }

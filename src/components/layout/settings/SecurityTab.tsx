@@ -306,10 +306,10 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Privacy Controls</h4>
 
         {/* Direct Messages Policy */}
-        <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+        <div className="p-4 rounded-2xl bg-surface-default border border-border space-y-3">
           <div>
             <div className="text-xs font-bold text-foreground">Who Can Send You Direct Messages</div>
-            <div className="text-[11px] text-muted-foreground">Choose who is permitted to initiate private conversations</div>
+            <div className="text-xs text-muted-foreground">Choose who is permitted to initiate private conversations</div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {[
@@ -325,21 +325,21 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   allowDms === opt.id
                     ? 'bg-primary/20 border-primary text-foreground'
-                    : 'bg-white/[0.02] border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]'
+                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
                 )}
               >
                 <div className="font-semibold">{opt.label}</div>
-                <div className="text-[10px] opacity-75">{opt.desc}</div>
+                <div className="text-xs opacity-75">{opt.desc}</div>
               </button>
             ))}
           </div>
         </div>
 
         {/* Friend Requests Policy */}
-        <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+        <div className="p-4 rounded-2xl bg-surface-default border border-border space-y-3">
           <div>
             <div className="text-xs font-bold text-foreground">Who Can Send You Friend Requests</div>
-            <div className="text-[11px] text-muted-foreground">Control incoming friendship requests</div>
+            <div className="text-xs text-muted-foreground">Control incoming friendship requests</div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {[
@@ -355,21 +355,21 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   allowFriendReqs === opt.id
                     ? 'bg-primary/20 border-primary text-foreground'
-                    : 'bg-white/[0.02] border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]'
+                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
                 )}
               >
                 <div className="font-semibold">{opt.label}</div>
-                <div className="text-[10px] opacity-75">{opt.desc}</div>
+                <div className="text-xs opacity-75">{opt.desc}</div>
               </button>
             ))}
           </div>
         </div>
 
         {/* L15: Profile Visibility Policy */}
-        <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+        <div className="p-4 rounded-2xl bg-surface-default border border-border space-y-3">
           <div>
             <div className="text-xs font-bold text-foreground">Profile Visibility</div>
-            <div className="text-[11px] text-muted-foreground">Control who can view your full bio, banner, and profile details</div>
+            <div className="text-xs text-muted-foreground">Control who can view your full bio, banner, and profile details</div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {[
@@ -385,21 +385,21 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   profileVisibility === opt.id
                     ? 'bg-primary/20 border-primary text-foreground'
-                    : 'bg-white/[0.02] border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]'
+                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
                 )}
               >
                 <div className="font-semibold">{opt.label}</div>
-                <div className="text-[10px] opacity-75">{opt.desc}</div>
+                <div className="text-xs opacity-75">{opt.desc}</div>
               </button>
             ))}
           </div>
         </div>
 
         {/* L16: Presence & Game Activity Visibility */}
-        <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+        <div className="p-4 rounded-2xl bg-surface-default border border-border space-y-3">
           <div>
             <div className="text-xs font-bold text-foreground">Online Status & Activity Visibility</div>
-            <div className="text-[11px] text-muted-foreground">Control who sees your live online status and current game activity</div>
+            <div className="text-xs text-muted-foreground">Control who sees your live online status and current game activity</div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {[
@@ -415,11 +415,11 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   presenceVisibility === opt.id
                     ? 'bg-primary/20 border-primary text-foreground'
-                    : 'bg-white/[0.02] border-white/[0.06] text-muted-foreground hover:bg-white/[0.04]'
+                    : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
                 )}
               >
                 <div className="font-semibold">{opt.label}</div>
-                <div className="text-[10px] opacity-75">{opt.desc}</div>
+                <div className="text-xs opacity-75">{opt.desc}</div>
               </button>
             ))}
           </div>
@@ -427,27 +427,27 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
       </div>
 
       {/* 2. Authentication & Account Access */}
-      <div className="space-y-3 pt-3 border-t border-white/[0.06]">
+      <div className="space-y-3 pt-3 border-t border-border">
         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Authentication & MFA</h4>
 
-        <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-4">
+        <div className="p-4 rounded-2xl bg-surface-default border border-border space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <div className="text-xs font-bold text-foreground">Email Verification</div>
-              <div className="text-[11px] text-muted-foreground">
+              <div className="text-xs text-muted-foreground">
                 {user?.email || 'Signed in via provider'}
               </div>
             </div>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-success/10 text-success border border-success/20">
               {user?.email_confirmed_at ? 'Email Verified' : 'Verified'}
             </span>
           </div>
 
-          <div className="pt-2 border-t border-white/[0.04] space-y-3">
+          <div className="pt-2 border-t border-border space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs font-bold text-foreground">Password Management</div>
-                <div className="text-[11px] text-muted-foreground">Change your password directly or send a recovery email</div>
+                <div className="text-xs text-muted-foreground">Change your password directly or send a recovery email</div>
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -464,7 +464,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   variant="outline"
                   onClick={handleSendPasswordReset}
                   disabled={isResettingPassword}
-                  className="border-white/10 hover:bg-white/10 text-xs h-8"
+                  className="border-border hover:bg-surface-active text-xs h-8"
                   title="Sends password reset link to your email"
                 >
                   {isResettingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <KeyRound className="w-3.5 h-3.5 mr-1.5" />}
@@ -474,13 +474,13 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
             </div>
 
             {showDirectPasswordChange && (
-              <form onSubmit={handleDirectPasswordUpdate} className="p-3.5 rounded-xl bg-black/40 border border-white/[0.08] space-y-3 animate-in fade-in duration-150">
-                <div className="text-[11px] font-semibold text-primary">
+              <form onSubmit={handleDirectPasswordUpdate} className="p-3.5 rounded-xl bg-black/40 border border-border space-y-3 animate-in fade-in duration-150">
+                <div className="text-xs font-semibold text-primary">
                   Update Password Directly (No Email Needed)
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div>
-                    <label className="block text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-1">
+                    <label className="block text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">
                       New Password
                     </label>
                     <Input
@@ -488,12 +488,12 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                       placeholder="Minimum 6 characters"
                       value={directNewPassword}
                       onChange={(e) => setDirectNewPassword(e.target.value)}
-                      className="h-8 text-xs bg-white/[0.03] border-white/10"
+                      className="h-8 text-xs bg-surface-default border-border"
                       disabled={isUpdatingPassword}
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-1">
+                    <label className="block text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">
                       Confirm Password
                     </label>
                     <Input
@@ -501,7 +501,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                       placeholder="Re-enter password"
                       value={directConfirmPassword}
                       onChange={(e) => setDirectConfirmPassword(e.target.value)}
-                      className="h-8 text-xs bg-white/[0.03] border-white/10"
+                      className="h-8 text-xs bg-surface-default border-border"
                       disabled={isUpdatingPassword}
                     />
                   </div>
@@ -534,12 +534,12 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
             )}
           </div>
 
-          <div className="flex items-center justify-between pt-2 border-t border-white/[0.04]">
+          <div className="flex items-center justify-between pt-2 border-t border-border">
             <div>
               <div className="text-xs font-bold text-foreground">Multi-Factor Authentication (MFA)</div>
-              <div className="text-[11px] text-muted-foreground">Time-based one-time password (TOTP) authenticator app</div>
+              <div className="text-xs text-muted-foreground">Time-based one-time password (TOTP) authenticator app</div>
             </div>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
               Standard Security
             </span>
           </div>
@@ -547,11 +547,11 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
       </div>
 
       {/* 3. Active Sessions & Device Management */}
-      <div className="space-y-3 pt-3 border-t border-white/[0.06]">
+      <div className="space-y-3 pt-3 border-t border-border">
         <div className="flex items-center justify-between">
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Active Sessions & Devices</h4>
-            <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+            <p className="text-xs text-muted-foreground/80 mt-0.5">
               Devices currently authorized to access your profile.
             </p>
           </div>
@@ -560,7 +560,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
             variant="ghost"
             onClick={handleSignOutOtherSessions}
             disabled={isSigningOutOthers}
-            className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20"
+            className="text-xs text-danger hover:text-danger hover:bg-danger/10 border border-danger/20"
           >
             {isSigningOutOthers ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <LogOut className="w-3 h-3 mr-1.5" />}
             Sign Out Other Sessions
@@ -569,7 +569,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
 
         <div className="space-y-2">
           {loadingDevices ? (
-            <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <div className="p-4 rounded-2xl bg-surface-default border border-border flex items-center justify-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
               Loading authorized sessions...
             </div>
@@ -587,7 +587,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                     "p-3.5 rounded-2xl border flex items-center justify-between transition-all",
                     isCurrent
                       ? "bg-primary/[0.04] border-primary/20"
-                      : "bg-white/[0.02] border-white/[0.06] hover:border-white/10"
+                      : "bg-surface-default border-border hover:border-border"
                   )}
                 >
                   <div className="flex items-center gap-3">
@@ -595,7 +595,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                       "w-9 h-9 rounded-xl border flex items-center justify-center shrink-0",
                       isCurrent
                         ? "bg-primary/15 border-primary/30 text-primary"
-                        : "bg-white/[0.04] border-white/10 text-muted-foreground"
+                        : "bg-surface-default border-border text-muted-foreground"
                     )}>
                       {isMobile ? <Smartphone className="w-4 h-4" /> : <Laptop className="w-4 h-4" />}
                     </div>
@@ -603,17 +603,17 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                       <div className="text-xs font-bold text-foreground flex items-center gap-2">
                         <span>{dev.device_name || 'Browser Client'}</span>
                         {isCurrent ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.2 rounded-full bg-success/15 text-success border border-success/30">
+                            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                             This Device
                           </span>
                         ) : (
-                          <span className="text-[10px] text-muted-foreground/80 font-normal">
+                          <span className="text-xs text-muted-foreground/80 font-normal">
                             Last active: {new Date(dev.last_active_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-muted-foreground line-clamp-1 max-w-[280px]">
+                      <div className="text-xs text-muted-foreground line-clamp-1 max-w-[280px]">
                         {dev.user_agent ? dev.user_agent.slice(0, 50) + '...' : 'Web Session'}
                       </div>
                     </div>
@@ -623,7 +623,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                       size="sm"
                       variant="ghost"
                       onClick={() => handleRevokeDevice(dev.device_id)}
-                      className="h-7 px-2.5 text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20"
+                      className="h-7 px-2.5 text-xs text-danger hover:text-danger hover:bg-danger/10 border border-danger/20"
                     >
                       <LogOut className="w-3 h-3 mr-1" />
                       Revoke
@@ -633,7 +633,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
               );
             })
           ) : (
-            <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
+            <div className="p-4 rounded-2xl bg-surface-default border border-border flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
                   <Laptop className="w-5 h-5" />
@@ -641,12 +641,12 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                 <div>
                   <div className="text-xs font-bold text-foreground flex items-center gap-2">
                     <span>Current Browser Session</span>
-                    <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.2 rounded-full bg-success/15 text-success border border-success/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                       Active Now
                     </span>
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
+                  <div className="text-xs text-muted-foreground">
                     {typeof navigator !== 'undefined' ? `${navigator.userAgent.slice(0, 45)}...` : 'Web Client'}
                   </div>
                 </div>
@@ -657,15 +657,15 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
       </div>
 
       {/* 4. Danger Zone: Account Deletion */}
-      <div className="space-y-3 pt-4 border-t border-rose-500/20">
-        <div className="p-4 rounded-2xl bg-rose-950/20 border border-rose-500/30 space-y-3">
+      <div className="space-y-3 pt-4 border-t border-danger/20">
+        <div className="p-4 rounded-2xl bg-danger/15 border border-danger/30 space-y-3">
           <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-danger/20 border border-danger/40 flex items-center justify-center text-danger shrink-0">
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-xs font-bold text-rose-300">Danger Zone — Delete Account</div>
-              <div className="text-[11px] text-rose-300/80 leading-relaxed mt-0.5">
+              <div className="text-xs font-bold text-danger">Danger Zone — Delete Account</div>
+              <div className="text-xs text-danger/80 leading-relaxed mt-0.5">
                 Permanently purge your gamer identity, server memberships, friendship records, and custom settings.
                 This action cannot be reversed.
               </div>
@@ -677,14 +677,14 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
               size="sm"
               variant="destructive"
               onClick={() => setShowDeleteConfirm(true)}
-              className="bg-rose-600 hover:bg-rose-700 text-white text-xs"
+              className="bg-danger hover:bg-danger/90 text-white text-xs"
             >
               <Trash2 className="w-3.5 h-3.5 mr-1.5" />
               Request Account Deletion
             </Button>
           ) : (
-            <div className="p-3 rounded-xl bg-black/40 border border-rose-500/40 space-y-3">
-              <p className="text-xs text-rose-300 font-semibold">
+            <div className="p-3 rounded-xl bg-black/40 border border-danger/40 space-y-3">
+              <p className="text-xs text-danger font-semibold">
                 Type <span className="underline font-mono text-white">DELETE</span> to confirm permanent account purge:
               </p>
               <div className="flex gap-2">
@@ -692,7 +692,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
                   value={deleteInputText}
                   onChange={(e) => setDeleteInputText(e.target.value)}
                   placeholder="Type DELETE"
-                  className="text-xs bg-white/[0.05] border-white/20 h-8"
+                  className="text-xs bg-surface-default border-border h-8"
                 />
                 <Button
                   size="sm"

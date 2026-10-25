@@ -113,11 +113,11 @@ export function UserBar() {
 
   return (
     <>
-      <div className="relative h-13 bg-surface-sidebar border-t border-white/[0.06] px-2 py-1.5 flex items-center justify-between select-none">
+      <div className="relative h-13 bg-surface-sidebar border-t border-border px-2 py-1.5 flex items-center justify-between select-none">
         {/* User Info & Avatar Button */}
         <div
           onClick={() => setShowStatusPicker((prev) => !prev)}
-          className="flex items-center gap-2 p-1 rounded-lg hover:bg-white/[0.03] transition-colors cursor-pointer min-w-0 max-w-[105px] sm:max-w-[120px]"
+          className="flex items-center gap-2 p-1 rounded-lg hover:bg-surface-default transition-colors cursor-pointer min-w-0 max-w-[105px] sm:max-w-[120px]"
           title="Click to change status"
         >
           <Avatar
@@ -131,7 +131,7 @@ export function UserBar() {
             <div className="text-xs font-medium text-foreground truncate leading-tight">
               {profile?.display_name || 'User'}
             </div>
-            <div className="text-[10px] text-muted-foreground/60 truncate leading-tight flex items-center gap-0.5">
+            <div className="text-xs text-muted-foreground/60 truncate leading-tight flex items-center gap-0.5">
               <span>@{profile?.username || 'user'}</span>
             </div>
           </div>
@@ -145,8 +145,8 @@ export function UserBar() {
             className={cn(
               'p-1.5 rounded-md transition-colors',
               isMuted
-                ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20'
-                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
+                ? 'text-danger bg-danger/10 hover:bg-danger/20'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
             )}
             title={isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
             aria-label="Microphone Toggle"
@@ -160,8 +160,8 @@ export function UserBar() {
             className={cn(
               'p-1.5 rounded-md transition-colors',
               isDeafened
-                ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20'
-                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
+                ? 'text-danger bg-danger/10 hover:bg-danger/20'
+                : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
             )}
             title={isDeafened ? 'Undeafen' : 'Deafen'}
             aria-label="Deafen Toggle"
@@ -172,7 +172,7 @@ export function UserBar() {
           {/* Soundboard */}
           <button
             onClick={() => setShowSoundboard(true)}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors"
             title="Gaming Soundboard"
             aria-label="Soundboard"
           >
@@ -188,14 +188,14 @@ export function UserBar() {
           >
             <Terminal className="w-3.5 h-3.5" />
             {hasErrors && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-danger animate-pulse" />
             )}
           </button>
 
           {/* Settings */}
           <button
             onClick={() => setShowSettings(true)}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
             title="User Settings"
             aria-label="User Settings"
           >
@@ -212,7 +212,7 @@ export function UserBar() {
                 type: 'info',
               });
             }}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
             title="Sign Out"
             aria-label="Sign Out"
           >

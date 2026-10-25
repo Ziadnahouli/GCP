@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 export default function NotFound() {
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 bg-background">
-      <div className="max-w-sm w-full text-center space-y-5 p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90">
+      <div className="max-w-sm w-full text-center space-y-5 p-6 sm:p-8 rounded-2xl bg-surface-panel border border-border shadow-2xl shadow-black/90">
         <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary mx-auto">
           <Gamepad2 className="w-5 h-5" />
         </div>

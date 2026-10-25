@@ -90,12 +90,12 @@ export function ReportModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-md w-full p-6 border border-white/[0.08] bg-[#0c0d14] text-foreground rounded-2xl shadow-2xl"
+        className="max-w-md w-full p-6 border border-border bg-card text-foreground rounded-2xl shadow-2xl"
         onClose={() => onOpenChange(false)}
       >
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+            <div className="w-10 h-10 rounded-xl bg-danger/20 border border-danger/40 flex items-center justify-center text-danger">
               <Flag className="w-5 h-5" />
             </div>
             <div>
@@ -107,7 +107,7 @@ export function ReportModal({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Select Reason
             </label>
             <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -118,19 +118,19 @@ export function ReportModal({
                   className={cn(
                     'p-2.5 rounded-xl border text-left transition cursor-pointer',
                     selectedReason === r.id
-                      ? 'bg-rose-500/15 border-rose-500/40 text-foreground'
-                      : 'bg-white/[0.02] border-white/[0.04] text-muted-foreground hover:bg-white/[0.04]'
+                      ? 'bg-danger/15 border-danger/40 text-foreground'
+                      : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
                   )}
                 >
                   <div className="text-xs font-semibold">{r.label}</div>
-                  <div className="text-[10px] text-muted-foreground/80">{r.desc}</div>
+                  <div className="text-xs text-muted-foreground/80">{r.desc}</div>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Additional Details (Optional)
             </label>
             <textarea
@@ -138,11 +138,11 @@ export function ReportModal({
               value={details}
               onChange={(e) => setDetails(e.target.value)}
               placeholder="Provide extra context to help moderators review..."
-              className="w-full text-xs p-2.5 rounded-xl bg-white/[0.03] border border-white/10 text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:border-rose-500/50"
+              className="w-full text-xs p-2.5 rounded-xl bg-surface-default border border-border text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:border-danger/50"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
             <Button
               variant="ghost"
               size="sm"
@@ -156,7 +156,7 @@ export function ReportModal({
               variant="destructive"
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className="text-xs bg-rose-600 hover:bg-rose-700"
+              className="text-xs bg-danger hover:bg-danger/90"
             >
               {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
               Submit Report

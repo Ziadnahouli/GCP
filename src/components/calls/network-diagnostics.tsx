@@ -520,9 +520,9 @@ export function NetworkDiagnostics({
 
   const getLatencyColor = (ms: number | null) => {
     if (ms === null) return 'text-muted-foreground';
-    if (ms < 50) return 'text-emerald-400';
-    if (ms < 120) return 'text-amber-400';
-    return 'text-rose-400';
+    if (ms < 50) return 'text-success';
+    if (ms < 120) return 'text-warning';
+    return 'text-danger';
   };
 
   const handleCopyFirewallFix = () => {
@@ -604,9 +604,9 @@ export function NetworkDiagnostics({
   };
 
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-[#0c1015]/95 backdrop-blur-2xl p-4 shadow-2xl max-w-md w-full text-foreground select-none animate-in fade-in duration-150 space-y-3.5">
+    <div className="rounded-2xl border border-border bg-card/95 backdrop-blur-2xl p-4 shadow-2xl max-w-md w-full text-foreground select-none animate-in fade-in duration-150 space-y-3.5">
       {/* Top Header */}
-      <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+      <div className="flex items-center justify-between border-b border-border pb-3">
         <div className="flex items-center gap-2">
           <Activity className="w-4 h-4 text-primary animate-pulse" />
           <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
@@ -622,14 +622,14 @@ export function NetworkDiagnostics({
                 ? 'warning'
                 : 'outline'
             }
-            className="text-[10px] uppercase font-mono px-2 py-0.5"
+            className="text-xs uppercase font-mono px-2 py-0.5"
           >
             {currentStats.connectionState}
           </Badge>
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.05] transition-colors"
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-default transition-colors"
               title="Close Diagnostics"
               aria-label="Close Diagnostics"
             >
@@ -640,14 +640,14 @@ export function NetworkDiagnostics({
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-1 p-1 bg-surface-default/70 border border-white/[0.04] rounded-xl text-[11px] font-semibold">
+      <div className="flex items-center gap-1 p-1 bg-surface-default/70 border border-border rounded-xl text-xs font-semibold">
         <button
           onClick={() => setActiveTab('overview')}
           className={cn(
             'flex-1 py-1 px-2 rounded-lg transition-all text-center',
             activeTab === 'overview'
               ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'
+              : 'text-muted-foreground hover:text-foreground hover:bg-surface-default'
           )}
         >
           Overview
@@ -658,7 +658,7 @@ export function NetworkDiagnostics({
             'flex-1 py-1 px-2 rounded-lg transition-all text-center',
             activeTab === 'audio'
               ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'
+              : 'text-muted-foreground hover:text-foreground hover:bg-surface-default'
           )}
         >
           Audio & Mic
@@ -669,7 +669,7 @@ export function NetworkDiagnostics({
             'flex-1 py-1 px-2 rounded-lg transition-all text-center',
             activeTab === 'video'
               ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'
+              : 'text-muted-foreground hover:text-foreground hover:bg-surface-default'
           )}
         >
           Video
@@ -680,12 +680,12 @@ export function NetworkDiagnostics({
             'flex-1 py-1 px-2 rounded-lg transition-all text-center relative',
             activeTab === 'health'
               ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'
+              : 'text-muted-foreground hover:text-foreground hover:bg-surface-default'
           )}
         >
           Health
           {diagnoses.some((d) => d.level === 'critical' || d.level === 'warning') && (
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 absolute top-1 right-1" />
+            <span className="w-1.5 h-1.5 rounded-full bg-warning absolute top-1 right-1" />
           )}
         </button>
         <button
@@ -694,7 +694,7 @@ export function NetworkDiagnostics({
             'flex-1 py-1 px-2 rounded-lg transition-all text-center',
             activeTab === 'report'
               ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'
+              : 'text-muted-foreground hover:text-foreground hover:bg-surface-default'
           )}
         >
           Report
@@ -706,14 +706,14 @@ export function NetworkDiagnostics({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2 text-xs">
             {/* Real WebRTC RTT Latency */}
-            <div className="p-2.5 rounded-xl bg-surface-default border border-white/[0.06]">
-              <div className="text-[10px] text-muted-foreground uppercase font-semibold">
+            <div className="p-2.5 rounded-xl bg-surface-default border border-border">
+              <div className="text-xs text-muted-foreground uppercase font-semibold">
                 Round-Trip Latency (RTT)
               </div>
               <div className={cn('text-base font-black font-mono mt-0.5', getLatencyColor(currentStats.rttMs))}>
                 {currentStats.rttMs !== null ? `${currentStats.rttMs} ms` : '—'}
               </div>
-              <div className="text-[9px] text-muted-foreground/60 mt-0.5">
+              <div className="text-xs text-muted-foreground/60 mt-0.5">
                 {currentStats.rttMs !== null
                   ? currentStats.transportPath === 'relayed_turn'
                     ? 'TURN relay ping'
@@ -723,15 +723,15 @@ export function NetworkDiagnostics({
             </div>
 
             {/* Packet Loss */}
-            <div className="p-2.5 rounded-xl bg-surface-default border border-white/[0.06]">
-              <div className="text-[10px] text-muted-foreground uppercase font-semibold">
+            <div className="p-2.5 rounded-xl bg-surface-default border border-border">
+              <div className="text-xs text-muted-foreground uppercase font-semibold">
                 Packet Loss
               </div>
               <div
                 className={cn(
                   'text-base font-black font-mono mt-0.5',
                   currentStats.packetLossPercent !== null && currentStats.packetLossPercent > 2
-                    ? 'text-rose-400'
+                    ? 'text-danger'
                     : 'text-foreground'
                 )}
               >
@@ -739,29 +739,29 @@ export function NetworkDiagnostics({
                   ? `${currentStats.packetLossPercent.toFixed(1)}%`
                   : '0.0%'}
               </div>
-              <div className="text-[9px] text-muted-foreground/60 mt-0.5">
+              <div className="text-xs text-muted-foreground/60 mt-0.5">
                 {currentStats.packetsLost ? `${currentStats.packetsLost} packets lost` : 'inbound-rtp stats'}
               </div>
             </div>
 
             {/* Jitter */}
-            <div className="p-2.5 rounded-xl bg-surface-default border border-white/[0.06]">
-              <div className="text-[10px] text-muted-foreground uppercase font-semibold">Jitter</div>
+            <div className="p-2.5 rounded-xl bg-surface-default border border-border">
+              <div className="text-xs text-muted-foreground uppercase font-semibold">Jitter</div>
               <div className="text-base font-black font-mono text-foreground mt-0.5">
                 {currentStats.jitterMs !== null ? `${currentStats.jitterMs.toFixed(1)} ms` : '—'}
               </div>
-              <div className="text-[9px] text-muted-foreground/60 mt-0.5">Packet variance buffer</div>
+              <div className="text-xs text-muted-foreground/60 mt-0.5">Packet variance buffer</div>
             </div>
 
             {/* Selected Voice Transport */}
-            <div className="p-2.5 rounded-xl bg-surface-default border border-white/[0.06]">
-              <div className="text-[10px] text-muted-foreground uppercase font-semibold">Transport Path</div>
-              <div className="text-[11px] font-bold text-primary mt-1 truncate">
+            <div className="p-2.5 rounded-xl bg-surface-default border border-border">
+              <div className="text-xs text-muted-foreground uppercase font-semibold">Transport Path</div>
+              <div className="text-xs font-bold text-primary mt-1 truncate">
                 {currentStats.transportPath === 'relayed_turn'
                   ? 'Relayed TURN'
                   : 'Direct WebRTC P2P'}
               </div>
-              <div className="text-[9px] text-muted-foreground/60 mt-0.5 truncate">
+              <div className="text-xs text-muted-foreground/60 mt-0.5 truncate">
                 {currentStats.transportPath === 'relayed_turn'
                   ? 'Cloud Relay fallback'
                   : 'Low-latency host pair'}
@@ -770,16 +770,16 @@ export function NetworkDiagnostics({
           </div>
 
           {/* Inbound & Outbound Bitrate Flow */}
-          <div className="p-2.5 rounded-xl bg-surface-default border border-white/[0.06] text-xs space-y-1.5">
-            <div className="flex items-center justify-between text-[11px]">
+          <div className="p-2.5 rounded-xl bg-surface-default border border-border text-xs space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-1.5 text-muted-foreground">
-                <ArrowDown className="w-3.5 h-3.5 text-emerald-400" /> Inbound Voice Bitrate
+                <ArrowDown className="w-3.5 h-3.5 text-success" /> Inbound Voice Bitrate
               </span>
               <span className="font-mono font-semibold text-foreground">
                 {currentStats.incomingBitrateKbps !== null ? `${currentStats.incomingBitrateKbps} kbps` : '—'}
               </span>
             </div>
-            <div className="flex items-center justify-between text-[11px]">
+            <div className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-1.5 text-muted-foreground">
                 <ArrowUp className="w-3.5 h-3.5 text-primary" /> Outbound Voice Bitrate
               </span>
@@ -790,14 +790,14 @@ export function NetworkDiagnostics({
           </div>
 
           {/* Reconnection & Reliability Counter */}
-          <div className="p-2.5 rounded-xl bg-surface-default/60 border border-white/[0.04] text-[11px] flex items-center justify-between">
+          <div className="p-2.5 rounded-xl bg-surface-default/60 border border-border text-xs flex items-center justify-between">
             <div className="text-muted-foreground">Reconnection Reliability:</div>
             <div className="flex items-center gap-2 font-mono">
               <span className="text-foreground">
                 {currentStats.reconnectAttempts ?? 0} attempt{currentStats.reconnectAttempts === 1 ? '' : 's'}
               </span>
               <span className="text-muted-foreground/40">•</span>
-              <span className={(currentStats.reconnectFailures ?? 0) > 0 ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
+              <span className={(currentStats.reconnectFailures ?? 0) > 0 ? 'text-danger font-bold' : 'text-success'}>
                 {currentStats.reconnectFailures ?? 0} failure{currentStats.reconnectFailures === 1 ? '' : 's'}
               </span>
             </div>
@@ -809,13 +809,13 @@ export function NetworkDiagnostics({
       {activeTab === 'audio' && (
         <div className="space-y-3 text-xs">
           {/* Live Microphone Input VU Meter */}
-          <div className="p-3 rounded-xl bg-surface-default border border-white/[0.06] space-y-2">
-            <div className="flex items-center justify-between text-[11px]">
+          <div className="p-3 rounded-xl bg-surface-default border border-border space-y-2">
+            <div className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-1.5 font-semibold text-foreground">
                 {currentStats.isMicMuted ? (
-                  <MicOff className="w-3.5 h-3.5 text-rose-400" />
+                  <MicOff className="w-3.5 h-3.5 text-danger" />
                 ) : (
-                  <Mic className="w-3.5 h-3.5 text-emerald-400" />
+                  <Mic className="w-3.5 h-3.5 text-success" />
                 )}
                 <span>Microphone Input Level</span>
               </span>
@@ -825,22 +825,22 @@ export function NetworkDiagnostics({
             </div>
 
             {/* Reactive VU Meter Bar */}
-            <div className="w-full h-3 bg-white/[0.05] rounded-full overflow-hidden p-0.5 border border-white/[0.06]">
+            <div className="w-full h-3 bg-surface-default rounded-full overflow-hidden p-0.5 border border-border">
               <div
                 className={cn(
                   'h-full rounded-full transition-all duration-75',
                   currentStats.isMicMuted
                     ? 'w-0 bg-transparent'
                     : liveMicLevel > 80
-                    ? 'bg-rose-500'
+                    ? 'bg-danger'
                     : liveMicLevel > 50
-                    ? 'bg-amber-400'
-                    : 'bg-emerald-400'
+                    ? 'bg-warning'
+                    : 'bg-success'
                 )}
                 style={{ width: currentStats.isMicMuted ? '0%' : `${liveMicLevel}%` }}
               />
             </div>
-            <div className="flex items-center justify-between text-[9px] text-muted-foreground/60 font-mono">
+            <div className="flex items-center justify-between text-xs text-muted-foreground/60 font-mono">
               <span>0% (Silent)</span>
               <span>50% (Normal Speech)</span>
               <span>100% (Peak Clip)</span>
@@ -848,14 +848,14 @@ export function NetworkDiagnostics({
           </div>
 
           {/* Audio Hardware & Settings */}
-          <div className="p-3 rounded-xl bg-surface-default border border-white/[0.06] space-y-2">
-            <div className="text-[10px] text-muted-foreground uppercase font-semibold">
+          <div className="p-3 rounded-xl bg-surface-default border border-border space-y-2">
+            <div className="text-xs text-muted-foreground uppercase font-semibold">
               Input Hardware & Sampling
             </div>
-            <div className="text-[11px] font-medium text-foreground truncate" title={currentStats.audioDevice?.label}>
+            <div className="text-xs font-medium text-foreground truncate" title={currentStats.audioDevice?.label}>
               {currentStats.audioDevice?.label || 'Default Microphone'}
             </div>
-            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/[0.04] text-[10px]">
+            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border text-xs">
               <div>
                 <span className="text-muted-foreground">Sample Rate: </span>
                 <span className="font-mono font-semibold text-foreground">
@@ -872,32 +872,32 @@ export function NetworkDiagnostics({
           </div>
 
           {/* DSP Voice Processing Status */}
-          <div className="p-3 rounded-xl bg-surface-default border border-white/[0.06] space-y-2">
-            <div className="text-[10px] text-muted-foreground uppercase font-semibold">
+          <div className="p-3 rounded-xl bg-surface-default border border-border space-y-2">
+            <div className="text-xs text-muted-foreground uppercase font-semibold">
               Voice Processing & AI Filters
             </div>
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="flex items-center justify-between p-1.5 rounded-lg bg-surface-default">
                 <span className="text-muted-foreground">Speech Enhancement</span>
-                <Badge variant={currentStats.isNoiseSuppressionEnabled ? 'success' : 'outline'} className="text-[9px] px-1.5 py-0">
+                <Badge variant={currentStats.isNoiseSuppressionEnabled ? 'success' : 'outline'} className="text-xs px-1.5 py-0">
                   {currentStats.isNoiseSuppressionEnabled ? 'RNNoise WASM' : 'Off'}
                 </Badge>
               </div>
-              <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
+              <div className="flex items-center justify-between p-1.5 rounded-lg bg-surface-default">
                 <span className="text-muted-foreground">Echo Canceller</span>
-                <Badge variant={currentStats.audioDevice?.echoCancellation ? 'success' : 'outline'} className="text-[9px] px-1.5 py-0">
+                <Badge variant={currentStats.audioDevice?.echoCancellation ? 'success' : 'outline'} className="text-xs px-1.5 py-0">
                   {currentStats.audioDevice?.echoCancellation ? 'On' : 'Off'}
                 </Badge>
               </div>
-              <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
+              <div className="flex items-center justify-between p-1.5 rounded-lg bg-surface-default">
                 <span className="text-muted-foreground">Auto Gain Control</span>
-                <Badge variant={currentStats.audioDevice?.autoGainControl ? 'success' : 'outline'} className="text-[9px] px-1.5 py-0">
+                <Badge variant={currentStats.audioDevice?.autoGainControl ? 'success' : 'outline'} className="text-xs px-1.5 py-0">
                   {currentStats.audioDevice?.autoGainControl ? 'On' : 'Off'}
                 </Badge>
               </div>
-              <div className="flex items-center justify-between p-1.5 rounded-lg bg-white/[0.02]">
+              <div className="flex items-center justify-between p-1.5 rounded-lg bg-surface-default">
                 <span className="text-muted-foreground">Algorithmic Latency</span>
-                <Badge variant={currentStats.isNoiseSuppressionEnabled ? 'success' : 'outline'} className="text-[9px] px-1.5 py-0">
+                <Badge variant={currentStats.isNoiseSuppressionEnabled ? 'success' : 'outline'} className="text-xs px-1.5 py-0">
                   {currentStats.isNoiseSuppressionEnabled ? '10 ms (480 smp)' : '0 ms'}
                 </Badge>
               </div>
@@ -910,7 +910,7 @@ export function NetworkDiagnostics({
       {activeTab === 'video' && (
         <div className="space-y-3 text-xs">
           {/* Camera Publishing Status */}
-          <div className="p-3 rounded-xl bg-surface-default border border-white/[0.06] space-y-2">
+          <div className="p-3 rounded-xl bg-surface-default border border-border space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Video className="w-4 h-4 text-primary" />
@@ -918,13 +918,13 @@ export function NetworkDiagnostics({
               </div>
               <Badge
                 variant={currentStats.videoPublishing?.isPublishingCamera ? 'success' : 'outline'}
-                className="text-[9px] uppercase px-1.5 py-0"
+                className="text-xs uppercase px-1.5 py-0"
               >
                 {currentStats.videoPublishing?.isPublishingCamera ? 'Publishing' : 'Muted'}
               </Badge>
             </div>
             {currentStats.videoPublishing?.isPublishingCamera ? (
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/[0.04] text-[11px] font-mono">
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border text-xs font-mono">
                 <div>
                   <span className="text-muted-foreground">Resolution: </span>
                   <span className="text-foreground font-semibold">
@@ -939,14 +939,14 @@ export function NetworkDiagnostics({
                 </div>
               </div>
             ) : (
-              <p className="text-[10px] text-muted-foreground pt-1">
+              <p className="text-xs text-muted-foreground pt-1">
                 Camera feed is not transmitting. Click the camera icon in call controls to enable.
               </p>
             )}
           </div>
 
           {/* Screen Share Publishing Status */}
-          <div className="p-3 rounded-xl bg-surface-default border border-white/[0.06] space-y-2">
+          <div className="p-3 rounded-xl bg-surface-default border border-border space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Monitor className="w-4 h-4 text-primary" />
@@ -954,13 +954,13 @@ export function NetworkDiagnostics({
               </div>
               <Badge
                 variant={currentStats.videoPublishing?.isPublishingScreen ? 'success' : 'outline'}
-                className="text-[9px] uppercase px-1.5 py-0"
+                className="text-xs uppercase px-1.5 py-0"
               >
                 {currentStats.videoPublishing?.isPublishingScreen ? 'Sharing' : 'Inactive'}
               </Badge>
             </div>
             {currentStats.videoPublishing?.isPublishingScreen ? (
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/[0.04] text-[11px] font-mono">
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border text-xs font-mono">
                 <div>
                   <span className="text-muted-foreground">Resolution: </span>
                   <span className="text-foreground font-semibold">
@@ -975,7 +975,7 @@ export function NetworkDiagnostics({
                 </div>
               </div>
             ) : (
-              <p className="text-[10px] text-muted-foreground pt-1">
+              <p className="text-xs text-muted-foreground pt-1">
                 No active screen share. Click the share screen button to broadcast gameplay or apps.
               </p>
             )}
@@ -997,29 +997,29 @@ export function NetworkDiagnostics({
                 className={cn(
                   'p-3 rounded-xl border text-xs space-y-1 transition-all',
                   isHealthy
-                    ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                    ? 'bg-success/10 border-success/25 text-success'
                     : isCrit
-                    ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                    ? 'bg-danger/10 border-danger/30 text-danger'
                     : isWarn
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                    : 'bg-surface-default border-white/[0.06] text-foreground'
+                    ? 'bg-warning/10 border-warning/30 text-warning'
+                    : 'bg-surface-default border-border text-foreground'
                 )}
               >
                 <div className="flex items-center gap-1.5 font-bold">
                   {isHealthy ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <CheckCircle2 className="w-3.5 h-3.5 text-success shrink-0" />
                   ) : isCrit ? (
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0" />
                   ) : isWarn ? (
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0" />
                   ) : (
                     <Info className="w-3.5 h-3.5 text-primary shrink-0" />
                   )}
                   <span className="text-xs">{diag.title}</span>
                 </div>
-                <p className="text-[11px] leading-relaxed opacity-90">{diag.description}</p>
+                <p className="text-xs leading-relaxed opacity-90">{diag.description}</p>
                 {diag.suggestion && (
-                  <div className="mt-1.5 pt-1.5 border-t border-white/[0.08] text-[10px] font-medium opacity-95">
+                  <div className="mt-1.5 pt-1.5 border-t border-border text-xs font-medium opacity-95">
                     <span className="uppercase tracking-wider font-bold">Recovery: </span>
                     {diag.suggestion}
                   </div>
@@ -1033,12 +1033,12 @@ export function NetworkDiagnostics({
       {/* Tab 5: Privacy-Sanitized Diagnostic Report */}
       {activeTab === 'report' && (
         <div className="space-y-2.5 text-xs">
-          <div className="p-2.5 rounded-xl bg-surface-default border border-white/[0.06] space-y-1.5">
-            <div className="flex items-center gap-1.5 text-emerald-400 text-[11px] font-semibold">
+          <div className="p-2.5 rounded-xl bg-surface-default border border-border space-y-1.5">
+            <div className="flex items-center gap-1.5 text-success text-xs font-semibold">
               <Shield className="w-3.5 h-3.5" />
               <span>Sanitized Telemetry Report</span>
             </div>
-            <p className="text-[10px] text-muted-foreground leading-relaxed">
+            <p className="text-xs text-muted-foreground leading-relaxed">
               Export diagnostic logs safely. Session tokens, passwords, private message content, and sensitive IP octets are excluded by default.
             </p>
           </div>
@@ -1053,7 +1053,7 @@ export function NetworkDiagnostics({
             </button>
             <button
               onClick={handleDownloadSanitizedJson}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-surface-default hover:bg-surface-hover border border-white/[0.08] text-foreground text-xs font-semibold transition-all"
+              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-surface-default hover:bg-surface-hover border border-border text-foreground text-xs font-semibold transition-all"
               title="Download JSON format"
             >
               <Download className="w-3.5 h-3.5" />
@@ -1064,7 +1064,7 @@ export function NetworkDiagnostics({
       )}
 
       {/* ZeroTier LAN Peer Engine Sub-strip */}
-      <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20 space-y-1.5 text-[11px]">
+      <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20 space-y-1.5 text-xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Radio className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -1072,13 +1072,13 @@ export function NetworkDiagnostics({
           </div>
           <Badge
             variant={localZt || currentStats.isZeroTierActive ? 'success' : 'outline'}
-            className="text-[9px] uppercase px-1.5 py-0"
+            className="text-xs uppercase px-1.5 py-0"
           >
             {localZt || currentStats.isZeroTierActive ? 'Active' : 'Unconfigured'}
           </Badge>
         </div>
         {(localZt || peerZt) && (
-          <div className="grid grid-cols-2 gap-1 text-[10px] font-mono text-muted-foreground pt-0.5">
+          <div className="grid grid-cols-2 gap-1 text-xs font-mono text-muted-foreground pt-0.5">
             <div>
               Local IP: <span className="text-foreground font-semibold">{sanitizeIpAddress(localZt)}</span>
             </div>
@@ -1092,21 +1092,21 @@ export function NetworkDiagnostics({
       {/* Windows Firewall Fix Script Button */}
       <button
         onClick={handleCopyFirewallFix}
-        className="w-full flex items-center justify-between py-1.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-200 text-[11px] font-medium transition-all"
+        className="w-full flex items-center justify-between py-1.5 px-3 rounded-xl bg-warning/10 hover:bg-warning/20 border border-warning/30 text-warning text-xs font-medium transition-all"
         title="If calls get stuck connecting on ZeroTier, copy and run this in PowerShell as Admin"
       >
         <span className="flex items-center gap-1.5">
-          <Terminal className="w-3.5 h-3.5 text-amber-400" />
+          <Terminal className="w-3.5 h-3.5 text-warning" />
           <span>Copy Windows Firewall Fix</span>
         </span>
-        {copiedScript ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
+        {copiedScript ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5 text-warning" />}
       </button>
 
       {/* Reconnection ICE Restart Button */}
       {onRestartConnection && (
         <button
           onClick={onRestartConnection}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-surface-default hover:bg-surface-hover border border-white/[0.08] text-xs font-semibold text-foreground transition-all shadow-sm"
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-surface-default hover:bg-surface-hover border border-border text-xs font-semibold text-foreground transition-all shadow-sm"
           title="Force WebRTC ICE restart and re-route connection"
         >
           <RefreshCw className="w-3.5 h-3.5 text-primary" />

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Lock, ArrowRight, Loader2, KeyRound } from 'lucide-react';
+import { Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { resetPasswordSchema, ResetPasswordFormData } from '@/lib/validation/auth';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,8 @@ export function ResetPasswordForm() {
     password: '',
     confirmPassword: '',
   });
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
   const [errors, setErrors] = React.useState<Partial<Record<keyof ResetPasswordFormData, string>>>({});
   const [loading, setLoading] = React.useState(false);
   const [generalError, setGeneralError] = React.useState<string | null>(null);
@@ -124,13 +126,13 @@ export function ResetPasswordForm() {
           : updateErr.message;
         setGeneralError(errorMsg);
         toast({
-          title: 'Update Failed',
+          title: 'Update failed',
           description: errorMsg,
           type: 'error',
         });
       } else {
         toast({
-          title: 'Password Updated',
+          title: 'Password updated',
           description: 'Your password has been changed. Please sign in.',
           type: 'success',
         });
@@ -144,88 +146,106 @@ export function ResetPasswordForm() {
   };
 
   return (
-    <div className="w-full max-w-sm mx-auto p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90">
+    <div className="w-full max-w-[400px] mx-auto p-6 sm:p-8 rounded-dialog bg-card border border-border shadow-dialog text-left">
+      {/* Header & Wordmark */}
       <div className="flex flex-col items-center text-center mb-6">
-        <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary mb-3">
-          <KeyRound className="w-5 h-5" />
+        <div className="h-10 w-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg tracking-wider mb-3 select-none shadow-subtle">
+          N
         </div>
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">Set New Password</h1>
-        <p className="text-xs text-muted-foreground/70 mt-1">
-          Enter and confirm your new secure gaming credentials
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Set new password</h1>
+        <p className="text-xs text-muted-foreground mt-1">
+          Enter and confirm your new secure password
         </p>
       </div>
 
       {generalError && (
-        <div className="mb-5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium">
+        <div className="mb-4 p-3 rounded-card bg-danger/10 border border-danger/25 text-danger text-xs font-medium leading-relaxed">
           {generalError}
         </div>
       )}
 
       {sessionReady === false && !generalError && (
-        <div className="mb-5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-medium">
-          Note: Please ensure you open this page by clicking the verification link received in your email.
+        <div className="mb-4 p-3 rounded-card bg-warning/10 border border-warning/25 text-warning text-xs font-medium leading-relaxed">
+          Note: Please ensure you opened this page by clicking the recovery link sent to your email.
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="reset-password" className="block text-xs font-medium text-muted-foreground/80 mb-1.5">
-            New Password
+          <label htmlFor="reset-password" className="block text-xs font-medium text-foreground mb-1.5">
+            New password
           </label>
           <Input
             id="reset-password"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             placeholder="••••••••••••"
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             icon={<Lock className="w-4 h-4" />}
             disabled={loading}
-            className="bg-white/[0.02] border-white/[0.08] text-xs"
+            errorText={errors.password}
+            helperText="Minimum 8 characters with numbers and uppercase"
+            autoComplete="new-password"
+            suffixSlot={
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="text-muted-foreground hover:text-foreground p-1 transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            }
           />
-          {errors.password && <p className="text-xs text-rose-400 mt-1">{errors.password}</p>}
         </div>
 
         <div>
-          <label htmlFor="reset-confirmPassword" className="block text-xs font-medium text-muted-foreground/80 mb-1.5">
-            Confirm New Password
+          <label htmlFor="reset-confirmPassword" className="block text-xs font-medium text-foreground mb-1.5">
+            Confirm new password
           </label>
           <Input
             id="reset-confirmPassword"
-            type="password"
+            type={showConfirmPassword ? 'text' : 'password'}
             placeholder="••••••••••••"
             value={formData.confirmPassword}
             onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
             icon={<Lock className="w-4 h-4" />}
             disabled={loading}
-            className="bg-white/[0.02] border-white/[0.08] text-xs"
+            errorText={errors.confirmPassword}
+            autoComplete="new-password"
+            suffixSlot={
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="text-muted-foreground hover:text-foreground p-1 transition-colors"
+                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+              >
+                {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            }
           />
-          {errors.confirmPassword && (
-            <p className="text-xs text-rose-400 mt-1">{errors.confirmPassword}</p>
-          )}
         </div>
 
-        <Button type="submit" className="w-full mt-2 font-medium text-xs h-10" size="lg" disabled={loading}>
-          {loading ? (
-            <span className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Updating...
-            </span>
-          ) : (
-            <span className="flex items-center gap-2">
-              Save New Password <ArrowRight className="w-4 h-4" />
-            </span>
-          )}
+        <Button
+          type="submit"
+          className="w-full mt-2 font-medium text-xs h-9"
+          size="md"
+          isLoading={loading}
+          disabled={loading}
+        >
+          Save new password <ArrowRight className="w-4 h-4 ml-1.5" />
         </Button>
       </form>
 
-      <div className="mt-6 text-center">
+      <div className="mt-6 pt-4 border-t border-border text-center">
         <Link
           href="/login"
-          className="text-xs text-muted-foreground/70 hover:text-foreground font-medium transition-colors"
+          className="text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
         >
-          Cancel and Return to Sign In
+          Return to sign in
         </Link>
       </div>
     </div>
   );
 }
+

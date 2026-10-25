@@ -341,9 +341,9 @@ export function ServerSettingsModal({
       />
 
       {/* Main Modal Shell */}
-      <div className="relative w-full max-w-4xl h-[640px] max-h-[92vh] rounded-2xl border border-white/[0.08] bg-surface-default shadow-modal overflow-hidden flex flex-col md:flex-row z-10">
+      <div className="relative w-full max-w-4xl h-[640px] max-h-[92vh] rounded-2xl border border-border bg-surface-default shadow-modal overflow-hidden flex flex-col md:flex-row z-10">
         {/* Left Sidebar Navigation */}
-        <aside className="w-full md:w-56 bg-surface-sidebar border-b md:border-b-0 md:border-r border-white/[0.06] p-3 md:p-4 flex flex-row md:flex-col justify-between shrink-0 overflow-x-auto no-scrollbar">
+        <aside className="w-full md:w-56 bg-surface-sidebar border-b md:border-b-0 md:border-r border-border p-3 md:p-4 flex flex-row md:flex-col justify-between shrink-0 overflow-x-auto no-scrollbar">
           <div className="space-y-1 w-full flex flex-row md:flex-col gap-1 md:gap-0">
             <div className="hidden md:flex items-center gap-2 px-2 py-1.5 mb-2">
               <Settings className="w-4 h-4 text-primary" />
@@ -358,7 +358,7 @@ export function ServerSettingsModal({
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
                 activeTab === 'overview'
                   ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
               )}
             >
               <Settings className="w-3.5 h-3.5" />
@@ -371,12 +371,12 @@ export function ServerSettingsModal({
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
                 activeTab === 'channels'
                   ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
               )}
             >
               <Hash className="w-3.5 h-3.5" />
               <span>Channels</span>
-              <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 border-white/[0.1]">
+              <Badge variant="outline" className="ml-auto text-xs px-1 py-0 border-border">
                 {server.channels?.length || 0}
               </Badge>
             </button>
@@ -387,13 +387,13 @@ export function ServerSettingsModal({
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
                 activeTab === 'roles'
                   ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
               )}
             >
               <Shield className="w-3.5 h-3.5 text-primary" />
               <span>Roles & Perms</span>
               {(server.roles?.length || 0) > 0 && (
-                <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 border-primary/30 text-primary">
+                <Badge variant="outline" className="ml-auto text-xs px-1 py-0 border-primary/30 text-primary">
                   {server.roles?.length}
                 </Badge>
               )}
@@ -405,12 +405,12 @@ export function ServerSettingsModal({
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
                 activeTab === 'members'
                   ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
               )}
             >
-              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <Crown className="w-3.5 h-3.5 text-warning" />
               <span>Members</span>
-              <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 border-white/[0.1]">
+              <Badge variant="outline" className="ml-auto text-xs px-1 py-0 border-border">
                 {(server.members?.length || 0) + 1}
               </Badge>
             </button>
@@ -421,10 +421,10 @@ export function ServerSettingsModal({
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
                 activeTab === 'invites'
                   ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
               )}
             >
-              <Link2 className="w-3.5 h-3.5 text-sky-400" />
+              <Link2 className="w-3.5 h-3.5 text-primary" />
               <span>Invites & Access</span>
             </button>
 
@@ -434,10 +434,10 @@ export function ServerSettingsModal({
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
                 activeTab === 'bans'
                   ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
               )}
             >
-              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+              <ShieldAlert className="w-3.5 h-3.5 text-danger" />
               <span>Bans & Restrictions</span>
             </button>
 
@@ -447,10 +447,10 @@ export function ServerSettingsModal({
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
                 activeTab === 'audit'
                   ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
               )}
             >
-              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+              <FileText className="w-3.5 h-3.5 text-success" />
               <span>Audit Logs</span>
             </button>
 
@@ -460,15 +460,15 @@ export function ServerSettingsModal({
                 'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
                 activeTab === 'reports'
                   ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
               )}
             >
               <div className="flex items-center gap-2">
-                <Flag className="w-3.5 h-3.5 text-amber-400" />
+                <Flag className="w-3.5 h-3.5 text-warning" />
                 <span>Reports & Flags</span>
               </div>
               {reportsList.filter((r) => r.status === 'pending').length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-black">
+                <span className="px-1.5 py-0.2 rounded-full text-xs font-bold bg-warning text-black">
                   {reportsList.filter((r) => r.status === 'pending').length}
                 </span>
               )}
@@ -479,17 +479,17 @@ export function ServerSettingsModal({
               className={cn(
                 'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
                 activeTab === 'danger'
-                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                  : 'text-muted-foreground hover:bg-rose-500/10 hover:text-rose-400'
+                  ? 'bg-danger/20 text-danger border border-danger/30'
+                  : 'text-muted-foreground hover:bg-danger/10 hover:text-danger'
               )}
             >
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+              <AlertTriangle className="w-3.5 h-3.5 text-danger" />
               <span>Danger Zone</span>
             </button>
           </div>
 
-          <div className="hidden md:block pt-3 border-t border-white/[0.06]">
-            <div className="text-[10px] text-muted-foreground/60 font-mono truncate">
+          <div className="hidden md:block pt-3 border-t border-border">
+            <div className="text-xs text-muted-foreground/60 font-mono truncate">
               ID: {server.id.slice(0, 8)}...
             </div>
           </div>
@@ -498,7 +498,7 @@ export function ServerSettingsModal({
         {/* Right Content View */}
         <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-surface-default overflow-hidden relative">
           {/* Top Title Bar with Close Button */}
-          <div className="h-14 border-b border-white/[0.06] px-6 flex items-center justify-between shrink-0">
+          <div className="h-14 border-b border-border px-6 flex items-center justify-between shrink-0">
             <div>
               <h2 className="text-sm font-bold text-foreground">
                 {activeTab === 'overview' && 'Server Overview'}
@@ -511,14 +511,14 @@ export function ServerSettingsModal({
                 {activeTab === 'reports' && 'Member & Content Reports'}
                 {activeTab === 'danger' && 'Danger Zone'}
               </h2>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {server.name} — Customized headquarters for gaming comms.
               </p>
             </div>
 
             <button
               onClick={() => onOpenChange(false)}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
               title="Close settings"
             >
               <X className="w-4 h-4" />
@@ -538,7 +538,7 @@ export function ServerSettingsModal({
                     type="text"
                     value={serverName}
                     onChange={(e) => setServerName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-white/[0.08] bg-surface-panel text-foreground text-xs focus:outline-none focus:border-primary/50"
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface-panel text-foreground text-xs focus:outline-none focus:border-primary/50"
                   />
                 </div>
 
@@ -551,7 +551,7 @@ export function ServerSettingsModal({
                     value={serverDesc}
                     onChange={(e) => setServerDesc(e.target.value)}
                     placeholder="Tell your squad what this headquarters is for..."
-                    className="w-full px-3 py-2 rounded-xl border border-white/[0.08] bg-surface-panel text-foreground text-xs focus:outline-none focus:border-primary/50 resize-none font-normal"
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface-panel text-foreground text-xs focus:outline-none focus:border-primary/50 resize-none font-normal"
                   />
                 </div>
 
@@ -564,7 +564,7 @@ export function ServerSettingsModal({
                       type="text"
                       readOnly
                       value={server.id}
-                      className="flex-1 px-3 py-2 rounded-xl border border-white/[0.08] bg-surface-panel/50 text-muted-foreground text-xs font-mono select-all"
+                      className="flex-1 px-3 py-2 rounded-xl border border-border bg-surface-panel/50 text-muted-foreground text-xs font-mono select-all"
                     />
                     <Button
                       variant="outline"
@@ -626,7 +626,7 @@ export function ServerSettingsModal({
                         onClick={() => setNewChanType('text')}
                         className={cn(
                           'flex-1 p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors',
-                          newChanType === 'text' ? 'border-primary bg-primary/10 text-primary' : 'border-white/[0.08] text-muted-foreground'
+                          newChanType === 'text' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'
                         )}
                       >
                         <Hash className="w-3.5 h-3.5" /> Text
@@ -636,7 +636,7 @@ export function ServerSettingsModal({
                         onClick={() => setNewChanType('voice')}
                         className={cn(
                           'flex-1 p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors',
-                          newChanType === 'voice' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-white/[0.08] text-muted-foreground'
+                          newChanType === 'voice' ? 'border-success bg-success/10 text-success' : 'border-border text-muted-foreground'
                         )}
                       >
                         <Volume2 className="w-3.5 h-3.5" /> Voice
@@ -649,7 +649,7 @@ export function ServerSettingsModal({
                         value={newChanName}
                         onChange={(e) => setNewChanName(e.target.value)}
                         placeholder={newChanType === 'text' ? 'channel-name' : 'Voice Lounge Name'}
-                        className="flex-1 px-3 py-2 rounded-lg border border-white/[0.08] bg-surface-panel text-xs text-foreground focus:outline-none focus:border-primary/50"
+                        className="flex-1 px-3 py-2 rounded-lg border border-border bg-surface-panel text-xs text-foreground focus:outline-none focus:border-primary/50"
                       />
                       <Button size="sm" onClick={handleCreateChannelSubmit} disabled={!newChanName.trim()} className="text-xs">
                         Create
@@ -666,7 +666,7 @@ export function ServerSettingsModal({
                     return (
                       <div
                         key={chan.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-white/[0.06] bg-surface-panel/40 hover:bg-surface-panel transition-colors"
+                        className="flex items-center justify-between p-3 rounded-xl border border-border bg-surface-panel/40 hover:bg-surface-panel transition-colors"
                       >
                         {isEditing ? (
                           <div className="flex-1 flex items-center gap-2 pr-3">
@@ -674,14 +674,14 @@ export function ServerSettingsModal({
                               type="text"
                               value={editChannelName}
                               onChange={(e) => setEditChannelName(e.target.value)}
-                              className="px-2.5 py-1 rounded-lg border border-white/[0.1] bg-surface-panel text-xs text-foreground font-semibold"
+                              className="px-2.5 py-1 rounded-lg border border-border bg-surface-panel text-xs text-foreground font-semibold"
                             />
                             <input
                               type="text"
                               value={editChannelTopic}
                               onChange={(e) => setEditChannelTopic(e.target.value)}
                               placeholder="Channel topic (optional)"
-                              className="flex-1 px-2.5 py-1 rounded-lg border border-white/[0.1] bg-surface-panel text-xs text-muted-foreground"
+                              className="flex-1 px-2.5 py-1 rounded-lg border border-border bg-surface-panel text-xs text-muted-foreground"
                             />
                             <Button size="sm" onClick={() => handleSaveChannelEdit(chan.id)} className="h-7 text-xs px-2.5">
                               Save
@@ -693,7 +693,7 @@ export function ServerSettingsModal({
                         ) : (
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             {chan.type === 'voice' ? (
-                              <Volume2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <Volume2 className="w-4 h-4 text-success shrink-0" />
                             ) : (
                               <Hash className="w-4 h-4 text-primary shrink-0" />
                             )}
@@ -702,12 +702,12 @@ export function ServerSettingsModal({
                                 {chan.name}
                               </span>
                               {chan.topic && (
-                                <span className="text-[10px] text-muted-foreground truncate block">
+                                <span className="text-xs text-muted-foreground truncate block">
                                   {chan.topic}
                                 </span>
                               )}
                             </div>
-                            <Badge variant="outline" className="text-[9px] uppercase font-mono px-1.5 py-0 border-white/[0.08] text-muted-foreground">
+                            <Badge variant="outline" className="text-xs uppercase font-mono px-1.5 py-0 border-border text-muted-foreground">
                               {chan.type}
                             </Badge>
                           </div>
@@ -721,7 +721,7 @@ export function ServerSettingsModal({
                                 setEditChannelName(chan.name);
                                 setEditChannelTopic(chan.topic || '');
                               }}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
                               title="Edit Channel"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
@@ -735,7 +735,7 @@ export function ServerSettingsModal({
                                     toast({ title: 'Channel Deleted', description: `#${chan.name} was removed.`, type: 'info' });
                                   }
                                 }}
-                                className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
                                 title="Delete Channel"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -756,7 +756,7 @@ export function ServerSettingsModal({
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-xs font-bold text-foreground">Role Permissions & Custom Roles</h3>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       Configure permissions for every role or create custom clan titles with specific privileges.
                     </p>
                   </div>
@@ -785,7 +785,7 @@ export function ServerSettingsModal({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="text-[11px] font-medium text-foreground block mb-1">
+                        <label className="text-xs font-medium text-foreground block mb-1">
                           Role Name
                         </label>
                         <input
@@ -793,12 +793,12 @@ export function ServerSettingsModal({
                           value={newRoleName}
                           onChange={(e) => setNewRoleName(e.target.value)}
                           placeholder="e.g. VIP Squad, Scrim Captain"
-                          className="w-full px-3 py-2 rounded-lg border border-white/[0.08] bg-surface-panel text-xs text-foreground focus:outline-none focus:border-primary/50"
+                          className="w-full px-3 py-2 rounded-lg border border-border bg-surface-panel text-xs text-foreground focus:outline-none focus:border-primary/50"
                         />
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-medium text-foreground block mb-1">
+                        <label className="text-xs font-medium text-foreground block mb-1">
                           Role Color
                         </label>
                         <div className="flex items-center gap-1.5">
@@ -820,10 +820,10 @@ export function ServerSettingsModal({
 
                     {/* Permissions Selector for New Role */}
                     <div>
-                      <label className="text-[11px] font-medium text-foreground block mb-1.5">
+                      <label className="text-xs font-medium text-foreground block mb-1.5">
                         Role Permissions ({newRolePermissions.length} selected)
                       </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1 bg-surface-panel/40 rounded-xl border border-white/[0.06]">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1 bg-surface-panel/40 rounded-xl border border-border">
                         {ALL_SERVER_PERMISSIONS.map((perm) => {
                           const isChecked = newRolePermissions.includes(perm.id);
                           return (
@@ -840,18 +840,18 @@ export function ServerSettingsModal({
                                 'p-2 rounded-lg border text-xs cursor-pointer transition-colors flex items-start gap-2',
                                 isChecked
                                   ? 'border-primary/50 bg-primary/10 text-foreground'
-                                  : 'border-white/[0.04] bg-white/[0.01] text-muted-foreground hover:bg-white/[0.03]'
+                                  : 'border-border bg-surface-default text-muted-foreground hover:bg-surface-default'
                               )}
                             >
                               <div className={cn(
                                 'w-4 h-4 rounded border flex items-center justify-center shrink-0 mt-0.5',
-                                isChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-white/[0.2]'
+                                isChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-border'
                               )}>
                                 {isChecked && <Check className="w-3 h-3" />}
                               </div>
                               <div className="min-w-0">
                                 <div className="font-semibold text-xs leading-none">{perm.label}</div>
-                                <div className="text-[10px] text-muted-foreground/70 leading-snug mt-0.5 truncate">{perm.description}</div>
+                                <div className="text-xs text-muted-foreground/70 leading-snug mt-0.5 truncate">{perm.description}</div>
                               </div>
                             </div>
                           );
@@ -881,14 +881,14 @@ export function ServerSettingsModal({
                         className={cn(
                           'px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-colors shrink-0',
                           isSelected
-                            ? 'bg-white/[0.08] text-foreground border-primary/50 shadow-subtle'
-                            : 'bg-surface-panel/40 border-white/[0.06] text-muted-foreground hover:text-foreground'
+                            ? 'bg-surface-hover text-foreground border-primary/50 shadow-subtle'
+                            : 'bg-surface-panel/40 border-border text-muted-foreground hover:text-foreground'
                         )}
                       >
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
                         <span>{r.name}</span>
                         {r.is_custom && (
-                          <Badge variant="subtle" className="text-[9px] px-1 py-0">Custom</Badge>
+                          <Badge variant="subtle" className="text-xs px-1 py-0">Custom</Badge>
                         )}
                       </button>
                     );
@@ -897,8 +897,8 @@ export function ServerSettingsModal({
 
                 {/* Active Role's Permissions Checklist */}
                 {selectedRoleId && (
-                  <div className="p-4 rounded-xl border border-white/[0.06] bg-surface-panel/30 space-y-3">
-                    <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                  <div className="p-4 rounded-xl border border-border bg-surface-panel/30 space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-border">
                       <div className="flex items-center gap-2">
                         <Shield className="w-4 h-4 text-primary" />
                         <span className="text-xs font-bold text-foreground">
@@ -948,21 +948,21 @@ export function ServerSettingsModal({
                               'p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start gap-2.5',
                               isGranted
                                 ? 'border-primary/40 bg-primary/10 text-foreground'
-                                : 'border-white/[0.04] bg-surface-panel/20 text-muted-foreground/70 hover:text-muted-foreground'
+                                : 'border-border bg-surface-panel/20 text-muted-foreground/70 hover:text-muted-foreground'
                             )}
                           >
                             <div className={cn(
                               'w-4 h-4 rounded border flex items-center justify-center shrink-0 mt-0.5',
-                              isGranted ? 'bg-primary border-primary text-primary-foreground' : 'border-white/[0.2]'
+                              isGranted ? 'bg-primary border-primary text-primary-foreground' : 'border-border'
                             )}>
                               {isGranted && <Check className="w-3 h-3" />}
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="font-semibold text-xs flex items-center justify-between">
                                 <span>{perm.label}</span>
-                                <span className="text-[9px] font-mono opacity-50 uppercase">{perm.category}</span>
+                                <span className="text-xs font-mono opacity-50 uppercase">{perm.category}</span>
                               </div>
-                              <div className="text-[10px] text-muted-foreground leading-snug mt-0.5">
+                              <div className="text-xs text-muted-foreground leading-snug mt-0.5">
                                 {perm.description}
                               </div>
                             </div>
@@ -988,7 +988,7 @@ export function ServerSettingsModal({
                     const ownerMember = server.members.find((m) => m.user_id === server.owner_id);
                     const ownerProfile = ownerMember?.profile || (isOwner ? profile : null);
                     return (
-                      <div className="flex items-center justify-between p-3 rounded-xl border border-amber-500/20 bg-amber-500/5">
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-warning/20 bg-warning/5">
                         <div className="flex items-center gap-3">
                           <Avatar
                             src={ownerProfile?.avatar_url || null}
@@ -998,14 +998,14 @@ export function ServerSettingsModal({
                           <div>
                             <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
                               <span>{ownerProfile?.display_name || 'Server Creator'}</span>
-                              <span className="text-[9px] text-muted-foreground font-mono">
+                              <span className="text-xs text-muted-foreground font-mono">
                                 {isOwner ? '(You)' : ownerProfile?.username ? `@${ownerProfile.username}` : ''}
                               </span>
                             </div>
-                            <div className="text-[10px] text-amber-400 font-mono">All Permissions Granted</div>
+                            <div className="text-xs text-warning font-mono">All Permissions Granted</div>
                           </div>
                         </div>
-                        <Badge variant="default" className="text-[10px] bg-amber-500/20 text-amber-300 border-amber-500/30 gap-1">
+                        <Badge variant="default" className="text-xs bg-warning/20 text-warning border-warning/30 gap-1">
                           <Crown className="w-3 h-3" /> Owner
                         </Badge>
                       </div>
@@ -1017,7 +1017,7 @@ export function ServerSettingsModal({
                     const otherMembers = server.members.filter((mem) => mem.user_id !== server.owner_id);
                     if (otherMembers.length === 0) {
                       return (
-                        <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                        <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
                           No other squad members have joined yet. Share your invite link to assemble your squad!
                         </div>
                       );
@@ -1026,7 +1026,7 @@ export function ServerSettingsModal({
                     return otherMembers.map((mem) => (
                       <div
                         key={mem.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-white/[0.06] bg-surface-panel/40"
+                        className="flex items-center justify-between p-3 rounded-xl border border-border bg-surface-panel/40"
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <Avatar
@@ -1038,7 +1038,7 @@ export function ServerSettingsModal({
                             <div className="text-xs font-semibold text-foreground truncate">
                               {mem.profile?.display_name || 'Squad Member'}
                             </div>
-                            <div className="text-[10px] text-muted-foreground font-mono truncate">
+                            <div className="text-xs text-muted-foreground font-mono truncate">
                               @{mem.profile?.username || 'member'}
                             </div>
                           </div>
@@ -1058,7 +1058,7 @@ export function ServerSettingsModal({
                                   type: 'success',
                                 });
                               }}
-                              className="px-2.5 py-1 rounded-lg border border-white/[0.1] bg-surface-panel text-xs text-foreground font-medium focus:outline-none focus:border-primary/50"
+                              className="px-2.5 py-1 rounded-lg border border-border bg-surface-panel text-xs text-foreground font-medium focus:outline-none focus:border-primary/50"
                             >
                               <option value="admin">Admin</option>
                               <option value="moderator">Moderator</option>
@@ -1091,7 +1091,7 @@ export function ServerSettingsModal({
                                 toast({ title: 'Timeout Failed', description: res.error || 'Failed', type: 'error' });
                               }
                             }}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors"
                             title="Timeout Member"
                           >
                             <Clock className="w-3.5 h-3.5" />
@@ -1113,7 +1113,7 @@ export function ServerSettingsModal({
                                 toast({ title: 'Ban Failed', description: res.error || 'Failed to ban', type: 'error' });
                               }
                             }}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
                             title="Ban from Server"
                           >
                             <Ban className="w-3.5 h-3.5" />
@@ -1132,7 +1132,7 @@ export function ServerSettingsModal({
                                   });
                                 }
                               }}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
                               title="Kick from Server"
                             >
                               <UserMinus className="w-3.5 h-3.5" />
@@ -1162,7 +1162,7 @@ export function ServerSettingsModal({
                                   });
                                 }
                               }}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors"
                               title="Transfer Server Ownership"
                             >
                               <Crown className="w-3.5 h-3.5" />
@@ -1179,24 +1179,24 @@ export function ServerSettingsModal({
             {/* TAB: SERVER INVITES */}
             {activeTab === 'invites' && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                <div className="flex items-center justify-between pb-2 border-b border-border">
                   <div>
                     <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Server Invites & Access Links</h4>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Generate revocable squad invite codes with custom usage limits and expirations.
                     </p>
                   </div>
                 </div>
 
                 {/* Create Invite Strip */}
-                <div className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between gap-3">
+                <div className="p-3.5 rounded-xl border border-border bg-surface-default flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-muted-foreground">Expires In</label>
+                      <label className="text-xs uppercase font-bold text-muted-foreground">Expires In</label>
                       <select
                         value={inviteExpiresHours}
                         onChange={(e) => setInviteExpiresHours(parseInt(e.target.value, 10))}
-                        className="px-2 py-1 rounded-lg border border-white/10 bg-surface-panel text-xs text-foreground focus:outline-none"
+                        className="px-2 py-1 rounded-lg border border-border bg-surface-panel text-xs text-foreground focus:outline-none"
                       >
                         <option value="24">24 Hours</option>
                         <option value="168">7 Days</option>
@@ -1205,11 +1205,11 @@ export function ServerSettingsModal({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-muted-foreground">Max Uses</label>
+                      <label className="text-xs uppercase font-bold text-muted-foreground">Max Uses</label>
                       <select
                         value={inviteMaxUses}
                         onChange={(e) => setInviteMaxUses(parseInt(e.target.value, 10))}
-                        className="px-2 py-1 rounded-lg border border-white/10 bg-surface-panel text-xs text-foreground focus:outline-none"
+                        className="px-2 py-1 rounded-lg border border-border bg-surface-panel text-xs text-foreground focus:outline-none"
                       >
                         <option value="0">Unlimited</option>
                         <option value="1">1 Use</option>
@@ -1251,25 +1251,25 @@ export function ServerSettingsModal({
                       Loading invites...
                     </div>
                   ) : invitesList.length === 0 ? (
-                    <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                    <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
                       No active custom invites. Default server ID link is also functional.
                     </div>
                   ) : (
                     invitesList.map((inv) => (
                       <div
                         key={inv.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-white/[0.06] bg-surface-panel/40"
+                        className="flex items-center justify-between p-3 rounded-xl border border-border bg-surface-panel/40"
                       >
                         <div>
                           <div className="text-xs font-mono font-bold text-foreground flex items-center gap-2">
                             <span className="text-primary">{inv.code}</span>
                             {inv.is_revoked && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                              <span className="text-xs px-1.5 py-0.2 rounded bg-danger/20 text-danger border border-danger/30">
                                 Revoked
                               </span>
                             )}
                           </div>
-                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                          <div className="text-xs text-muted-foreground mt-0.5">
                             Uses: {inv.uses} / {inv.max_uses === 0 ? 'Unlimited' : inv.max_uses} • Expires:{' '}
                             {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString() : 'Never'}
                           </div>
@@ -1282,7 +1282,7 @@ export function ServerSettingsModal({
                               navigator.clipboard.writeText(link);
                               toast({ title: 'Copied', description: 'Invite link copied to clipboard.', type: 'info' });
                             }}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-default"
                             title="Copy Invite Link"
                           >
                             <Copy className="w-3.5 h-3.5" />
@@ -1298,7 +1298,7 @@ export function ServerSettingsModal({
                                   fetchInvites(server.id).then(setInvitesList);
                                 }
                               }}
-                              className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 h-7"
+                              className="text-xs text-danger hover:text-danger hover:bg-danger/10 h-7"
                             >
                               Revoke
                             </Button>
@@ -1316,7 +1316,7 @@ export function ServerSettingsModal({
               <div className="space-y-4">
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Server Bans & Blacklist</h4>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     Users banned from joining or interacting with this server. Unbanning permits them to rejoin with an invite link.
                   </p>
                 </div>
@@ -1328,14 +1328,14 @@ export function ServerSettingsModal({
                       Loading bans...
                     </div>
                   ) : bansList.length === 0 ? (
-                    <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                    <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
                       No users are currently banned from this server.
                     </div>
                   ) : (
                     bansList.map((ban) => (
                       <div
                         key={ban.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-rose-500/20 bg-rose-500/5"
+                        className="flex items-center justify-between p-3 rounded-xl border border-danger/20 bg-danger/5"
                       >
                         <div className="flex items-center gap-3">
                           <Avatar
@@ -1346,11 +1346,11 @@ export function ServerSettingsModal({
                           <div>
                             <div className="text-xs font-semibold text-foreground">
                               {ban.profile?.display_name || 'User'}
-                              <span className="text-[10px] text-muted-foreground ml-1 font-mono">
+                              <span className="text-xs text-muted-foreground ml-1 font-mono">
                                 @{ban.profile?.username || 'user'}
                               </span>
                             </div>
-                            <div className="text-[10px] text-rose-300/80 mt-0.5">
+                            <div className="text-xs text-danger/80 mt-0.5">
                               Reason: {ban.reason || 'No reason specified'}
                             </div>
                           </div>
@@ -1371,7 +1371,7 @@ export function ServerSettingsModal({
                                 fetchBans(server.id).then(setBansList);
                               }
                             }}
-                            className="text-xs border-white/10 hover:bg-white/10 h-7"
+                            className="text-xs border-border hover:bg-surface-active h-7"
                           >
                             Unban
                           </Button>
@@ -1389,7 +1389,7 @@ export function ServerSettingsModal({
                                 fetchBans(server.id).then(setBansList);
                               }
                             }}
-                            className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white h-7 font-medium"
+                            className="text-xs bg-success hover:bg-success text-white h-7 font-medium"
                           >
                             Unban & Restore
                           </Button>
@@ -1406,7 +1406,7 @@ export function ServerSettingsModal({
               <div className="space-y-4">
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Moderation Audit Logs</h4>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     Immutable history of staff moderation actions, timeouts, bans, and invite revocations.
                   </p>
                 </div>
@@ -1418,21 +1418,21 @@ export function ServerSettingsModal({
                       Loading audit logs...
                     </div>
                   ) : auditLogs.length === 0 ? (
-                    <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                    <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
                       No moderation actions recorded in the server log yet.
                     </div>
                   ) : (
                     auditLogs.map((log) => (
                       <div
                         key={log.id}
-                        className="p-3 rounded-xl border border-white/[0.06] bg-surface-panel/40 flex items-start justify-between gap-3"
+                        className="p-3 rounded-xl border border-border bg-surface-panel/40 flex items-start justify-between gap-3"
                       >
                         <div>
                           <div className="flex items-center gap-2 text-xs">
                             <span className="font-semibold text-foreground">
                               {log.actor?.display_name || 'Moderator'}
                             </span>
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-mono uppercase bg-primary/15 text-primary border border-primary/30">
+                            <span className="px-1.5 py-0.2 rounded text-xs font-mono uppercase bg-primary/15 text-primary border border-primary/30">
                               {log.action}
                             </span>
                             {log.target && (
@@ -1442,13 +1442,13 @@ export function ServerSettingsModal({
                             )}
                           </div>
                           {log.reason && (
-                            <div className="text-[11px] text-muted-foreground/80 mt-1">
+                            <div className="text-xs text-muted-foreground/80 mt-1">
                               Reason: &ldquo;{log.reason}&rdquo;
                             </div>
                           )}
                         </div>
 
-                        <div className="text-[10px] text-muted-foreground/60 font-mono shrink-0">
+                        <div className="text-xs text-muted-foreground/60 font-mono shrink-0">
                           {new Date(log.created_at).toLocaleString()}
                         </div>
                       </div>
@@ -1463,7 +1463,7 @@ export function ServerSettingsModal({
               <div className="space-y-4">
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Reports & Safety Queue</h4>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     User reports submitted regarding behavior, harassment, or offensive chat content in this server.
                   </p>
                 </div>
@@ -1475,14 +1475,14 @@ export function ServerSettingsModal({
                       Loading reports...
                     </div>
                   ) : reportsList.length === 0 ? (
-                    <div className="p-6 rounded-xl border border-dashed border-white/[0.08] text-center text-xs text-muted-foreground">
+                    <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
                       No reports have been submitted for this server. Comms are peaceful!
                     </div>
                   ) : (
                     reportsList.map((rep) => (
                       <div
                         key={rep.id}
-                        className="p-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-3"
+                        className="p-3.5 rounded-xl border border-border bg-surface-default space-y-3"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-3">
@@ -1494,32 +1494,32 @@ export function ServerSettingsModal({
                             <div>
                               <div className="text-xs font-semibold text-foreground flex items-center gap-2">
                                 <span>Reported: {rep.reported?.display_name || 'User'}</span>
-                                <span className="text-[10px] text-muted-foreground font-mono">
+                                <span className="text-xs text-muted-foreground font-mono">
                                   @{rep.reported?.username || 'user'}
                                 </span>
                                 <Badge
                                   variant="outline"
                                   className={cn(
-                                    'text-[9px] uppercase px-1.5 py-0.2 font-mono',
+                                    'text-xs uppercase px-1.5 py-0.2 font-mono',
                                     rep.status === 'pending'
-                                      ? 'border-amber-500/40 text-amber-400 bg-amber-500/10'
+                                      ? 'border-warning/40 text-warning bg-warning/10'
                                       : rep.status === 'resolved'
-                                      ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
-                                      : 'border-white/20 text-muted-foreground'
+                                      ? 'border-success/40 text-success bg-success/10'
+                                      : 'border-border text-muted-foreground'
                                   )}
                                 >
                                   {rep.status}
                                 </Badge>
                               </div>
-                              <div className="text-[11px] text-amber-300 font-medium mt-0.5">
+                              <div className="text-xs text-warning font-medium mt-0.5">
                                 Reason: {rep.reason}
                               </div>
                               {rep.description && (
-                                <p className="text-xs text-foreground/80 mt-1 bg-white/[0.02] p-2 rounded-lg border border-white/[0.04]">
+                                <p className="text-xs text-foreground/80 mt-1 bg-surface-default p-2 rounded-lg border border-border">
                                   &ldquo;{rep.description}&rdquo;
                                 </p>
                               )}
-                              <div className="text-[10px] text-muted-foreground/60 mt-1">
+                              <div className="text-xs text-muted-foreground/60 mt-1">
                                 Reported by {rep.reporter?.display_name || 'A squadmate'} on {new Date(rep.created_at).toLocaleString()}
                                 {rep.action_taken && ` • Action: ${rep.action_taken}`}
                               </div>
@@ -1528,7 +1528,7 @@ export function ServerSettingsModal({
                         </div>
 
                         {rep.status === 'pending' && (
-                          <div className="flex items-center gap-2 pt-2 border-t border-white/[0.04]">
+                          <div className="flex items-center gap-2 pt-2 border-t border-border">
                             <Button
                               size="sm"
                               variant="outline"
@@ -1538,7 +1538,7 @@ export function ServerSettingsModal({
                                 toast({ title: 'Member Timed Out', description: 'Timed out for 15 minutes.', type: 'info' });
                                 fetchServerReports(server.id).then(setReportsList);
                               }}
-                              className="text-xs h-7 border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+                              className="text-xs h-7 border-warning/30 text-warning hover:bg-warning/10"
                             >
                               Timeout (15m)
                             </Button>
@@ -1575,7 +1575,7 @@ export function ServerSettingsModal({
                                 toast({ title: 'Report Resolved', description: 'Marked as resolved.', type: 'success' });
                                 fetchServerReports(server.id).then(setReportsList);
                               }}
-                              className="text-xs h-7 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 ml-auto"
+                              className="text-xs h-7 border-success/30 text-success hover:bg-success/10 ml-auto"
                             >
                               Mark Resolved
                             </Button>
@@ -1592,8 +1592,8 @@ export function ServerSettingsModal({
             {activeTab === 'danger' && (
               <div className="space-y-4 max-w-lg">
                 {isOwner && onDeleteServer && (
-                  <div className="p-4 rounded-xl border border-rose-500/30 bg-rose-500/5 space-y-3">
-                    <div className="flex items-center gap-2 text-rose-400 font-bold text-xs">
+                  <div className="p-4 rounded-xl border border-danger/30 bg-danger/5 space-y-3">
+                    <div className="flex items-center gap-2 text-danger font-bold text-xs">
                       <AlertTriangle className="w-4 h-4" />
                       <span>Delete This Server</span>
                     </div>
@@ -1618,7 +1618,7 @@ export function ServerSettingsModal({
                 )}
 
                 {onLeaveServer && (
-                  <div className="p-4 rounded-xl border border-white/[0.08] bg-surface-panel/40 space-y-3">
+                  <div className="p-4 rounded-xl border border-border bg-surface-panel/40 space-y-3">
                     <div className="flex items-center gap-2 text-foreground font-bold text-xs">
                       <LogOut className="w-4 h-4 text-muted-foreground" />
                       <span>Leave Server</span>
@@ -1647,7 +1647,7 @@ export function ServerSettingsModal({
                           toast({ title: 'Left Server', description: `You left ${server.name}.`, type: 'info' });
                         }
                       }}
-                      className="text-xs font-semibold text-rose-400 border-rose-500/30 hover:bg-rose-500/10"
+                      className="text-xs font-semibold text-danger border-danger/30 hover:bg-danger/10"
                     >
                       Leave Server
                     </Button>

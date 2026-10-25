@@ -106,7 +106,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={contextValue}>
       {children}
       <div
-        className="fixed bottom-4 right-4 z-[999999] flex flex-col justify-end gap-2 max-w-sm w-full pointer-events-none p-2 max-h-[calc(100vh-2rem)] overflow-hidden"
+        className="fixed z-toast flex flex-col justify-end gap-2 max-w-sm w-[calc(100%-2rem)] sm:w-full pointer-events-none max-h-[calc(100vh-2rem)] overflow-hidden max-sm:bottom-4 max-sm:left-1/2 max-sm:-translate-x-1/2 sm:bottom-4 sm:right-4 sm:p-2"
         aria-live="polite"
         role="region"
         aria-label="Notifications"
@@ -115,15 +115,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={item.id}
             className={cn(
-              'pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-xl bg-surface-panel text-foreground backdrop-blur-md transition-all animate-in slide-in-from-bottom-5 fade-in duration-200 border-white/[0.08]',
-              item.type === 'error' && 'border-rose-500/30 bg-rose-950/25 text-rose-200',
-              item.type === 'success' && 'border-emerald-500/30 bg-emerald-950/25 text-emerald-200',
+              'pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-xl bg-surface-panel text-foreground backdrop-blur-md transition-all animate-in slide-in-from-bottom-5 fade-in duration-200 border-border',
+              item.type === 'error' && 'border-danger/30 bg-danger/15 text-danger',
+              item.type === 'success' && 'border-success/30 bg-success/15 text-success',
               item.type === 'info' && 'border-primary/30 bg-primary/10 text-foreground',
-              (!item.type || item.type === 'default') && 'border-white/[0.08] bg-surface-panel'
+              (!item.type || item.type === 'default') && 'border-border bg-surface-panel'
             )}
           >
-            {item.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />}
-            {item.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+            {item.type === 'error' && <AlertCircle className="w-4 h-4 text-danger shrink-0 mt-0.5" />}
+            {item.type === 'success' && <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />}
             {item.type === 'info' && <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />}
 
             <div className="flex-1">

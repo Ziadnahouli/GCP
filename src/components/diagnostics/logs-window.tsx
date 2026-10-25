@@ -106,34 +106,34 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
     switch (level) {
       case 'error':
         return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-bold bg-danger/15 text-danger border border-danger/30">
             <AlertCircle className="w-2.5 h-2.5" />
             ERR
           </span>
         );
       case 'warn':
         return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-bold bg-warning/15 text-warning border border-warning/30">
             <AlertTriangle className="w-2.5 h-2.5" />
             WARN
           </span>
         );
       case 'success':
         return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-bold bg-success/15 text-success border border-success/30">
             <CheckCircle2 className="w-2.5 h-2.5" />
             OK
           </span>
         );
       case 'debug':
         return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-bold bg-primary/15 text-primary border border-primary/30">
             DBG
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-bold bg-primary-subtle text-primary border border-primary/30">
             <Info className="w-2.5 h-2.5" />
             INFO
           </span>
@@ -143,7 +143,7 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
 
   const getCategoryBadge = (category: string) => {
     return (
-      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wide bg-surface-sidebar text-muted-foreground border border-border/80">
+      <span className="px-1.5 py-0.5 rounded text-xs font-mono uppercase tracking-wide bg-surface-sidebar text-muted-foreground border border-border/80">
         {category}
       </span>
     );
@@ -153,14 +153,14 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-background/80 backdrop-blur-md animate-in fade-in duration-150">
       <div
         className={cn(
-          'relative w-full rounded-2xl border border-white/[0.08] bg-surface-panel shadow-2xl shadow-black/90 flex flex-col overflow-hidden transition-all duration-200 z-10',
+          'relative w-full rounded-2xl border border-border bg-surface-panel shadow-2xl shadow-black/90 flex flex-col overflow-hidden transition-all duration-200 z-10',
           isExpanded
             ? 'h-[96vh] max-w-[98vw]'
             : 'h-[85vh] max-h-[750px] max-w-5xl'
         )}
       >
         {/* Header Bar */}
-        <div className="px-4 py-3 bg-surface-sidebar border-b border-white/[0.06] flex items-center justify-between shrink-0 select-none">
+        <div className="px-4 py-3 bg-surface-sidebar border-b border-border flex items-center justify-between shrink-0 select-none">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center text-primary">
               <Terminal className="w-4 h-4" />
@@ -171,15 +171,15 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
                   GCP Diagnostics & Live Logs
                 </h3>
                 {errorCount > 0 && (
-                  <Badge variant="destructive" className="text-[9px] px-1.5 py-0">
+                  <Badge variant="destructive" className="text-xs px-1.5 py-0">
                     {errorCount} {errorCount === 1 ? 'Error' : 'Errors'}
                   </Badge>
                 )}
-                <span className="text-[10px] font-mono text-muted-foreground/60 hidden sm:inline">
+                <span className="text-xs font-mono text-muted-foreground/60 hidden sm:inline">
                   (Ctrl + ~)
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground/60">
+              <p className="text-xs text-muted-foreground/60">
                 Real-time Supabase messaging, WebSocket, session & network event telemetry.
               </p>
             </div>
@@ -208,20 +208,20 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
         </div>
 
         {/* Live System Diagnostics Status Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-surface-sidebar/40 border-b border-white/[0.06] text-xs shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-surface-sidebar/40 border-b border-border text-xs shrink-0">
           {/* 1. Database Ping */}
-          <div className="p-2 rounded-lg border border-white/[0.06] bg-white/[0.02] flex items-center gap-2">
+          <div className="p-2 rounded-lg border border-border bg-surface-default flex items-center gap-2">
             <Database className="w-4 h-4 text-primary shrink-0" />
             <div className="min-w-0">
-              <div className="text-[10px] text-muted-foreground/70 uppercase font-semibold">Database Latency</div>
+              <div className="text-xs text-muted-foreground/70 uppercase font-semibold">Database Latency</div>
               <div className="font-mono font-medium text-foreground text-xs truncate">
                 {isRunningDiagnostics ? (
                   <span className="text-muted-foreground animate-pulse">Pinging...</span>
                 ) : diagnosticsSummary ? (
                   diagnosticsSummary.dbOk ? (
-                    <span className="text-emerald-400">{diagnosticsSummary.dbPingMs}ms (Online)</span>
+                    <span className="text-success">{diagnosticsSummary.dbPingMs}ms (Online)</span>
                   ) : (
-                    <span className="text-rose-400">Offline / Error</span>
+                    <span className="text-danger">Offline / Error</span>
                   )
                 ) : (
                   <span>Checking...</span>
@@ -232,14 +232,14 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
 
           {/* 2. Auth Session */}
           <div className="p-2 rounded-xl border border-border/60 bg-surface-sidebar/80 flex items-center gap-2">
-            <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
+            <Shield className="w-4 h-4 text-success shrink-0" />
             <div className="min-w-0">
-              <div className="text-[10px] text-muted-foreground uppercase font-bold">Session Expiry</div>
+              <div className="text-xs text-muted-foreground uppercase font-bold">Session Expiry</div>
               <div className="font-mono font-semibold text-foreground truncate">
                 {diagnosticsSummary?.authValid ? (
-                  <span className="text-emerald-400">{diagnosticsSummary.authExpiresIn || 'Active'}</span>
+                  <span className="text-success">{diagnosticsSummary.authExpiresIn || 'Active'}</span>
                 ) : (
-                  <span className="text-amber-400">Guest / Uncached</span>
+                  <span className="text-warning">Guest / Uncached</span>
                 )}
               </div>
             </div>
@@ -247,12 +247,12 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
 
           {/* 3. Realtime Sockets */}
           <div className="p-2 rounded-xl border border-border/60 bg-surface-sidebar/80 flex items-center gap-2">
-            <Radio className="w-4 h-4 text-cyan-400 shrink-0" />
+            <Radio className="w-4 h-4 text-primary shrink-0" />
             <div className="min-w-0">
-              <div className="text-[10px] text-muted-foreground uppercase font-bold">Realtime Channels</div>
+              <div className="text-xs text-muted-foreground uppercase font-bold">Realtime Channels</div>
               <div className="font-mono font-semibold text-foreground truncate">
                 {diagnosticsSummary ? (
-                  <span className="text-cyan-400">
+                  <span className="text-primary">
                     {diagnosticsSummary.realtimeChannels.length} connected
                   </span>
                 ) : (
@@ -282,7 +282,7 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
               className="text-xs h-9 font-semibold border-border hover:bg-surface-hover"
               title="Force refresh Supabase auth JWT token"
             >
-              <Shield className="w-3.5 h-3.5 text-emerald-400 mr-1" />
+              <Shield className="w-3.5 h-3.5 text-success mr-1" />
               <span>Renew Token</span>
             </Button>
           </div>
@@ -371,7 +371,7 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
               variant="outline"
               size="sm"
               onClick={clearLogs}
-              className="h-8 px-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+              className="h-8 px-2 text-xs text-danger hover:text-danger hover:bg-danger/10"
               title="Clear log history"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -416,18 +416,18 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
                   className={cn(
                     'group p-1.5 rounded-lg border transition-colors',
                     log.level === 'error'
-                      ? 'bg-rose-950/20 border-rose-500/30 text-rose-200'
+                      ? 'bg-danger/15 border-danger/30 text-danger'
                       : log.level === 'warn'
-                      ? 'bg-amber-950/20 border-amber-500/30 text-amber-200'
+                      ? 'bg-warning/15 border-warning/30 text-warning'
                       : log.level === 'success'
-                      ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-200'
+                      ? 'bg-success/15 border-success/20 text-success'
                       : 'bg-surface-sidebar/40 border-border/40 text-foreground/90 hover:bg-surface-hover/50',
                     log.isPreviousSession && 'opacity-75 border-dashed'
                   )}
                 >
                   <div className="flex items-start gap-2">
                     {/* Timestamp */}
-                    <span className="text-[11px] text-muted-foreground/80 shrink-0 font-mono select-none">
+                    <span className="text-xs text-muted-foreground/80 shrink-0 font-mono select-none">
                       {log.timeFormatted}
                     </span>
 
@@ -439,7 +439,7 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
 
                     {/* Previous Session Marker */}
                     {log.isPreviousSession && (
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-muted text-muted-foreground border border-border uppercase">
+                      <span className="text-xs px-1 py-0.2 rounded bg-muted text-muted-foreground border border-border uppercase">
                         Prev Session
                       </span>
                     )}
@@ -453,7 +453,7 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
                     {hasDetails && (
                       <button
                         onClick={() => toggleExpandLog(log.id)}
-                        className="text-[10px] font-mono text-primary/80 hover:text-primary shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20"
+                        className="text-xs font-mono text-primary/80 hover:text-primary shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20"
                       >
                         {isDetailsExpanded ? (
                           <>
@@ -470,7 +470,7 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
 
                   {/* Expandable JSON / Object Details View */}
                   {hasDetails && isDetailsExpanded && (
-                    <div className="mt-2 p-2 rounded-md bg-black/60 border border-border/60 text-[11px] font-mono text-foreground/90 overflow-x-auto">
+                    <div className="mt-2 p-2 rounded-md bg-black/60 border border-border/60 text-xs font-mono text-foreground/90 overflow-x-auto">
                       <pre className="whitespace-pre-wrap">
                         {typeof log.details === 'string'
                           ? log.details
@@ -485,20 +485,20 @@ function LogsWindowInternal({ open: controlledOpen, onOpenChange }: LogsWindowPr
         </div>
 
         {/* Footer Bar */}
-        <div className="px-4 py-2 bg-surface-sidebar border-t border-border/80 flex items-center justify-between text-[11px] text-muted-foreground shrink-0 select-none">
+        <div className="px-4 py-2 bg-surface-sidebar border-t border-border/80 flex items-center justify-between text-xs text-muted-foreground shrink-0 select-none">
           <div className="flex items-center gap-3">
             <span>
               Showing {logs.length} of {rawLogsCount} logs
             </span>
             <span>•</span>
-            <span className="text-emerald-400">{diagnosticsSummary?.authValid ? 'Session Valid' : 'Check Session'}</span>
+            <span className="text-success">{diagnosticsSummary?.authValid ? 'Session Valid' : 'Check Session'}</span>
           </div>
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
               onClick={reconnectRealtime}
-              className="h-6 px-2 text-[11px] text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+              className="h-6 px-2 text-xs text-primary hover:text-primary hover:bg-primary-subtle"
               title="Reset Supabase Realtime WebSocket connections"
             >
               Reset Sockets

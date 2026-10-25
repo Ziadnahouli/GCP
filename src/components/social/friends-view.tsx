@@ -10,14 +10,11 @@ import {
   MoreVertical,
   Check,
   X,
-  ShieldAlert,
-  Gamepad2,
-  Sparkles,
   ArrowRight,
   Loader2,
   Trash2,
   Ban,
-  Clock,
+  Video,
 } from 'lucide-react';
 import { useSocial } from '@/hooks/use-social';
 import { useConversations } from '@/hooks/use-conversations';
@@ -25,6 +22,22 @@ import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { ListItem } from '@/components/ui/list-item';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu';
+import { EmptyState } from '@/components/ui/states';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
 import { useCallActions } from '@/features/calls/call-context';
@@ -53,34 +66,16 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
   const { conversations, getOrCreateDirectConversation } = useConversations();
   const { toast } = useToast();
   const { getUserStatus, isUserOnline } = usePresence();
+  const { startCall } = useCallActions();
 
   const [activeTab, setActiveTab] = React.useState<'online' | 'all' | 'pending' | 'blocked' | 'add'>('all');
   const [searchFilter, setSearchFilter] = React.useState('');
   const [addUsernameInput, setAddUsernameInput] = React.useState('');
   const [isSendingRequest, setIsSendingRequest] = React.useState(false);
-  const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
-  const [contextMenu, setContextMenu] = React.useState<{
-    x: number;
-    y: number;
-    friendId: string;
-    friendshipId: string;
-    displayName: string;
-    username: string;
-  } | null>(null);
-
-  React.useEffect(() => {
-    const handleClose = () => setContextMenu(null);
-    window.addEventListener('click', handleClose);
-    window.addEventListener('scroll', handleClose, true);
-    return () => {
-      window.removeEventListener('click', handleClose);
-      window.removeEventListener('scroll', handleClose, true);
-    };
-  }, []);
 
   const onlineCount = friends.filter((f) => isUserOnline(f.friend.id)).length;
+  const pendingCount = incomingRequests.length + outgoingRequests.length;
 
-  // Filter friends based on search and live online presence
   const filteredFriends = React.useMemo(() => {
     return friends.filter((item) => {
       const matchSearch =
@@ -94,8 +89,6 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
       return true;
     });
   }, [friends, searchFilter, activeTab, isUserOnline]);
-
-  const { startCall } = useCallActions();
 
   const handleStartChat = async (targetUserId: string) => {
     const { conversationId, error } = await getOrCreateDirectConversation(targetUserId);
@@ -121,9 +114,14 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
     setIsSendingRequest(true);
     try {
-      const { error } = await sendFriendRequest(addUsernameInput);
+      const { error } = await sendFriendRequest(addUsernameInput.trim());
       if (!error) {
         setAddUsernameInput('');
+        toast({
+          title: 'Request sent',
+          description: `Friend request sent to @${addUsernameInput.trim()}`,
+          type: 'success',
+        });
       }
     } finally {
       setIsSendingRequest(false);
@@ -132,146 +130,146 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
-      {/* Social Tab Navigation Bar */}
-      <div className="h-12 border-b border-white/[0.06] px-4 flex items-center justify-between shrink-0 select-none bg-surface-header">
-        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto py-1 no-scrollbar">
-          <div className="flex items-center gap-1.5 text-xs font-semibold tracking-tight text-foreground mr-3 shrink-0">
+      {/* Friends Header Bar (52px height) */}
+      <header className="h-[52px] min-h-[52px] border-b border-border px-4 flex items-center justify-between shrink-0 bg-background">
+        <div className="flex items-center gap-2 overflow-x-auto py-1 no-scrollbar">
+          <div className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground mr-2 shrink-0">
             <Users className="w-4 h-4 text-primary" />
-            <span className="hidden sm:inline">Friends</span>
+            <span>Friends</span>
           </div>
 
-          <button
-            onClick={() => setActiveTab('online')}
-            className={cn(
-              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0',
-              activeTab === 'online'
-                ? 'bg-white/[0.08] text-foreground font-semibold'
-                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'
-            )}
-          >
-            Online ({onlineCount})
-          </button>
+          <div className="h-4 w-px bg-border mx-1 shrink-0" />
 
-          <button
-            onClick={() => setActiveTab('all')}
-            className={cn(
-              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0',
-              activeTab === 'all'
-                ? 'bg-white/[0.08] text-foreground font-semibold'
-                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'
-            )}
-          >
-            All ({friends.length})
-          </button>
+          {/* Segmented Control Tabs */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={cn(
+                'px-2.5 py-1 rounded-control text-xs font-medium transition-colors duration-fast ease-pro',
+                activeTab === 'all'
+                  ? 'bg-surface-active text-foreground font-semibold'
+                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+              )}
+            >
+              All ({friends.length})
+            </button>
 
-          <button
-            onClick={() => setActiveTab('pending')}
-            className={cn(
-              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0 relative',
-              activeTab === 'pending'
-                ? 'bg-white/[0.08] text-foreground font-semibold'
-                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'
-            )}
-          >
-            Pending
-            {incomingRequests.length > 0 ? (
-              <span className="ml-1.5 px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-bold">
-                {incomingRequests.length}
-              </span>
-            ) : outgoingRequests.length > 0 ? (
-              <span className="ml-1.5 px-1.5 py-0.2 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
-                {outgoingRequests.length}
-              </span>
-            ) : null}
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('online')}
+              className={cn(
+                'px-2.5 py-1 rounded-control text-xs font-medium transition-colors duration-fast ease-pro',
+                activeTab === 'online'
+                  ? 'bg-surface-active text-foreground font-semibold'
+                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+              )}
+            >
+              Online ({onlineCount})
+            </button>
 
-          <button
-            onClick={() => setActiveTab('blocked')}
-            className={cn(
-              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0',
-              activeTab === 'blocked'
-                ? 'bg-white/[0.08] text-foreground font-semibold'
-                : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.03]'
-            )}
-          >
-            Blocked ({blockedUsers.length})
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('pending')}
+              className={cn(
+                'px-2.5 py-1 rounded-control text-xs font-medium transition-colors duration-fast ease-pro flex items-center gap-1.5',
+                activeTab === 'pending'
+                  ? 'bg-surface-active text-foreground font-semibold'
+                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+              )}
+            >
+              <span>Pending</span>
+              {pendingCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-xs font-bold leading-none">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
 
-          <button
-            onClick={() => setActiveTab('add')}
-            className={cn(
-              'px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0 flex items-center gap-1.5 ml-1.5',
-              activeTab === 'add'
-                ? 'bg-primary/20 text-primary font-semibold border border-primary/30'
-                : 'bg-primary/10 text-primary hover:bg-primary/20'
-            )}
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>Add Friend</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('blocked')}
+              className={cn(
+                'px-2.5 py-1 rounded-control text-xs font-medium transition-colors duration-fast ease-pro',
+                activeTab === 'blocked'
+                  ? 'bg-surface-active text-foreground font-semibold'
+                  : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+              )}
+            >
+              Blocked ({blockedUsers.length})
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* Main Content Body */}
+        {/* Primary Add Friend Action */}
+        <Button
+          size="sm"
+          variant={activeTab === 'add' ? 'secondary' : 'primary'}
+          onClick={() => setActiveTab(activeTab === 'add' ? 'all' : 'add')}
+          className="h-7 text-xs font-medium gap-1.5 shrink-0"
+        >
+          <UserPlus className="w-3.5 h-3.5" />
+          <span>Add friend</span>
+        </Button>
+      </header>
+
+      {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 no-scrollbar">
         {/* ADD FRIEND TAB */}
         {activeTab === 'add' && (
-          <div className="max-w-2xl mx-auto space-y-6">
-            <div className="p-6 rounded-2xl border border-white/[0.08] bg-surface-default shadow-subtle">
-              <h2 className="text-base font-bold text-foreground">Add a Squadmate</h2>
+          <div className="max-w-xl mx-auto space-y-6">
+            <div className="p-6 rounded-card border border-border bg-card shadow-subtle">
+              <h2 className="text-sm font-semibold text-foreground">Add a friend</h2>
               <p className="text-xs text-muted-foreground mt-1">
-                You can add friends with their unique Nexus username. It is case-insensitive.
+                Enter your friend&apos;s unique Nexus username. Usernames are case-insensitive.
               </p>
 
-              <form onSubmit={handleSendFriendRequest} className="mt-5 flex gap-2">
+              <form onSubmit={handleSendFriendRequest} className="mt-4 flex gap-2">
                 <div className="relative flex-1">
                   <Input
-                    placeholder="Enter unique username (e.g. ghost_rider)"
+                    placeholder="Enter username (e.g. ghost_rider)"
                     value={addUsernameInput}
                     onChange={(e) => setAddUsernameInput(e.target.value)}
-                    className="h-11 bg-surface-default"
+                    className="h-9 text-xs"
+                    autoFocus
                   />
                 </div>
                 <Button
                   type="submit"
-                  size="default"
-                  className="h-11 px-5 gap-2 shrink-0 font-semibold"
+                  size="md"
+                  className="h-9 px-4 gap-1.5 shrink-0 text-xs font-medium"
                   disabled={isSendingRequest || !addUsernameInput.trim()}
+                  isLoading={isSendingRequest}
                 >
-                  {isSendingRequest ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="w-4 h-4" />
-                  )}
-                  Send Friend Request
+                  Send request <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </form>
             </div>
 
             {/* Outgoing pending requests */}
             {outgoingRequests.length > 0 && (
-              <div className="p-5 rounded-2xl border border-border bg-surface-default space-y-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Pending Outgoing Requests ({outgoingRequests.length})
+              <div className="p-4 rounded-card border border-border bg-card space-y-3">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Outgoing requests ({outgoingRequests.length})
                 </h3>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {outgoingRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="flex items-center justify-between p-3 rounded-xl bg-card border border-border/80"
+                      className="flex items-center justify-between p-2 rounded-control bg-surface-sidebar border border-border"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <Avatar
-                          name={req.receiver?.display_name || 'Gamer'}
+                          name={req.receiver?.display_name || 'User'}
                           status="offline"
-                          size="sm"
+                          size="32"
                         />
-                        <div>
-                          <div className="text-xs font-bold text-foreground">
+                        <div className="min-w-0 truncate">
+                          <div className="text-xs font-medium text-foreground truncate">
                             {req.receiver?.display_name || 'User'}
                           </div>
-                          <div className="text-[10px] text-muted-foreground font-mono">
-                            @{req.receiver?.username} • Outgoing Friend Request
+                          <div className="text-xs text-muted-foreground truncate">
+                            @{req.receiver?.username} &bull; Outgoing request
                           </div>
                         </div>
                       </div>
@@ -280,7 +278,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         size="sm"
                         variant="ghost"
                         onClick={() => cancelRequest(req.id)}
-                        className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                        className="text-xs text-danger hover:text-danger hover:bg-danger/10 h-7 px-2"
                       >
                         Cancel
                       </Button>
@@ -294,53 +292,59 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
         {/* PENDING TAB */}
         {activeTab === 'pending' && (
-          <div className="max-w-3xl mx-auto space-y-6">
+          <div className="max-w-2xl mx-auto space-y-6">
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
-                Incoming Requests ({incomingRequests.length})
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+                Incoming requests ({incomingRequests.length})
               </h3>
               {incomingRequests.length === 0 ? (
-                <div className="p-8 text-center rounded-2xl border border-border/60 bg-surface-default text-xs text-muted-foreground">
-                  No incoming friend requests waiting for review.
-                </div>
+                <EmptyState
+                  title="No pending requests"
+                  description="When someone sends you a friend request, it will appear here."
+                  className="py-8"
+                />
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {incomingRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="flex items-center justify-between p-3.5 rounded-xl bg-card border border-border hover:border-primary/40 transition-all"
+                      className="flex items-center justify-between p-2.5 rounded-card bg-card border border-border hover:border-border-strong transition-colors"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <Avatar
-                          name={req.sender?.display_name || 'Gamer'}
+                          name={req.sender?.display_name || 'User'}
                           status={getUserStatus(req.sender?.id)}
                           showStatus
-                          size="md"
+                          size="32"
                         />
-                        <div>
-                          <div className="text-sm font-bold text-foreground">
-                            {req.sender?.display_name || 'Unknown Gamer'}
+                        <div className="min-w-0 truncate">
+                          <div className="text-xs font-medium text-foreground truncate">
+                            {req.sender?.display_name || 'User'}
                           </div>
-                          <div className="text-xs text-muted-foreground font-mono">
+                          <div className="text-xs text-muted-foreground truncate">
                             @{req.sender?.username}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
+                          type="button"
                           onClick={() => acceptRequest(req.id)}
-                          className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/40 flex items-center justify-center transition-colors"
-                          title="Accept Friend Request"
+                          className="w-8 h-8 rounded-control bg-success/15 text-success hover:bg-success/25 border border-success/30 flex items-center justify-center transition-colors"
+                          title="Accept friend request"
+                          aria-label="Accept friend request"
                         >
-                          <Check className="w-5 h-5" />
+                          <Check className="w-4 h-4" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => rejectRequest(req.id)}
-                          className="w-9 h-9 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 border border-rose-500/40 flex items-center justify-center transition-colors"
-                          title="Ignore Request"
+                          className="w-8 h-8 rounded-control bg-danger/15 text-danger hover:bg-danger/25 border border-danger/30 flex items-center justify-center transition-colors"
+                          title="Ignore request"
+                          aria-label="Ignore request"
                         >
-                          <X className="w-5 h-5" />
+                          <X className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -349,29 +353,29 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
               )}
             </div>
 
-            {/* Outgoing */}
+            {/* Outgoing pending requests */}
             {outgoingRequests.length > 0 && (
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
-                  Outgoing Requests ({outgoingRequests.length})
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+                  Outgoing requests ({outgoingRequests.length})
                 </h3>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {outgoingRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="flex items-center justify-between p-3 rounded-xl bg-card border border-border/80"
+                      className="flex items-center justify-between p-2 rounded-card bg-card border border-border"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <Avatar
-                          name={req.receiver?.display_name || 'Gamer'}
+                          name={req.receiver?.display_name || 'User'}
                           status="offline"
-                          size="sm"
+                          size="32"
                         />
-                        <div>
-                          <div className="text-xs font-bold text-foreground">
+                        <div className="min-w-0 truncate">
+                          <div className="text-xs font-medium text-foreground truncate">
                             {req.receiver?.display_name}
                           </div>
-                          <div className="text-[10px] text-muted-foreground font-mono">
+                          <div className="text-xs text-muted-foreground truncate">
                             @{req.receiver?.username}
                           </div>
                         </div>
@@ -381,7 +385,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                         size="sm"
                         variant="ghost"
                         onClick={() => cancelRequest(req.id)}
-                        className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                        className="text-xs text-danger hover:text-danger hover:bg-danger/10 h-7 px-2"
                       >
                         Cancel
                       </Button>
@@ -395,33 +399,35 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
 
         {/* BLOCKED TAB */}
         {activeTab === 'blocked' && (
-          <div className="max-w-3xl mx-auto space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
-              Blocked Users ({blockedUsers.length})
+          <div className="max-w-2xl mx-auto space-y-4">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+              Blocked users ({blockedUsers.length})
             </h3>
             {blockedUsers.length === 0 ? (
-              <div className="p-8 text-center rounded-2xl border border-border/60 bg-surface-default text-xs text-muted-foreground">
-                You have not blocked any users.
-              </div>
+              <EmptyState
+                title="No blocked users"
+                description="Users you block will not be able to message or call you."
+                className="py-8"
+              />
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {blockedUsers.map((b) => (
                   <div
                     key={b.id}
-                    className="flex items-center justify-between p-3 rounded-xl bg-card border border-border"
+                    className="flex items-center justify-between p-2.5 rounded-card bg-card border border-border"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <Avatar
-                        name={b.blocked_user?.display_name || 'Blocked User'}
+                        name={b.blocked_user?.display_name || 'Blocked user'}
                         status="offline"
-                        size="sm"
+                        size="32"
                       />
-                      <div>
-                        <div className="text-xs font-bold text-foreground">
+                      <div className="min-w-0 truncate">
+                        <div className="text-xs font-medium text-foreground truncate">
                           {b.blocked_user?.display_name || 'User'}
                         </div>
-                        <div className="text-[10px] text-muted-foreground font-mono">
-                          @{b.blocked_user?.username} • Blocked
+                        <div className="text-xs text-muted-foreground truncate">
+                          @{b.blocked_user?.username} &bull; Blocked
                         </div>
                       </div>
                     </div>
@@ -430,7 +436,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                       size="sm"
                       variant="outline"
                       onClick={() => unblockUser(b.id)}
-                      className="text-xs border-border"
+                      className="text-xs h-7 px-3 border-border"
                     >
                       Unblock
                     </Button>
@@ -441,51 +447,42 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
           </div>
         )}
 
-        {/* ONLINE & ALL TABS */}
-        {(activeTab === 'online' || activeTab === 'all') && (
-          <div className="max-w-4xl mx-auto space-y-4">
-            {/* Search Filter Bar */}
+        {/* ALL & ONLINE TABS */}
+        {(activeTab === 'all' || activeTab === 'online') && (
+          <div className="max-w-3xl mx-auto space-y-3">
+            {/* Search Filter */}
             <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
-                placeholder="Search friends list..."
+                placeholder="Search friends..."
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                className="pl-9 h-9 text-xs bg-surface-default/70 border-white/[0.06] hover:border-white/[0.12] text-foreground focus:border-primary/50"
+                className="pl-9 h-8 text-xs bg-surface-sidebar border-border"
               />
             </div>
 
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 pt-1 px-1">
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-1 px-1">
               {activeTab === 'online'
-                ? onlineCount > 0
-                  ? `Online Friends — ${filteredFriends.length}`
-                  : `All Friends (${friends.length}) — Offline`
-                : `All Friends — ${filteredFriends.length}`}
+                ? `Online &bull; ${filteredFriends.length}`
+                : `All friends &bull; ${filteredFriends.length}`}
             </div>
 
             {filteredFriends.length === 0 ? (
-              <div className="p-10 text-center rounded-2xl border border-dashed border-white/[0.08] bg-surface-default/40 space-y-2.5">
-                <div className="w-10 h-10 rounded-xl bg-surface-panel border border-white/[0.06] flex items-center justify-center mx-auto text-muted-foreground">
-                  <Gamepad2 className="w-5 h-5" />
-                </div>
-                <div className="text-xs font-semibold text-foreground">No Friends Found</div>
-                <p className="text-[11px] text-muted-foreground/70 max-w-sm mx-auto">
-                  {searchFilter
-                    ? 'No friends match your search query.'
+              <EmptyState
+                title={searchFilter ? 'No matching friends' : activeTab === 'online' ? 'No friends online' : 'No friends yet'}
+                description={
+                  searchFilter
+                    ? 'No friends match your current search query.'
                     : activeTab === 'online'
-                    ? 'None of your friends are currently online. Check the All tab!'
-                    : 'Your friends list is empty. Add friends using the Add Friend tab!'}
-                </p>
-                {activeTab === 'online' && friends.length > 0 && (
-                  <Button size="sm" variant="outline" className="h-7 text-xs border-white/[0.08]" onClick={() => setActiveTab('all')}>
-                    View All Friends ({friends.length})
-                  </Button>
-                )}
-              </div>
+                    ? 'None of your friends are currently online.'
+                    : 'Start by adding a friend using their unique username.'
+                }
+                action={!searchFilter ? { label: 'Add friend', onClick: () => setActiveTab('add') } : undefined}
+                className="py-12"
+              />
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {filteredFriends.map((item) => {
-                  const isMenuOpen = activeMenuId === item.id;
                   const liveStatus = getUserStatus(item.friend.id);
 
                   // Check if there is an unread conversation with this friend
@@ -497,143 +494,175 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
                   const unreadCount = friendConv?.unread_count || 0;
 
                   return (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        "group flex items-center justify-between p-2 rounded-xl border transition-colors cursor-pointer relative",
-                        unreadCount > 0
-                          ? "bg-primary/[0.08] border-primary/30 hover:bg-primary/[0.12] hover:border-primary/50"
-                          : "border-white/[0.05] bg-surface-default/50 hover:bg-surface-hover/70 hover:border-white/[0.10]"
-                      )}
-                      onClick={() => handleStartChat(item.friend.id)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setContextMenu({
-                          x: Math.min(e.clientX, typeof window !== 'undefined' ? window.innerWidth - 200 : e.clientX),
-                          y: Math.min(e.clientY, typeof window !== 'undefined' ? window.innerHeight - 220 : e.clientY),
-                          friendId: item.friend.id,
-                          friendshipId: item.id,
-                          displayName: item.friend.display_name,
-                          username: item.friend.username,
-                        });
-                      }}
-                    >
-                      {/* Left: Avatar & Info */}
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="relative shrink-0">
-                          <Avatar
-                            src={item.friend.avatar_url}
-                            name={item.friend.display_name}
-                            status={liveStatus}
-                            showStatus
-                            size="md"
-                          />
-                          {unreadCount > 0 && (
-                            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center shadow-md animate-pulse">
-                              {unreadCount > 99 ? '99+' : unreadCount}
-                            </span>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className={cn(
-                              "text-xs truncate transition-colors",
-                              unreadCount > 0 ? "text-white font-bold tracking-tight" : "font-semibold text-foreground group-hover:text-primary"
-                            )}>
-                              {item.friend.display_name}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground/60 font-mono truncate">
-                              @{item.friend.username}
-                            </span>
-                            {unreadCount > 0 && (
-                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-primary text-primary-foreground shadow-sm animate-pulse">
-                                {unreadCount} new
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="text-[11px] text-muted-foreground/60 truncate flex items-center gap-1.5 mt-0.5 font-normal">
-                            {item.friend.game_activity ? (
-                              <span className="text-primary font-medium flex items-center gap-1">
-                                <Gamepad2 className="w-3 h-3" /> Playing {item.friend.game_activity}
-                              </span>
-                            ) : item.friend.custom_status ? (
-                              <span>{item.friend.custom_status}</span>
-                            ) : (
-                              <span className="capitalize">{liveStatus}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right: Action Buttons */}
-                      <div
-                        className="flex items-center gap-1 shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {/* Direct Message button */}
-                        <button
+                    <ContextMenu key={item.id}>
+                      <ContextMenuTrigger asChild>
+                        <div
+                          className="group relative flex items-center justify-between px-2.5 py-1.5 rounded-control hover:bg-surface-hover transition-colors duration-fast cursor-pointer"
                           onClick={() => handleStartChat(item.friend.id)}
-                          className={cn(
-                            "w-7 h-7 rounded-lg flex items-center justify-center transition-colors relative",
-                            unreadCount > 0
-                              ? "bg-primary text-primary-foreground shadow-sm"
-                              : "bg-white/[0.03] hover:bg-white/[0.08] hover:text-foreground text-muted-foreground"
-                          )}
-                          title="Direct Message"
-                          aria-label="Direct Message"
                         >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Call button */}
-                        <button
-                          onClick={() => handleCallFriend(item.friend.id, false)}
-                          className="w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] hover:text-foreground text-muted-foreground flex items-center justify-center transition-colors"
-                          title="Voice Call Friend"
-                          aria-label="Voice Call Friend"
-                        >
-                          <Phone className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* More menu trigger */}
-                        <div className="relative">
-                          <button
-                            onClick={() => setActiveMenuId(isMenuOpen ? null : item.id)}
-                            className="w-7 h-7 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors"
-                            title="More Options"
-                            aria-label="More Options"
-                          >
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Dropdown Menu */}
-                          {isMenuOpen && (
-                            <div className="absolute right-0 top-9 z-30 w-44 rounded-xl bg-card border border-white/[0.08] shadow-panel p-1 animate-in fade-in duration-100">
-                              <button
-                                onClick={() => {
-                                  removeFriend(item.id, item.friend.display_name);
-                                  setActiveMenuId(null);
-                                }}
-                                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" /> Remove Friend
-                              </button>
-                              <button
-                                onClick={() => {
-                                  blockUser(item.friend.id, item.friend.display_name);
-                                  setActiveMenuId(null);
-                                }}
-                                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
-                              >
-                                <Ban className="w-3.5 h-3.5" /> Block User
-                              </button>
+                          {/* Left: Avatar + Names */}
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Avatar
+                              src={item.friend.avatar_url}
+                              name={item.friend.display_name}
+                              status={liveStatus}
+                              showStatus
+                              size="32"
+                            />
+                            <div className="min-w-0 truncate">
+                              <div className="flex items-center gap-2">
+                                <span className={cn(
+                                  "text-xs truncate",
+                                  unreadCount > 0 ? "font-bold text-foreground" : "font-medium text-foreground"
+                                )}>
+                                  {item.friend.display_name}
+                                </span>
+                                <span className="text-xs text-muted-foreground truncate">
+                                  @{item.friend.username}
+                                </span>
+                                {unreadCount > 0 && (
+                                  <Badge variant="accent" className="h-4 px-1 text-xs">
+                                    {unreadCount}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {item.friend.game_activity ? (
+                                  <span className="text-primary font-medium">
+                                    Playing {item.friend.game_activity}
+                                  </span>
+                                ) : item.friend.custom_status ? (
+                                  <span>{item.friend.custom_status}</span>
+                                ) : (
+                                  <span className="capitalize">{liveStatus}</span>
+                                )}
+                              </div>
                             </div>
-                          )}
+                          </div>
+
+                          {/* Right: Actions on Hover / Touch */}
+                          <div
+                            className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleStartChat(item.friend.id)}
+                              className="w-7 h-7 rounded-control flex items-center justify-center hover:bg-surface-active hover:text-foreground text-muted-foreground transition-colors"
+                              title="Direct message"
+                              aria-label="Direct message"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCallFriend(item.friend.id, false)}
+                              className="w-7 h-7 rounded-control flex items-center justify-center hover:bg-surface-active hover:text-foreground text-muted-foreground transition-colors"
+                              title="Voice call"
+                              aria-label="Voice call"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Radix DropdownMenu for More Options */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="w-7 h-7 rounded-control flex items-center justify-center hover:bg-surface-active hover:text-foreground text-muted-foreground transition-colors"
+                                  title="More options"
+                                  aria-label="More options"
+                                >
+                                  <MoreVertical className="w-3.5 h-3.5" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-40">
+                                <DropdownMenuItem
+                                  onClick={() => handleStartChat(item.friend.id)}
+                                  className="text-xs gap-2"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                                  <span>Message</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleCallFriend(item.friend.id, false)}
+                                  className="text-xs gap-2"
+                                >
+                                  <Phone className="w-3.5 h-3.5 text-success" />
+                                  <span>Voice call</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleCallFriend(item.friend.id, true)}
+                                  className="text-xs gap-2"
+                                >
+                                  <Video className="w-3.5 h-3.5 text-primary" />
+                                  <span>Video call</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => removeFriend(item.id, item.friend.display_name)}
+                                  className="text-xs gap-2 text-danger focus:text-danger"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Remove friend</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => blockUser(item.friend.id, item.friend.display_name)}
+                                  className="text-xs gap-2 text-danger focus:text-danger"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                  <span>Block user</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      </ContextMenuTrigger>
+
+                      {/* Radix ContextMenu */}
+                      <ContextMenuContent className="w-44">
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground truncate border-b border-border mb-1">
+                          {item.friend.display_name}
+                        </div>
+                        <ContextMenuItem
+                          onClick={() => handleStartChat(item.friend.id)}
+                          className="text-xs gap-2"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                          <span>Send message</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onClick={() => handleCallFriend(item.friend.id, false)}
+                          className="text-xs gap-2"
+                        >
+                          <Phone className="w-3.5 h-3.5 text-success" />
+                          <span>Voice call</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onClick={() => handleCallFriend(item.friend.id, true)}
+                          className="text-xs gap-2"
+                        >
+                          <Video className="w-3.5 h-3.5 text-primary" />
+                          <span>Video call</span>
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          onClick={() => blockUser(item.friend.id, item.friend.display_name)}
+                          className="text-xs gap-2 text-danger focus:text-danger"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                          <span>Block user</span>
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onClick={() => removeFriend(item.id, item.friend.display_name)}
+                          className="text-xs gap-2 text-danger focus:text-danger"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove friend</span>
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   );
                 })}
               </div>
@@ -641,65 +670,7 @@ export function FriendsView({ onOpenConversation }: FriendsViewProps) {
           </div>
         )}
       </div>
-
-      {/* Floating Right-Click Context Menu */}
-      {contextMenu && (
-        <div
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          className="fixed z-50 w-48 rounded-xl bg-card border border-white/[0.12] shadow-2xl p-1.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="px-2.5 py-1 text-[10px] font-semibold text-muted-foreground uppercase border-b border-white/[0.06] mb-1 truncate">
-            {contextMenu.displayName}
-          </div>
-          <button
-            onClick={() => {
-              handleStartChat(contextMenu.friendId);
-              setContextMenu(null);
-            }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-white/[0.08] transition-colors text-left"
-          >
-            <MessageSquare className="w-3.5 h-3.5 text-primary" /> Send Message
-          </button>
-          <button
-            onClick={() => {
-              handleCallFriend(contextMenu.friendId, false);
-              setContextMenu(null);
-            }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-white/[0.08] transition-colors text-left"
-          >
-            <Phone className="w-3.5 h-3.5 text-emerald-400" /> Voice Call
-          </button>
-          <button
-            onClick={() => {
-              handleCallFriend(contextMenu.friendId, true);
-              setContextMenu(null);
-            }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-white/[0.08] transition-colors text-left"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" /> Video Call
-          </button>
-          <div className="my-1 border-t border-white/[0.06]" />
-          <button
-            onClick={() => {
-              blockUser(contextMenu.friendId, contextMenu.displayName);
-              setContextMenu(null);
-            }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
-          >
-            <Ban className="w-3.5 h-3.5" /> Block User
-          </button>
-          <button
-            onClick={() => {
-              removeFriend(contextMenu.friendshipId, contextMenu.displayName);
-              setContextMenu(null);
-            }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Remove Friend
-          </button>
-        </div>
-      )}
     </div>
   );
 }
+

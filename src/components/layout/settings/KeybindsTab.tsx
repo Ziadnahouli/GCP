@@ -8,7 +8,7 @@ export function KeybindsTab() {
       <div>
         <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
           <span>Gaming Keybinds & Shortcuts</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 font-medium">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 font-medium">
             Tactical Controls
           </span>
         </h3>
@@ -28,13 +28,13 @@ export function KeybindsTab() {
         ].map((item) => (
           <div
             key={item.action}
-            className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]"
+            className="flex items-center justify-between p-3 rounded-xl bg-surface-default border border-border"
           >
             <div>
               <div className="text-xs font-semibold text-foreground">{item.action}</div>
-              <div className="text-[10px] text-muted-foreground/70">{item.desc}</div>
+              <div className="text-xs text-muted-foreground/70">{item.desc}</div>
             </div>
-            <kbd className="px-2.5 py-1 rounded-lg bg-black/60 border border-white/20 shadow-inner font-mono text-[11px] font-bold text-white tracking-wider">
+            <kbd className="px-2.5 py-1 rounded-lg bg-black/60 border border-border shadow-inner font-mono text-xs font-bold text-white tracking-wider">
               {item.key}
             </kbd>
           </div>

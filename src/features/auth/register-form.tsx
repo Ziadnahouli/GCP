@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Mail, Lock, User, AtSign, Gamepad2, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, User, AtSign, ArrowRight, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from './auth-provider';
 import { registerSchema, RegisterFormData } from '@/lib/validation/auth';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,8 @@ export function RegisterForm() {
     confirmPassword: '',
   });
 
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
   const [errors, setErrors] = React.useState<Partial<Record<keyof RegisterFormData, string>>>({});
   const [loading, setLoading] = React.useState(false);
   const [generalError, setGeneralError] = React.useState<string | null>(null);
@@ -78,7 +80,7 @@ export function RegisterForm() {
       if (error) {
         setGeneralError(error);
         toast({
-          title: 'Registration Error',
+          title: 'Registration failed',
           description: error,
           type: 'error',
         });
@@ -86,8 +88,8 @@ export function RegisterForm() {
         setConfirmationSent(true);
       } else {
         toast({
-          title: 'Account Created!',
-          description: `Welcome aboard, ${formData.displayName}!`,
+          title: 'Account created',
+          description: `Welcome to Nexus, ${formData.displayName}!`,
           type: 'success',
         });
         router.push(getTargetUrl());
@@ -101,18 +103,18 @@ export function RegisterForm() {
 
   if (confirmationSent) {
     return (
-      <div className="w-full max-w-sm mx-auto p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90 text-center">
-        <div className="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400 mx-auto mb-3">
+      <div className="w-full max-w-[400px] mx-auto p-6 sm:p-8 rounded-dialog bg-card border border-border shadow-dialog text-center">
+        <div className="w-10 h-10 rounded-xl bg-success/15 border border-success/30 flex items-center justify-center text-success mx-auto mb-3">
           <CheckCircle2 className="w-5 h-5" />
         </div>
-        <h2 className="text-xl font-semibold text-foreground mb-1">Check Your Email</h2>
-        <p className="text-xs text-muted-foreground/70 mb-5 leading-relaxed font-normal">
-          We&apos;ve sent a confirmation link to <span className="text-foreground font-medium">{formData.email}</span>.
-          Please click the link in your email to verify your gaming account.
+        <h2 className="text-xl font-bold tracking-tight text-foreground mb-1.5">Check your email</h2>
+        <p className="text-xs text-muted-foreground mb-6 leading-relaxed">
+          We sent a verification link to <span className="text-foreground font-medium">{formData.email}</span>.
+          Please click the link in your email to activate your Nexus account.
         </p>
-        <Link href="/login">
-          <Button variant="outline" className="w-full border-white/[0.08] bg-white/[0.02] text-xs font-medium">
-            Back to Sign In
+        <Link href="/login" className="block w-full">
+          <Button variant="outline" className="w-full text-xs font-medium h-9">
+            Back to sign in
           </Button>
         </Link>
       </div>
@@ -120,27 +122,28 @@ export function RegisterForm() {
   }
 
   return (
-    <div className="w-full max-w-sm mx-auto p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90">
+    <div className="w-full max-w-[400px] mx-auto p-6 sm:p-8 rounded-dialog bg-card border border-border shadow-dialog text-left">
+      {/* Header & Wordmark */}
       <div className="flex flex-col items-center text-center mb-6">
-        <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary mb-3">
-          <Gamepad2 className="w-5 h-5" />
+        <div className="h-10 w-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg tracking-wider mb-3 select-none shadow-subtle">
+          N
         </div>
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">Create GCP Account</h1>
-        <p className="text-xs text-muted-foreground/70 mt-1">
-          Join your friends in low-latency voice, video & chat
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Create an account</h1>
+        <p className="text-xs text-muted-foreground mt-1">
+          High-performance voice, persistent chat & squad lounge
         </p>
       </div>
 
       {generalError && (
-        <div className="mb-5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium">
+        <div className="mb-4 p-3 rounded-card bg-danger/10 border border-danger/25 text-danger text-xs font-medium leading-relaxed">
           {generalError}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-3.5">
         <div>
-          <label htmlFor="reg-displayName" className="block text-xs font-medium text-muted-foreground/80 mb-1">
-            Display Name
+          <label htmlFor="reg-displayName" className="block text-xs font-medium text-foreground mb-1.5">
+            Display name
           </label>
           <Input
             id="reg-displayName"
@@ -150,14 +153,14 @@ export function RegisterForm() {
             onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
             icon={<User className="w-4 h-4" />}
             disabled={loading}
-            className="bg-white/[0.02] border-white/[0.08] text-xs"
+            errorText={errors.displayName}
+            autoComplete="name"
           />
-          {errors.displayName && <p className="text-xs text-rose-400 mt-1">{errors.displayName}</p>}
         </div>
 
         <div>
-          <label htmlFor="reg-username" className="block text-xs font-medium text-muted-foreground/80 mb-1">
-            Unique Username (@)
+          <label htmlFor="reg-username" className="block text-xs font-medium text-foreground mb-1.5">
+            Username
           </label>
           <Input
             id="reg-username"
@@ -167,91 +170,115 @@ export function RegisterForm() {
             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
             icon={<AtSign className="w-4 h-4" />}
             disabled={loading}
-            className="bg-white/[0.02] border-white/[0.08] text-xs"
+            errorText={errors.username}
+            helperText="Lowercase letters, numbers, and underscores"
+            autoComplete="username"
           />
-          {errors.username && <p className="text-xs text-rose-400 mt-1">{errors.username}</p>}
         </div>
 
         <div>
-          <label htmlFor="reg-email" className="block text-xs font-medium text-muted-foreground/80 mb-1">
-            Email Address
+          <label htmlFor="reg-email" className="block text-xs font-medium text-foreground mb-1.5">
+            Email address
           </label>
           <Input
             id="reg-email"
             type="email"
-            placeholder="rider@gcp.gg"
+            placeholder="you@domain.com"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             icon={<Mail className="w-4 h-4" />}
             disabled={loading}
-            className="bg-white/[0.02] border-white/[0.08] text-xs"
+            errorText={errors.email}
+            autoComplete="email"
           />
-          {errors.email && <p className="text-xs text-rose-400 mt-1">{errors.email}</p>}
         </div>
 
         <div>
-          <label htmlFor="reg-password" className="block text-xs font-medium text-muted-foreground/80 mb-1">
-            Password (Min 8 chars, 1 uppercase, 1 number)
+          <label htmlFor="reg-password" className="block text-xs font-medium text-foreground mb-1.5">
+            Password
           </label>
           <Input
             id="reg-password"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             placeholder="••••••••••••"
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             icon={<Lock className="w-4 h-4" />}
             disabled={loading}
-            className="bg-white/[0.02] border-white/[0.08] text-xs"
+            errorText={errors.password}
+            helperText="Minimum 8 characters with numbers and uppercase"
+            autoComplete="new-password"
+            suffixSlot={
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="text-muted-foreground hover:text-foreground p-1 transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            }
           />
-          {errors.password && <p className="text-xs text-rose-400 mt-1">{errors.password}</p>}
         </div>
 
         <div>
-          <label htmlFor="reg-confirmPassword" className="block text-xs font-medium text-muted-foreground/80 mb-1">
-            Confirm Password
+          <label htmlFor="reg-confirmPassword" className="block text-xs font-medium text-foreground mb-1.5">
+            Confirm password
           </label>
           <Input
             id="reg-confirmPassword"
-            type="password"
+            type={showConfirmPassword ? 'text' : 'password'}
             placeholder="••••••••••••"
             value={formData.confirmPassword}
             onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
             icon={<Lock className="w-4 h-4" />}
             disabled={loading}
-            className="bg-white/[0.02] border-white/[0.08] text-xs"
+            errorText={errors.confirmPassword}
+            autoComplete="new-password"
+            suffixSlot={
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="text-muted-foreground hover:text-foreground p-1 transition-colors"
+                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+              >
+                {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            }
           />
-          {errors.confirmPassword && (
-            <p className="text-xs text-rose-400 mt-1">{errors.confirmPassword}</p>
-          )}
         </div>
 
-        <Button type="submit" className="w-full mt-2 font-medium text-xs h-10" size="lg" disabled={loading}>
-          {loading ? (
-            <span className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Creating Account...
-            </span>
-          ) : (
-            <span className="flex items-center gap-2">
-              Complete Registration <ArrowRight className="w-4 h-4" />
-            </span>
-          )}
+        <p className="text-xs text-muted-foreground pt-1 leading-normal">
+          By creating an account, you agree to the Terms of Service and Privacy Policy.
+        </p>
+
+        <Button
+          type="submit"
+          className="w-full mt-3 font-medium text-xs h-9"
+          size="md"
+          isLoading={loading}
+          disabled={loading}
+        >
+          Create account <ArrowRight className="w-4 h-4 ml-1.5" />
         </Button>
       </form>
 
-      <div className="mt-6 text-center text-xs text-muted-foreground/70">
-        Already have an account?{' '}
-        <Link
-          href={
-            searchParams.get('redirectTo')
-              ? `/login?redirectTo=${encodeURIComponent(searchParams.get('redirectTo')!)}`
-              : '/login'
-          }
-          className="text-primary hover:underline font-medium"
-        >
-          Log in
-        </Link>
+      <div className="mt-6 pt-4 border-t border-border text-center">
+        <p className="text-xs text-muted-foreground">
+          Already have an account?{' '}
+          <Link
+            href={
+              searchParams.get('redirectTo')
+                ? `/login?redirectTo=${encodeURIComponent(searchParams.get('redirectTo')!)}`
+                : '/login'
+            }
+            className="text-primary hover:underline font-medium"
+          >
+            Sign in
+          </Link>
+        </p>
       </div>
     </div>
   );
 }
+

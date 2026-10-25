@@ -126,8 +126,8 @@ export function LinkPreviewCard({ url }: LinkPreviewProps) {
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        'group block max-w-sm sm:max-w-md my-1.5 rounded-xl border border-white/[0.08] bg-[#0e1017]/90 backdrop-blur-md',
-        'border-l-4 border-l-primary hover:border-primary/50 hover:bg-[#121520] transition-all duration-150 shadow-md select-none overflow-hidden'
+        'group block max-w-sm sm:max-w-md my-1.5 rounded-xl border border-border bg-card/90 backdrop-blur-md',
+        'border-l-4 border-l-primary hover:border-primary/50 hover:bg-card transition-all duration-150 shadow-md select-none overflow-hidden'
       )}
     >
       <div className="p-3 space-y-2">
@@ -145,12 +145,12 @@ export function LinkPreviewCard({ url }: LinkPreviewProps) {
                 (e.target as HTMLElement).style.display = 'none';
               }}
             />
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider truncate">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">
               {displaySiteName}
             </span>
           </div>
 
-          <div className="flex items-center gap-1 shrink-0 text-emerald-400 text-[10px] bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 rounded-full font-medium">
+          <div className="flex items-center gap-1 shrink-0 text-success text-xs bg-success/10 border border-success/20 px-1.5 py-0.2 rounded-full font-medium">
             <ShieldCheck className="w-3 h-3" />
             <span>Safe Link</span>
           </div>
@@ -164,14 +164,14 @@ export function LinkPreviewCard({ url }: LinkPreviewProps) {
 
         {/* Description snippet if available */}
         {meta?.description && (
-          <p className="text-[11px] text-muted-foreground/80 line-clamp-2 leading-relaxed font-normal">
+          <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed font-normal">
             {meta.description}
           </p>
         )}
 
         {/* Rich preview image if available */}
         {meta?.image && !imgError && (
-          <div className="relative mt-2 rounded-lg overflow-hidden border border-white/[0.06] bg-black/40 max-h-44">
+          <div className="relative mt-2 rounded-lg overflow-hidden border border-border bg-black/40 max-h-44">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={meta.image}

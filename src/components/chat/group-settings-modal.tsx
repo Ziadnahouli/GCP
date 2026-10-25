@@ -152,12 +152,12 @@ export function GroupSettingsModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-lg w-full p-6 border border-white/[0.08] bg-[#0c0d14] text-foreground rounded-2xl shadow-2xl"
+        className="max-w-lg w-full p-6 border border-border bg-card text-foreground rounded-2xl shadow-2xl"
         onClose={() => onOpenChange(false)}
       >
         <div className="space-y-4">
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between pb-3 border-b border-border">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary">
                 <Users className="w-5 h-5" />
@@ -173,7 +173,7 @@ export function GroupSettingsModal({
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/[0.06]">
+            <div className="flex items-center gap-1 bg-surface-default p-1 rounded-xl border border-border">
               <button
                 onClick={() => setActiveTab('members')}
                 className={cn(
@@ -227,7 +227,7 @@ export function GroupSettingsModal({
                   return (
                     <div
                       key={member.id}
-                      className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] transition"
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-surface-default border border-border hover:bg-surface-default transition"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Avatar
@@ -239,10 +239,10 @@ export function GroupSettingsModal({
                           <div className="text-xs font-semibold text-foreground flex items-center gap-1.5 truncate">
                             <span>{member.profile?.display_name || 'Squad Member'}</span>
                             {isCurrent && (
-                              <span className="text-[10px] text-primary font-normal">(You)</span>
+                              <span className="text-xs text-primary font-normal">(You)</span>
                             )}
                           </div>
-                          <div className="text-[10px] text-muted-foreground truncate">
+                          <div className="text-xs text-muted-foreground truncate">
                             @{member.profile?.username || 'user'}
                           </div>
                         </div>
@@ -250,13 +250,13 @@ export function GroupSettingsModal({
 
                       <div className="flex items-center gap-2">
                         {role === 'owner' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-warning/15 text-warning border border-warning/30">
                             <Crown className="w-3 h-3" />
                             Owner
                           </span>
                         )}
                         {role === 'admin' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/15 text-primary border border-primary/30">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-primary/15 text-primary border border-primary/30">
                             <Shield className="w-3 h-3" />
                             Admin
                           </span>
@@ -270,7 +270,7 @@ export function GroupSettingsModal({
                                 member.profile?.display_name || 'member'
                               )
                             }
-                            className="p-1 rounded-lg text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                            className="p-1 rounded-lg text-danger/70 hover:text-danger hover:bg-danger/10 transition"
                             title="Remove from squad"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -283,13 +283,13 @@ export function GroupSettingsModal({
               </div>
 
               {/* Leave squad button */}
-              <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between">
+              <div className="pt-2 border-t border-border flex items-center justify-between">
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={handleLeave}
                   disabled={isLeaving}
-                  className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                  className="text-xs text-danger hover:text-danger hover:bg-danger/10"
                 >
                   {isLeaving ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <LogOut className="w-3 h-3 mr-1.5" />}
                   Leave Squad
@@ -298,7 +298,7 @@ export function GroupSettingsModal({
                   size="sm"
                   variant="outline"
                   onClick={() => onOpenChange(false)}
-                  className="text-xs border-white/10"
+                  className="text-xs border-border"
                 >
                   Close
                 </Button>
@@ -315,7 +315,7 @@ export function GroupSettingsModal({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Filter friends..."
-                  className="text-xs pl-8 bg-white/[0.03] border-white/10 h-8"
+                  className="text-xs pl-8 bg-surface-default border-border h-8"
                 />
               </div>
 
@@ -341,7 +341,7 @@ export function GroupSettingsModal({
                           'flex items-center justify-between p-2 rounded-xl transition cursor-pointer border',
                           isSelected
                             ? 'bg-primary/15 border-primary/40 text-foreground'
-                            : 'bg-white/[0.02] border-white/[0.04] text-muted-foreground hover:bg-white/[0.04]'
+                            : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
                         )}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -354,7 +354,7 @@ export function GroupSettingsModal({
                             <div className="text-xs font-semibold text-foreground truncate">
                               {f.friend.display_name}
                             </div>
-                            <div className="text-[10px] text-muted-foreground truncate">
+                            <div className="text-xs text-muted-foreground truncate">
                               @{f.friend.username}
                             </div>
                           </div>
@@ -365,7 +365,7 @@ export function GroupSettingsModal({
                             'w-5 h-5 rounded-md border flex items-center justify-center transition-colors',
                             isSelected
                               ? 'bg-primary border-primary text-black'
-                              : 'border-white/20 bg-transparent'
+                              : 'border-border bg-transparent'
                           )}
                         >
                           {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -376,7 +376,7 @@ export function GroupSettingsModal({
                 )}
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -402,7 +402,7 @@ export function GroupSettingsModal({
           {activeTab === 'settings' && (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Squad Display Name
                 </label>
                 <div className="flex gap-2">
@@ -410,7 +410,7 @@ export function GroupSettingsModal({
                     value={groupName}
                     onChange={(e) => setGroupName(e.target.value)}
                     placeholder="Squad Name"
-                    className="text-xs bg-white/[0.03] border-white/10"
+                    className="text-xs bg-surface-default border-border"
                     maxLength={40}
                   />
                   <Button
@@ -425,12 +425,12 @@ export function GroupSettingsModal({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-white/[0.06] flex justify-end">
+              <div className="pt-2 border-t border-border flex justify-end">
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => onOpenChange(false)}
-                  className="text-xs border-white/10"
+                  className="text-xs border-border"
                 >
                   Done
                 </Button>

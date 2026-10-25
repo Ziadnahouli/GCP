@@ -156,33 +156,32 @@ export default function InviteLandingPage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden bg-background">
-      {/* Background ambient lighting */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-primary/[0.05] blur-[120px] rounded-full pointer-events-none" />
-
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-background">
       {/* Main card */}
-      <div className="relative z-10 w-full max-w-sm mx-auto p-6 sm:p-8 rounded-2xl bg-surface-panel border border-white/[0.08] shadow-2xl shadow-black/90 text-center animate-in zoom-in-95 duration-150">
+      <div className="w-full max-w-[400px] mx-auto p-6 sm:p-8 rounded-dialog bg-card border border-border shadow-dialog text-center animate-in zoom-in-95 duration-150">
         {loadingPreview ? (
           <div className="py-8 flex flex-col items-center justify-center space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-xs text-muted-foreground font-mono">Loading squad invitation...</p>
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <p className="text-xs text-muted-foreground">Loading server invitation...</p>
           </div>
         ) : previewError || !preview ? (
           <div className="space-y-4">
-            <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mx-auto">
-              <AlertCircle className="w-6 h-6" />
+            <div className="w-10 h-10 rounded-xl bg-danger/10 border border-danger/25 flex items-center justify-center text-danger mx-auto">
+              <AlertCircle className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Invite Unavailable</h2>
-              <p className="text-xs text-muted-foreground/70 mt-1 leading-relaxed">
-                {previewError || 'This invite may have expired or been revoked.'}
+              <h2 className="text-lg font-bold text-foreground">Invite unavailable</h2>
+              <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                {previewError || 'This invite may have expired, been revoked, or reached maximum uses.'}
               </p>
             </div>
-            <Link href="/" className="inline-block w-full">
-              <Button variant="outline" className="w-full text-xs border-white/[0.08]">
-                Return to Nexus Home
-              </Button>
-            </Link>
+            <div className="pt-2">
+              <Link href="/" className="inline-block w-full">
+                <Button variant="outline" className="w-full text-xs font-medium h-9">
+                  Return to Nexus home
+                </Button>
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="space-y-5">
@@ -192,22 +191,22 @@ export default function InviteLandingPage() {
                 <Avatar
                   src={preview.icon_url}
                   name={preview.name}
-                  size="lg"
-                  className="w-16 h-16 rounded-2xl border-2 border-white/[0.08] shadow-xl text-lg font-bold"
+                  size="64"
+                  className="w-16 h-16 rounded-2xl border border-border text-base font-semibold"
                 />
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-success/20 border border-success/40 flex items-center justify-center text-success">
                   <ShieldCheck className="w-3.5 h-3.5" />
                 </div>
               </div>
 
-              <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-                You&apos;ve Been Invited to Join
+              <div className="text-xs text-muted-foreground mb-1 font-medium">
+                You have been invited to join
               </div>
               <h1 className="text-xl font-bold tracking-tight text-foreground truncate max-w-[280px]">
                 {preview.name}
               </h1>
 
-              <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground/80 font-mono">
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
                 <Users className="w-3.5 h-3.5 text-primary" />
                 <span>{preview.member_count} {preview.member_count === 1 ? 'member' : 'members'}</span>
               </div>
@@ -219,21 +218,17 @@ export default function InviteLandingPage() {
                 <Button
                   onClick={handleAcceptInvite}
                   disabled={joining}
-                  className="w-full h-11 text-xs font-semibold gap-2 shadow-glow-sm"
+                  isLoading={joining}
+                  className="w-full h-9 text-xs font-medium gap-2"
                 >
-                  {joining ? (
+                  {isAlreadyMember ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Joining Squad...</span>
-                    </>
-                  ) : isAlreadyMember ? (
-                    <>
-                      <span>Open Server</span>
+                      <span>Open server</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   ) : (
                     <>
-                      <span>Accept Invitation</span>
+                      <span>Join server</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -244,8 +239,8 @@ export default function InviteLandingPage() {
                     href={`/login?redirectTo=/invite/${encodeURIComponent(code)}`}
                     className="block w-full"
                   >
-                    <Button className="w-full h-11 text-xs font-semibold gap-2 shadow-glow-sm">
-                      <span>Sign In to Accept Invite</span>
+                    <Button className="w-full h-9 text-xs font-medium gap-2">
+                      <span>Sign in to accept invite</span>
                       <ArrowRight className="w-4 h-4" />
                     </Button>
                   </Link>
@@ -254,16 +249,16 @@ export default function InviteLandingPage() {
                     href={`/register?redirectTo=/invite/${encodeURIComponent(code)}`}
                     className="block w-full"
                   >
-                    <Button variant="outline" className="w-full h-9 text-xs border-white/[0.08] hover:bg-white/[0.04]">
-                      Create a Nexus Account
+                    <Button variant="outline" className="w-full h-9 text-xs font-medium">
+                      Create an account
                     </Button>
                   </Link>
                 </>
               )}
             </div>
 
-            <div className="text-[11px] text-muted-foreground/60">
-              Nexus Gaming Platform &bull; Squad Voice, Chat & Gaming Lounge
+            <div className="text-xs text-muted-foreground pt-1">
+              Nexus &bull; Voice, video & persistent chat
             </div>
           </div>
         )}
@@ -271,3 +266,4 @@ export default function InviteLandingPage() {
     </div>
   );
 }
+

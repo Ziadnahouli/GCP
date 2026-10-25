@@ -1,35 +1,41 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]',
+  'inline-flex items-center justify-center whitespace-nowrap rounded-control text-xs font-medium transition-all duration-fast ease-pro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] select-none',
   {
     variants: {
       variant: {
+        primary:
+          'bg-primary text-primary-foreground shadow-subtle hover:bg-primary-hover active:bg-primary-hover/90',
         default:
           'bg-primary text-primary-foreground shadow-subtle hover:bg-primary-hover active:bg-primary-hover/90',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-surface-hover hover:text-foreground',
+          'bg-secondary text-secondary-foreground hover:bg-surface-hover hover:text-foreground border border-border',
         outline:
-          'border border-border bg-transparent hover:bg-surface-hover hover:border-primary/50 text-foreground',
+          'border border-border bg-transparent hover:bg-surface-hover hover:border-border-strong text-foreground',
         ghost:
           'hover:bg-surface-hover hover:text-foreground text-muted-foreground',
         destructive:
-          'bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm',
+          'bg-danger text-primary-foreground hover:bg-danger/90 active:bg-danger/95 shadow-sm',
+        link:
+          'text-primary underline-offset-4 hover:underline p-0 h-auto font-normal',
         subtle:
-          'bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20',
+          'bg-primary-subtle text-primary hover:bg-primary-subtle/80 border border-primary/20',
       },
       size: {
-        default: 'h-10 px-4 py-2',
-        sm: 'h-8 rounded-md px-3 text-xs',
-        lg: 'h-12 rounded-lg px-6 text-base font-semibold',
-        icon: 'h-9 w-9',
-        iconSm: 'h-7 w-7 rounded-md',
+        sm: 'h-7 px-2.5 text-xs min-h-[28px]',
+        md: 'h-8 px-3 text-xs md:text-sm min-h-[32px] max-sm:min-h-[44px]',
+        default: 'h-8 px-3 text-xs md:text-sm min-h-[32px] max-sm:min-h-[44px]',
+        lg: 'h-10 px-4 text-sm font-medium min-h-[40px] max-sm:min-h-[44px]',
+        icon: 'h-8 w-8 min-h-[32px] min-w-[32px] max-sm:min-h-[44px] max-sm:min-w-[44px] p-0',
+        iconSm: 'h-7 w-7 min-h-[28px] min-w-[28px] p-0',
       },
     },
     defaultVariants: {
-      variant: 'default',
+      variant: 'primary',
       size: 'default',
     },
   }
@@ -39,16 +45,23 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  isLoading?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => {
+  ({ className, variant, size, isLoading = false, disabled, children, ...props }, ref) => {
     return (
       <button
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        disabled={disabled || isLoading}
         {...props}
-      />
+      >
+        {isLoading && (
+          <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5 shrink-0 text-current" aria-hidden="true" />
+        )}
+        {children}
+      </button>
     );
   }
 );

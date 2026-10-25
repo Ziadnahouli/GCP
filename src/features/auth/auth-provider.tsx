@@ -171,8 +171,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (settingsRes.error) {
           console.warn('[AuthProvider] Notice fetching user_settings:', settingsRes.error);
         } else if (settingsRes.data) {
-          setSettings(settingsRes.data as UserSettings);
-          document.documentElement.setAttribute('data-theme', settingsRes.data.accent_color);
+          const s = settingsRes.data as UserSettings;
+          setSettings(s);
+          if (typeof document !== 'undefined') {
+            if (s.accent_color) {
+              document.documentElement.setAttribute('data-theme', s.accent_color);
+              try { localStorage.setItem('nexus_accent', s.accent_color); } catch (e) { void e; }
+            }
+            if (s.theme_mode) {
+              try { localStorage.setItem('nexus_theme_mode', s.theme_mode); } catch (e) { void e; }
+              const isDark = s.theme_mode === 'dark' || (s.theme_mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+              if (isDark) {
+                document.documentElement.classList.add('dark');
+              } else {
+                document.documentElement.classList.remove('dark');
+              }
+            }
+            if (s.density) {
+              document.documentElement.setAttribute('data-density', s.density);
+              try { localStorage.setItem('nexus_density', s.density); } catch (e) { void e; }
+            }
+            if (s.text_scale) {
+              document.documentElement.setAttribute('data-text-scale', s.text_scale);
+              try { localStorage.setItem('nexus_text_scale', s.text_scale); } catch (e) { void e; }
+            }
+            if (s.reduce_motion !== undefined && s.reduce_motion !== null) {
+              document.documentElement.setAttribute('data-reduce-motion', String(s.reduce_motion));
+              try { localStorage.setItem('nexus_reduce_motion', String(s.reduce_motion)); } catch (e) { void e; }
+            }
+          }
         } else {
           const userDefaultSettings = { ...DEFAULT_SETTINGS, user_id: userId, id: `settings_${userId}` };
           setSettings(userDefaultSettings);
@@ -529,9 +556,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (updates: Partial<UserSettings>) => {
       const prevSettings = settings;
       const prevTheme = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') : null;
+      const prevIsDark = typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false;
+      const prevDensity = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-density') : null;
+      const prevTextScale = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-text-scale') : null;
+      const prevReduceMotion = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-reduce-motion') : null;
 
-      if (updates.accent_color && typeof document !== 'undefined') {
-        document.documentElement.setAttribute('data-theme', updates.accent_color);
+      if (typeof document !== 'undefined') {
+        if (updates.accent_color) {
+          document.documentElement.setAttribute('data-theme', updates.accent_color);
+          try { localStorage.setItem('nexus_accent', updates.accent_color); } catch (e) { void e; }
+        }
+        if (updates.theme_mode) {
+          try { localStorage.setItem('nexus_theme_mode', updates.theme_mode); } catch (e) { void e; }
+          const isDark = updates.theme_mode === 'dark' || (updates.theme_mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        }
+        if (updates.density) {
+          document.documentElement.setAttribute('data-density', updates.density);
+          try { localStorage.setItem('nexus_density', updates.density); } catch (e) { void e; }
+        }
+        if (updates.text_scale) {
+          document.documentElement.setAttribute('data-text-scale', updates.text_scale);
+          try { localStorage.setItem('nexus_text_scale', updates.text_scale); } catch (e) { void e; }
+        }
+        if (updates.reduce_motion !== undefined && updates.reduce_motion !== null) {
+          document.documentElement.setAttribute('data-reduce-motion', String(updates.reduce_motion));
+          try { localStorage.setItem('nexus_reduce_motion', String(updates.reduce_motion)); } catch (e) { void e; }
+        }
       }
 
       if (!config.isConfigured) {
@@ -560,8 +615,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (updateErr) {
         // A4: Revert DOM theme and state on failure
-        if (prevTheme && typeof document !== 'undefined') {
-          document.documentElement.setAttribute('data-theme', prevTheme);
+        if (typeof document !== 'undefined') {
+          if (prevTheme) document.documentElement.setAttribute('data-theme', prevTheme);
+          if (prevIsDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+          if (prevDensity) document.documentElement.setAttribute('data-density', prevDensity);
+          if (prevTextScale) document.documentElement.setAttribute('data-text-scale', prevTextScale);
+          if (prevReduceMotion !== null) document.documentElement.setAttribute('data-reduce-motion', prevReduceMotion);
         }
         setSettings(prevSettings);
         return { error: updateErr.message };

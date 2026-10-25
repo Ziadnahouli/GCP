@@ -17,25 +17,25 @@ const statusOptions: StatusOption[] = [
     value: 'online',
     label: 'Online',
     description: 'Visible and ready to game',
-    color: 'bg-emerald-500',
+    color: 'bg-success',
   },
   {
     value: 'idle',
     label: 'Idle',
     description: 'Away from keyboard / in-game AFK',
-    color: 'bg-amber-500',
+    color: 'bg-warning',
   },
   {
     value: 'dnd',
     label: 'Do Not Disturb',
     description: 'Will not receive desktop notification sound alerts',
-    color: 'bg-rose-500',
+    color: 'bg-danger',
   },
   {
     value: 'offline',
     label: 'Invisible',
     description: 'Appear offline to everyone',
-    color: 'bg-slate-500',
+    color: 'bg-status-offline',
   },
 ];
 
@@ -67,11 +67,11 @@ export function StatusSelector({ currentStatus, onSelect, onClose, className }: 
       ref={containerRef}
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        'status-selector-container z-50 w-64 rounded-xl bg-surface-panel border border-white/[0.08] shadow-panel p-1.5 backdrop-blur-md animate-in duration-150',
+        'status-selector-container z-50 w-64 rounded-xl bg-surface-panel border border-border shadow-panel p-1.5 backdrop-blur-md animate-in duration-150',
         className || 'absolute bottom-16 left-2 slide-in-from-bottom-2'
       )}
     >
-      <div className="px-2 py-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase border-b border-white/[0.06] mb-1">
+      <div className="px-2 py-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase border-b border-border mb-1">
         Change Presence
       </div>
 
@@ -94,7 +94,7 @@ export function StatusSelector({ currentStatus, onSelect, onClose, className }: 
               <span className={cn('w-2.5 h-2.5 rounded-full shrink-0', opt.color)} />
               <div>
                 <div className="text-xs font-semibold leading-tight">{opt.label}</div>
-                <div className="text-[10px] text-muted-foreground leading-tight">
+                <div className="text-xs text-muted-foreground leading-tight">
                   {opt.description}
                 </div>
               </div>

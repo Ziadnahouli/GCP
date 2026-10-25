@@ -123,7 +123,7 @@ export function ForwardModal({ message, open, onOpenChange, onForwarded }: Forwa
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-md w-full p-6 border border-white/[0.08] bg-[#0c0d14] text-foreground rounded-2xl shadow-2xl"
+        className="max-w-md w-full p-6 border border-border bg-card text-foreground rounded-2xl shadow-2xl"
         onClose={() => onOpenChange(false)}
       >
         <div className="space-y-4">
@@ -140,7 +140,7 @@ export function ForwardModal({ message, open, onOpenChange, onForwarded }: Forwa
           </div>
 
           {/* Message Preview */}
-          <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs text-muted-foreground/80 italic max-h-20 overflow-y-auto">
+          <div className="p-3 rounded-xl bg-surface-default border border-border text-xs text-muted-foreground/80 italic max-h-20 overflow-y-auto">
             &ldquo;{message.content.slice(0, 160)}
             {message.content.length > 160 ? '...' : ''}&rdquo;
           </div>
@@ -152,7 +152,7 @@ export function ForwardModal({ message, open, onOpenChange, onForwarded }: Forwa
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search chat or channel..."
-              className="text-xs pl-8 bg-white/[0.03] border-white/10 h-8"
+              className="text-xs pl-8 bg-surface-default border-border h-8"
             />
           </div>
 
@@ -173,7 +173,7 @@ export function ForwardModal({ message, open, onOpenChange, onForwarded }: Forwa
                       'flex items-center justify-between p-2 rounded-xl transition cursor-pointer border',
                       isSelected
                         ? 'bg-primary/15 border-primary/40 text-foreground'
-                        : 'bg-white/[0.02] border-white/[0.04] text-muted-foreground hover:bg-white/[0.04]'
+                        : 'bg-surface-default border-border text-muted-foreground hover:bg-surface-default'
                     )}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -190,7 +190,7 @@ export function ForwardModal({ message, open, onOpenChange, onForwarded }: Forwa
                           />
                         )
                       ) : (
-                        <div className="w-6 h-6 rounded bg-white/[0.06] flex items-center justify-center text-muted-foreground">
+                        <div className="w-6 h-6 rounded bg-surface-hover flex items-center justify-center text-muted-foreground">
                           <Hash className="w-3.5 h-3.5" />
                         </div>
                       )}
@@ -198,7 +198,7 @@ export function ForwardModal({ message, open, onOpenChange, onForwarded }: Forwa
                         <div className="text-xs font-semibold text-foreground truncate">
                           {target.name}
                         </div>
-                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        <div className="text-xs text-muted-foreground uppercase tracking-wider">
                           {target.type === 'dm' ? 'Direct Message' : 'Server Channel'}
                         </div>
                       </div>
@@ -207,7 +207,7 @@ export function ForwardModal({ message, open, onOpenChange, onForwarded }: Forwa
                     <div
                       className={cn(
                         'w-4 h-4 rounded-full border flex items-center justify-center transition-colors',
-                        isSelected ? 'border-primary bg-primary' : 'border-white/20'
+                        isSelected ? 'border-primary bg-primary' : 'border-border'
                       )}
                     >
                       {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
@@ -218,7 +218,7 @@ export function ForwardModal({ message, open, onOpenChange, onForwarded }: Forwa
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
             <Button
               size="sm"
               variant="ghost"

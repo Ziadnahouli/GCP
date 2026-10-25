@@ -67,12 +67,12 @@ export function OfflineBanner() {
     <div
       role="status"
       aria-live="assertive"
-      className="bg-amber-500/15 border-b border-amber-500/30 text-amber-300 px-4 py-2 flex items-center justify-between z-50 text-xs backdrop-blur-md animate-in slide-in-from-top-2 duration-200"
+      className="bg-warning/15 border-b border-warning/30 text-warning px-4 py-2 flex items-center justify-between z-50 text-xs backdrop-blur-md animate-in slide-in-from-top-2 duration-200"
     >
       <div className="flex items-center gap-2 min-w-0">
-        <WifiOff className="w-4 h-4 shrink-0 text-amber-400 animate-pulse" />
+        <WifiOff className="w-4 h-4 shrink-0 text-warning animate-pulse" />
         <span className="font-semibold">Network Connection Lost</span>
-        <span className="hidden sm:inline text-amber-300/80">
+        <span className="hidden sm:inline text-warning/80">
           — Realtime chat and voice updates may be delayed.
         </span>
       </div>
@@ -82,7 +82,7 @@ export function OfflineBanner() {
         variant="outline"
         onClick={handleRetry}
         disabled={isChecking}
-        className="h-6 px-2 text-[11px] border-amber-500/40 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 shrink-0"
+        className="h-6 px-2 text-xs border-warning/40 text-warning hover:bg-warning/20 hover:text-warning shrink-0"
       >
         <RefreshCw className={`w-3 h-3 mr-1 ${isChecking ? 'animate-spin' : ''}`} />
         Reconnect

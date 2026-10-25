@@ -45,11 +45,16 @@ export function VoiceLoungePopup() {
     document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
       targetDoc.head.appendChild(node.cloneNode(true));
     });
-    targetDoc.documentElement.classList.add('dark');
+    const isDark = document.documentElement.classList.contains('dark');
+    if (isDark) {
+      targetDoc.documentElement.classList.add('dark');
+    }
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'violet';
+    targetDoc.documentElement.setAttribute('data-theme', currentTheme);
     targetDoc.body.style.margin = '0';
     targetDoc.body.style.padding = '0';
-    targetDoc.body.style.backgroundColor = '#0a0c16';
-    targetDoc.body.style.color = '#ffffff';
+    targetDoc.body.style.backgroundColor = 'hsl(var(--background))';
+    targetDoc.body.style.color = 'hsl(var(--foreground))';
     targetDoc.body.style.overflow = 'hidden';
   };
 
@@ -151,15 +156,15 @@ export function VoiceLoungePopup() {
     return (
       <>
         {createPortal(
-          <div className="flex flex-col h-screen w-screen bg-[#0a0c16] text-white overflow-hidden select-none font-sans">
+          <div className="flex flex-col h-screen w-screen bg-card text-white overflow-hidden select-none font-sans">
             {/* PiP Header */}
-            <div className="h-9 px-3 border-b border-white/[0.08] flex items-center justify-between shrink-0 bg-[#0d101d]">
+            <div className="h-9 px-3 border-b border-border flex items-center justify-between shrink-0 bg-card">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" />
                 <span className="text-xs font-semibold text-white truncate">
                   {serverVoice.activeChannelName ? `#${serverVoice.activeChannelName}` : 'Voice Lounge'}
                 </span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                <span className="text-xs px-1.5 py-0.5 rounded bg-success/10 text-success border border-success/20 font-mono">
                   GCP Studio Audio
                 </span>
               </div>
@@ -172,7 +177,7 @@ export function VoiceLoungePopup() {
                   } catch {}
                   setPipWindow(null);
                 }}
-                className="p-1 rounded text-white/70 hover:text-white hover:bg-white/[0.08] transition-colors"
+                className="p-1 rounded text-white/70 hover:text-foreground hover:bg-surface-hover transition-colors"
                 title="Dock back into app"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -180,21 +185,21 @@ export function VoiceLoungePopup() {
             </div>
 
             {/* Stage */}
-            <div className="flex-1 p-3 bg-black/60 flex items-center justify-between gap-2 overflow-hidden border-b border-white/[0.04]">
+            <div className="flex-1 p-3 bg-black/60 flex items-center justify-between gap-2 overflow-hidden border-b border-border">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="relative shrink-0">
-                  {isSpeaking && <span className="absolute inset-0 rounded-full bg-emerald-500/30 animate-ping" />}
+                  {isSpeaking && <span className="absolute inset-0 rounded-full bg-success/30 animate-ping" />}
                   <Avatar
                     name={user?.email?.split('@')[0] || 'You'}
                     size="sm"
-                    className={cn(isSpeaking && 'ring-2 ring-emerald-400')}
+                    className={cn(isSpeaking && 'ring-2 ring-success')}
                   />
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-white truncate">
                     {serverVoice.isMicMuted ? 'Muted' : isSpeaking ? 'Transmitting audio...' : 'Connected'}
                   </div>
-                  <div className="text-[10px] text-white/60 flex items-center gap-1">
+                  <div className="text-xs text-white/60 flex items-center gap-1">
                     <Users className="w-2.5 h-2.5" />
                     <span>{participants.length + 1} in lounge</span>
                   </div>
@@ -203,7 +208,7 @@ export function VoiceLoungePopup() {
             </div>
 
             {/* 5 Controls */}
-            <div className="p-2 border-t border-white/[0.08] bg-[#0d101d] flex items-center justify-between gap-1 shrink-0">
+            <div className="p-2 border-t border-border bg-card flex items-center justify-between gap-1 shrink-0">
               {/* 1. Mute Microphone */}
               <button
                 type="button"
@@ -211,8 +216,8 @@ export function VoiceLoungePopup() {
                 className={cn(
                   'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
                   serverVoice.isMicMuted
-                    ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
-                    : 'bg-white/[0.06] text-white hover:bg-white/[0.12]'
+                    ? 'bg-danger/20 text-danger hover:bg-danger/30'
+                    : 'bg-surface-hover text-white hover:bg-surface-hover'
                 )}
                 title={serverVoice.isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
               >
@@ -226,8 +231,8 @@ export function VoiceLoungePopup() {
                 className={cn(
                   'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
                   serverVoice.isDeafened
-                    ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
-                    : 'bg-white/[0.06] text-white hover:bg-white/[0.12]'
+                    ? 'bg-danger/20 text-danger hover:bg-danger/30'
+                    : 'bg-surface-hover text-white hover:bg-surface-hover'
                 )}
                 title={serverVoice.isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
               >
@@ -242,7 +247,7 @@ export function VoiceLoungePopup() {
                   'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
                   serverVoice.isScreenSharing
                     ? 'bg-primary/25 text-primary hover:bg-primary/35 shadow-sm'
-                    : 'bg-white/[0.06] text-white/60 hover:text-white hover:bg-white/[0.12]'
+                    : 'bg-surface-hover text-white/60 hover:text-foreground hover:bg-surface-hover'
                 )}
                 title={serverVoice.isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
               >
@@ -256,8 +261,8 @@ export function VoiceLoungePopup() {
                 className={cn(
                   'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
                   serverVoice.isCameraOn
-                    ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-                    : 'bg-white/[0.06] text-white/60 hover:text-white hover:bg-white/[0.12]'
+                    ? 'bg-success/20 text-success hover:bg-success/30'
+                    : 'bg-surface-hover text-white/60 hover:text-foreground hover:bg-surface-hover'
                 )}
                 title={serverVoice.isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
               >
@@ -274,7 +279,7 @@ export function VoiceLoungePopup() {
                   setPipWindow(null);
                   serverVoice.disconnectVoice();
                 }}
-                className="p-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
+                className="p-2 rounded-xl bg-danger hover:bg-danger text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
                 title="Disconnect"
               >
                 <PhoneOff className="w-4 h-4" />
@@ -285,13 +290,13 @@ export function VoiceLoungePopup() {
         )}
 
         {/* Docked In-App Indicator pill */}
-        <div className="fixed bottom-20 right-6 z-[99999] pointer-events-auto bg-[#0a0c16]/95 border border-white/[0.12] rounded-2xl shadow-2xl backdrop-blur-xl p-3 flex items-center gap-3">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+        <div className="fixed bottom-20 right-6 z-[99999] pointer-events-auto bg-card/95 border border-border rounded-2xl shadow-2xl backdrop-blur-xl p-3 flex items-center gap-3">
+          <span className="w-2.5 h-2.5 rounded-full bg-success animate-pulse shrink-0" />
           <div className="min-w-0">
             <div className="text-xs font-semibold text-foreground">
               Voice Lounge popped out above all windows
             </div>
-            <div className="text-[10px] text-muted-foreground">
+            <div className="text-xs text-muted-foreground">
               Floating on top of games & external apps
             </div>
           </div>
@@ -303,7 +308,7 @@ export function VoiceLoungePopup() {
               } catch {}
               setPipWindow(null);
             }}
-            className="px-2.5 py-1 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] text-xs font-medium text-foreground transition-colors shrink-0"
+            className="px-2.5 py-1 rounded-lg bg-surface-hover hover:bg-surface-hover text-xs font-medium text-foreground transition-colors shrink-0"
           >
             Restore to App
           </button>
@@ -326,7 +331,7 @@ export function VoiceLoungePopup() {
           : undefined
       }
       className={cn(
-        'fixed z-[99999] pointer-events-auto flex flex-col overflow-hidden bg-[#0a0c16]/95 border border-white/[0.12] shadow-2xl shadow-black/95 backdrop-blur-xl',
+        'fixed z-[99999] pointer-events-auto flex flex-col overflow-hidden bg-card/95 border border-border shadow-2xl shadow-black/95 backdrop-blur-xl',
         isDragging ? 'select-none transition-none shadow-primary/20' : 'transition-all duration-150',
         position ? 'w-80 rounded-2xl' : 'bottom-20 right-6 w-80 rounded-2xl'
       )}
@@ -337,17 +342,17 @@ export function VoiceLoungePopup() {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        className="h-10 border-b border-white/[0.08] px-3 flex items-center justify-between shrink-0 bg-surface-header/90 select-none cursor-grab active:cursor-grabbing backdrop-blur-md"
+        className="h-10 border-b border-border px-3 flex items-center justify-between shrink-0 bg-surface-header/90 select-none cursor-grab active:cursor-grabbing backdrop-blur-md"
       >
         <div className="flex items-center gap-2 min-w-0">
           <GripHorizontal className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0" />
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" />
           <div className="min-w-0 leading-tight">
             <div className="text-xs font-semibold text-foreground truncate">
               {serverVoice.activeChannelName ? `#${serverVoice.activeChannelName}` : 'Voice Lounge'}
             </div>
             {serverVoice.activeServerName && (
-              <div className="text-[10px] text-muted-foreground/70 truncate">
+              <div className="text-xs text-muted-foreground/70 truncate">
                 {serverVoice.activeServerName}
               </div>
             )}
@@ -359,7 +364,7 @@ export function VoiceLoungePopup() {
             <button
               type="button"
               onClick={() => setPosition(null)}
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
               title="Snap back to corner"
             >
               <RotateCcw className="w-3 h-3" />
@@ -370,7 +375,7 @@ export function VoiceLoungePopup() {
           <button
             type="button"
             onClick={openDocumentPip}
-            className="px-2 py-0.5 rounded text-primary hover:text-primary-foreground hover:bg-primary/20 text-[10px] font-semibold flex items-center gap-1 transition-colors border border-primary/30"
+            className="px-2 py-0.5 rounded text-primary hover:text-primary-foreground hover:bg-primary/20 text-xs font-semibold flex items-center gap-1 transition-colors border border-primary/30"
             title="Pop out above all games & desktop windows (Picture-in-Picture)"
             aria-label="Above All"
           >
@@ -381,7 +386,7 @@ export function VoiceLoungePopup() {
           <button
             type="button"
             onClick={() => setIsMinimized((prev) => !prev)}
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
             title={isMinimized ? 'Expand' : 'Collapse'}
           >
             {isMinimized ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -391,35 +396,35 @@ export function VoiceLoungePopup() {
 
       {/* Visual Stage (Collapsible) */}
       {!isMinimized && (
-        <div className="p-3 bg-black/40 flex items-center justify-between gap-2 overflow-hidden border-b border-white/[0.04]">
+        <div className="p-3 bg-black/40 flex items-center justify-between gap-2 overflow-hidden border-b border-border">
           <div className="flex items-center gap-2 min-w-0">
             <div className="relative shrink-0">
-              {isSpeaking && <span className="absolute inset-0 rounded-full bg-emerald-500/30 animate-ping" />}
+              {isSpeaking && <span className="absolute inset-0 rounded-full bg-success/30 animate-ping" />}
               <Avatar
                 name={user?.email?.split('@')[0] || 'You'}
                 size="sm"
-                className={cn(isSpeaking && 'ring-2 ring-emerald-400')}
+                className={cn(isSpeaking && 'ring-2 ring-success')}
               />
             </div>
             <div className="min-w-0">
               <div className="text-xs font-medium text-foreground truncate">
                 {serverVoice.isMicMuted ? 'Muted' : isSpeaking ? 'Transmitting audio...' : 'Connected'}
               </div>
-              <div className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
+              <div className="text-xs text-muted-foreground/70 flex items-center gap-1">
                 <Users className="w-2.5 h-2.5" />
                 <span>{participants.length + 1} in lounge</span>
               </div>
             </div>
           </div>
 
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono border border-emerald-500/20 shrink-0">
+            <span className="text-xs px-1.5 py-0.5 rounded bg-success/10 text-success font-mono border border-success/20 shrink-0">
               GCP Studio Audio
             </span>
           </div>
       )}
 
       {/* Pop-Up Control Bar: The 5 Essential Controls */}
-      <div className="p-2.5 border-t border-white/[0.08] bg-surface-header/80 flex items-center justify-between gap-1.5 shrink-0">
+      <div className="p-2.5 border-t border-border bg-surface-header/80 flex items-center justify-between gap-1.5 shrink-0">
         {/* 1. Mute Microphone */}
         <button
           type="button"
@@ -427,8 +432,8 @@ export function VoiceLoungePopup() {
           className={cn(
             'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
             serverVoice.isMicMuted
-              ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
-              : 'bg-white/[0.06] text-foreground hover:bg-white/[0.12]'
+              ? 'bg-danger/20 text-danger hover:bg-danger/30'
+              : 'bg-surface-hover text-foreground hover:bg-surface-hover'
           )}
           title={serverVoice.isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
           aria-label="Toggle Microphone"
@@ -443,8 +448,8 @@ export function VoiceLoungePopup() {
           className={cn(
             'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
             serverVoice.isDeafened
-              ? 'bg-rose-500/20 text-rose-400 hover:bg-rose-500/30'
-              : 'bg-white/[0.06] text-foreground hover:bg-white/[0.12]'
+              ? 'bg-danger/20 text-danger hover:bg-danger/30'
+              : 'bg-surface-hover text-foreground hover:bg-surface-hover'
           )}
           title={serverVoice.isDeafened ? 'Undeafen Audio' : 'Deafen Audio'}
           aria-label="Toggle Deafen"
@@ -460,7 +465,7 @@ export function VoiceLoungePopup() {
             'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
             serverVoice.isScreenSharing
               ? 'bg-primary/25 text-primary hover:bg-primary/35 shadow-sm'
-              : 'bg-white/[0.06] text-muted-foreground hover:text-foreground hover:bg-white/[0.12]'
+              : 'bg-surface-hover text-muted-foreground hover:text-foreground hover:bg-surface-hover'
           )}
           title={serverVoice.isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
           aria-label="Toggle Screen Share"
@@ -475,8 +480,8 @@ export function VoiceLoungePopup() {
           className={cn(
             'p-2 rounded-xl transition-all flex items-center justify-center shrink-0',
             serverVoice.isCameraOn
-              ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-              : 'bg-white/[0.06] text-muted-foreground hover:text-foreground hover:bg-white/[0.12]'
+              ? 'bg-success/20 text-success hover:bg-success/30'
+              : 'bg-surface-hover text-muted-foreground hover:text-foreground hover:bg-surface-hover'
           )}
           title={serverVoice.isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
           aria-label="Toggle Camera"
@@ -488,7 +493,7 @@ export function VoiceLoungePopup() {
         <button
           type="button"
           onClick={serverVoice.disconnectVoice}
-          className="p-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
+          className="p-2 rounded-xl bg-danger hover:bg-danger text-white font-semibold transition-all shadow-md hover:shadow-rose-600/30 shrink-0"
           title="Disconnect from Lounge"
           aria-label="Disconnect"
         >

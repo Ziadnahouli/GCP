@@ -16,19 +16,19 @@ const statusOptions: StatusOption[] = [
   {
     value: 'online',
     label: 'Online',
-    description: 'Visible and ready to game',
+    description: 'Visible and ready to chat',
     color: 'bg-success',
   },
   {
     value: 'idle',
     label: 'Idle',
-    description: 'Away from keyboard / in-game AFK',
+    description: 'Away from keyboard / AFK',
     color: 'bg-warning',
   },
   {
     value: 'dnd',
     label: 'Do Not Disturb',
-    description: 'Will not receive desktop notification sound alerts',
+    description: 'Mute notification sounds',
     color: 'bg-danger',
   },
   {
@@ -67,7 +67,7 @@ export function StatusSelector({ currentStatus, onSelect, onClose, className }: 
       ref={containerRef}
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        'status-selector-container z-50 w-64 rounded-xl bg-surface-panel border border-border shadow-panel p-1.5 backdrop-blur-md animate-in duration-150',
+        'status-selector-container z-50 w-60 max-w-[calc(100%-16px)] rounded-xl bg-surface-panel border border-border shadow-panel p-1.5 backdrop-blur-md animate-in duration-150',
         className || 'absolute bottom-16 left-2 slide-in-from-bottom-2'
       )}
     >
@@ -84,23 +84,23 @@ export function StatusSelector({ currentStatus, onSelect, onClose, className }: 
               onClose();
             }}
             className={cn(
-              'w-full flex items-center justify-between p-2 rounded-lg text-left transition-colors',
+              'w-full flex items-center justify-between p-2 rounded-control text-left transition-colors',
               currentStatus === opt.value
-                ? 'bg-primary/10 text-primary font-medium'
-                : 'hover:bg-surface-hover text-foreground/90'
+                ? 'bg-surface-active text-foreground font-semibold'
+                : 'hover:bg-surface-hover text-muted-foreground hover:text-foreground'
             )}
           >
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
               <span className={cn('w-2.5 h-2.5 rounded-full shrink-0', opt.color)} />
-              <div>
-                <div className="text-xs font-semibold leading-tight">{opt.label}</div>
-                <div className="text-xs text-muted-foreground leading-tight">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold leading-tight truncate">{opt.label}</div>
+                <div className="text-xs text-muted-foreground leading-tight truncate">
                   {opt.description}
                 </div>
               </div>
             </div>
 
-            {currentStatus === opt.value && <Check className="w-4 h-4 shrink-0 text-primary" />}
+            {currentStatus === opt.value && <Check className="w-4 h-4 shrink-0 text-primary ml-1" />}
           </button>
         ))}
       </div>

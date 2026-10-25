@@ -1,7 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { Mic, MicOff, Headphones, Settings, ChevronUp, Sparkles, LogOut, Terminal } from 'lucide-react';
+import { Mic, MicOff, Headphones, Settings, ChevronUp, Sparkles, LogOut, Terminal, MoreVertical } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { useServerVoiceContext } from '@/features/servers/server-voice-context';
@@ -126,7 +133,7 @@ export function UserBar() {
         {/* User Info & Avatar Button */}
         <div
           onClick={() => setShowStatusPicker((prev) => !prev)}
-          className="flex items-center gap-2 p-1 rounded-lg hover:bg-surface-default transition-colors cursor-pointer min-w-0 max-w-[105px] sm:max-w-[120px]"
+          className="flex items-center gap-2 py-1 px-1.5 rounded-control hover:bg-surface-hover transition-colors cursor-pointer min-w-0 flex-1 mr-1"
           title="Click to change status"
         >
           <Avatar
@@ -134,25 +141,25 @@ export function UserBar() {
             name={profile?.display_name || 'Gamer'}
             status={profile?.status || 'online'}
             showStatus
-            size="sm"
+            size="32"
           />
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium text-foreground truncate leading-tight">
+            <div className="text-xs font-semibold text-foreground truncate leading-tight">
               {profile?.display_name || 'User'}
             </div>
-            <div className="text-xs text-muted-foreground/60 truncate leading-tight flex items-center gap-0.5">
-              <span>@{profile?.username || 'user'}</span>
+            <div className="text-xs text-muted-foreground/80 truncate leading-tight">
+              @{profile?.username || 'user'}
             </div>
           </div>
         </div>
 
-        {/* Action Controls: Mic, Deafen, Soundboard, Settings, Logs, Sign Out */}
-        <div className="flex items-center gap-0.5">
+        {/* Action Controls: Mic, Deafen, Settings, More Options */}
+        <div className="flex items-center gap-0.5 shrink-0">
           {/* Mic */}
           <button
             onClick={handleToggleMic}
             className={cn(
-              'p-1.5 rounded-md transition-colors',
+              'w-7 h-7 flex items-center justify-center rounded-control transition-colors',
               isMuted
                 ? 'text-danger bg-danger/10 hover:bg-danger/20'
                 : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
@@ -167,7 +174,7 @@ export function UserBar() {
           <button
             onClick={handleToggleDeafen}
             className={cn(
-              'p-1.5 rounded-md transition-colors',
+              'w-7 h-7 flex items-center justify-center rounded-control transition-colors',
               isDeafened
                 ? 'text-danger bg-danger/10 hover:bg-danger/20'
                 : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
@@ -178,55 +185,57 @@ export function UserBar() {
             <Headphones className="w-3.5 h-3.5" />
           </button>
 
-          {/* Soundboard */}
-          <button
-            onClick={() => setShowSoundboard(true)}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors"
-            title="Gaming Soundboard"
-            aria-label="Soundboard"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Diagnostics & Live Logs Console */}
-          <button
-            onClick={() => triggerOpenLogsWindow()}
-            className="relative p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-            title="Diagnostics & Live Logs (Ctrl + ~)"
-            aria-label="System Diagnostics & Logs"
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            {hasErrors && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-danger animate-pulse" />
-            )}
-          </button>
-
           {/* Settings */}
           <button
             onClick={() => setShowSettings(true)}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-control text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
             title="User Settings"
             aria-label="User Settings"
           >
             <Settings className="w-3.5 h-3.5" />
           </button>
 
-          {/* Sign Out */}
-          <button
-            onClick={async () => {
-              await signOut();
-              toast({
-                title: 'Signed Out',
-                description: 'You have been disconnected from the session.',
-                type: 'info',
-              });
-            }}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
-            title="Sign Out"
-            aria-label="Sign Out"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-          </button>
+          {/* Quick Tools & More Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="w-7 h-7 flex items-center justify-center rounded-control text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors relative"
+                title="More Options"
+                aria-label="More Options"
+              >
+                <MoreVertical className="w-3.5 h-3.5" />
+                {hasErrors && (
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-danger animate-pulse" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" className="w-52 mb-1">
+              <DropdownMenuItem onClick={() => setShowSoundboard(true)} className="gap-2 cursor-pointer">
+                <Sparkles className="w-4 h-4 text-warning" />
+                <span>Gaming Soundboard</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerOpenLogsWindow()} className="gap-2 cursor-pointer">
+                <Terminal className="w-4 h-4 text-primary" />
+                <span className="flex-1">Diagnostics & Logs</span>
+                <kbd className="text-xs font-mono text-muted-foreground border border-border px-1 rounded">Ctrl+~</kbd>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={async () => {
+                  await signOut();
+                  toast({
+                    title: 'Signed Out',
+                    description: 'You have been disconnected from the session.',
+                    type: 'info',
+                  });
+                }}
+                className="gap-2 text-danger/90 hover:text-danger hover:bg-danger/10 focus:bg-danger/10 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Presence Status Selector Popup */}

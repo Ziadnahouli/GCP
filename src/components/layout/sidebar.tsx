@@ -19,6 +19,25 @@ import { Badge } from '@/components/ui/badge';
 import { CreateGroupModal } from '@/components/chat/create-group-modal';
 import { cn } from '@/lib/utils';
 
+function formatConversationTime(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) {
+      return d.toLocaleDateString([], { weekday: 'short' });
+    }
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
 function ConversationItemAvatar({
   otherMemberId,
   title,
@@ -33,8 +52,8 @@ function ConversationItemAvatar({
   const status = useUserPresence(otherMemberId);
   if (isGroup) {
     return (
-      <div className="w-6 h-6 rounded-control bg-secondary border border-border flex items-center justify-center text-muted-foreground shrink-0">
-        <Users className="w-3.5 h-3.5" />
+      <div className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground shrink-0">
+        <Users className="w-4 h-4" />
       </div>
     );
   }
@@ -44,7 +63,7 @@ function ConversationItemAvatar({
       name={title}
       status={status}
       showStatus
-      size="24"
+      size="32"
     />
   );
 }
@@ -202,7 +221,7 @@ export function Sidebar({
                       router.push(`/?c=${conv.id}`);
                     }}
                     className={cn(
-                      'w-full flex items-center gap-2.5 px-2.5 rounded-control text-meta font-medium cursor-pointer transition-colors duration-fast ease-pro group relative text-left h-8 max-sm:h-14',
+                      'w-full flex items-center gap-3 px-2.5 py-2 rounded-control cursor-pointer transition-colors duration-fast ease-pro group relative text-left min-h-[48px] max-sm:min-h-[56px] overflow-hidden',
                       isSelected
                         ? 'bg-surface-active text-foreground font-semibold'
                         : hasUnread
@@ -212,7 +231,7 @@ export function Sidebar({
                     title={title}
                   >
                     {isSelected && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-r" />
+                      <span className="absolute left-0 top-2 bottom-2 w-0.5 bg-primary rounded-r" />
                     )}
                     <div className="relative shrink-0">
                       <ConversationItemAvatar
@@ -223,19 +242,26 @@ export function Sidebar({
                       />
                     </div>
 
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 flex flex-col justify-center">
                       <div className="flex items-center justify-between gap-1.5">
                         <span
                           className={cn(
-                            'truncate text-body',
-                            hasUnread ? 'font-semibold text-foreground' : isSelected ? 'font-semibold text-foreground' : 'text-foreground font-normal'
+                            'truncate text-body leading-tight',
+                            hasUnread || isSelected ? 'font-semibold text-foreground' : 'text-foreground/90 group-hover:text-foreground font-medium'
                           )}
                         >
                           {title}
                         </span>
-                        {hasUnread && (
-                          <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {conv.last_message?.created_at && (
+                            <span className="text-meta text-muted-foreground tabular-nums">
+                              {formatConversationTime(conv.last_message.created_at)}
+                            </span>
+                          )}
+                          {hasUnread && (
+                            <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                          )}
+                        </div>
                       </div>
                       {conv.last_message && (
                         <div

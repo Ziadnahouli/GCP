@@ -52,16 +52,45 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { NotificationsPopover } from '@/components/notifications/notifications-popover';
 import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command-palette';
 import { OfflineBanner } from '@/components/network/offline-banner';
+import dynamic from 'next/dynamic';
 import { ComponentErrorBoundary } from '@/components/ui/error-boundary';
-import { CreateServerModal } from '@/components/servers/create-server-modal';
-import { ServerSettingsModal } from '@/components/servers/server-settings-modal';
-import { SettingsModal } from '@/components/layout/settings-modal';
-import { PermissionsModal } from '@/components/layout/permissions-modal';
-import { IncomingCallModal } from '@/components/calls/incoming-call-modal';
-import { CallModal } from '@/components/calls/call-modal';
-import { VoiceLoungePopup } from '@/components/servers/voice-lounge-popup';
-import { MixerAdapterBridge } from '@/components/audio/mixer-adapter-bridge';
-import { LogsWindow } from '@/components/diagnostics/logs-window';
+
+const CreateServerModal = dynamic(
+  () => import('@/components/servers/create-server-modal').then((m) => m.CreateServerModal),
+  { ssr: false }
+);
+const ServerSettingsModal = dynamic(
+  () => import('@/components/servers/server-settings-modal').then((m) => m.ServerSettingsModal),
+  { ssr: false }
+);
+const SettingsModal = dynamic(
+  () => import('@/components/layout/settings-modal').then((m) => m.SettingsModal),
+  { ssr: false }
+);
+const PermissionsModal = dynamic(
+  () => import('@/components/layout/permissions-modal').then((m) => m.PermissionsModal),
+  { ssr: false }
+);
+const IncomingCallModal = dynamic(
+  () => import('@/components/calls/incoming-call-modal').then((m) => m.IncomingCallModal),
+  { ssr: false }
+);
+const CallModal = dynamic(
+  () => import('@/components/calls/call-modal').then((m) => m.CallModal),
+  { ssr: false }
+);
+const VoiceLoungePopup = dynamic(
+  () => import('@/components/servers/voice-lounge-popup').then((m) => m.VoiceLoungePopup),
+  { ssr: false }
+);
+const MixerAdapterBridge = dynamic(
+  () => import('@/components/audio/mixer-adapter-bridge').then((m) => m.MixerAdapterBridge),
+  { ssr: false }
+);
+const LogsWindow = dynamic(
+  () => import('@/components/diagnostics/logs-window').then((m) => m.LogsWindow),
+  { ssr: false }
+);
 import { useToast } from '@/components/ui/toast';
 import { Channel } from '@/lib/types/server';
 import { cn } from '@/lib/utils';

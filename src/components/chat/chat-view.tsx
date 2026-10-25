@@ -7,12 +7,29 @@ import {
   X,
   Download,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { GroupSettingsModal } from '@/components/chat/group-settings-modal';
-import { ForwardModal } from '@/components/chat/forward-modal';
-import { ReportModal } from '@/components/social/report-modal';
-import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
 import { ChatHeader } from '@/components/chat/chat-header';
+
+const GroupSettingsModal = dynamic(
+  () => import('@/components/chat/group-settings-modal').then((m) => m.GroupSettingsModal),
+  { ssr: false }
+);
+
+const ForwardModal = dynamic(
+  () => import('@/components/chat/forward-modal').then((m) => m.ForwardModal),
+  { ssr: false }
+);
+
+const ReportModal = dynamic(
+  () => import('@/components/social/report-modal').then((m) => m.ReportModal),
+  { ssr: false }
+);
+
+const SoundboardModal = dynamic(
+  () => import('@/components/soundboard/soundboard-modal').then((m) => m.SoundboardModal),
+  { ssr: false }
+);
 import { ChatMessageRow } from '@/components/chat/chat-message-row';
 import { ChatComposer } from '@/components/chat/chat-composer';
 import { useAuth } from '@/features/auth/auth-provider';

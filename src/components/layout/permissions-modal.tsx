@@ -72,23 +72,8 @@ export function PermissionsModal({
       else next.notifications = 'prompt';
     }
 
-    // 2. AudioContext autoplay check
-    try {
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (AudioCtx) {
-        const testCtx = new AudioCtx();
-        if (testCtx.state === 'running') {
-          next.audio = 'granted';
-        } else {
-          next.audio = 'prompt';
-        }
-        testCtx.close().catch(() => {});
-      }
-    } catch {
-      next.audio = 'prompt';
-    }
+    // 2. Audio state (deferred until user gesture to prevent blocking page load)
+    next.audio = 'prompt';
 
     // 3. Permissions API for Mic & Camera (if supported by browser)
     if (typeof navigator !== 'undefined' && navigator.permissions?.query) {

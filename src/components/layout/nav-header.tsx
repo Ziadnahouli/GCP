@@ -2,12 +2,21 @@
 
 import * as React from 'react';
 import { Search, Bell, Radio, Menu, ShieldCheck } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useNotifications } from '@/hooks/use-notifications';
-import { ZeroTierModal } from '@/components/network/zerotier-modal';
-import { GlobalSearchModal } from '@/components/search/global-search-modal';
 import { NotificationsPopover } from '@/components/notifications/notifications-popover';
 import { cn } from '@/lib/utils';
+
+const ZeroTierModal = dynamic(
+  () => import('@/components/network/zerotier-modal').then((m) => m.ZeroTierModal),
+  { ssr: false }
+);
+
+const GlobalSearchModal = dynamic(
+  () => import('@/components/search/global-search-modal').then((m) => m.GlobalSearchModal),
+  { ssr: false }
+);
 
 interface NavHeaderProps {
   title?: string;

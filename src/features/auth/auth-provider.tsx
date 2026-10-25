@@ -172,24 +172,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.warn('[AuthProvider] Notice fetching user_settings:', settingsRes.error);
         } else if (settingsRes.data) {
           const s = settingsRes.data as UserSettings;
-          setSettings(s);
+          const localThemeMode = typeof window !== 'undefined' ? (localStorage.getItem('nexus_theme_mode') as 'system' | 'light' | 'dark' | null) : null;
+          const localDensity = typeof window !== 'undefined' ? (localStorage.getItem('nexus_density') as 'comfortable' | 'compact' | null) : null;
+          const localTextScale = typeof window !== 'undefined' ? (localStorage.getItem('nexus_text_scale') as '90' | '100' | '112' | '125' | null) : null;
+          const themeModeToApply = s.theme_mode || localThemeMode || 'system';
+
+          const mergedSettings: UserSettings = {
+            ...s,
+            theme_mode: themeModeToApply,
+            density: s.density || localDensity || 'comfortable',
+            text_scale: s.text_scale || localTextScale || '100',
+          };
+          setSettings(mergedSettings);
+
           if (typeof document !== 'undefined') {
-            if (s.accent_color) {
-              document.documentElement.setAttribute('data-theme', s.accent_color);
-              try { localStorage.setItem('nexus_accent', s.accent_color); } catch (e) { void e; }
+            if (mergedSettings.accent_color) {
+              document.documentElement.setAttribute('data-theme', mergedSettings.accent_color);
+              try { localStorage.setItem('nexus_accent', mergedSettings.accent_color); } catch (e) { void e; }
             }
-            if (s.theme_mode) {
-              try { localStorage.setItem('nexus_theme_mode', s.theme_mode); } catch (e) { void e; }
-              const isDark = s.theme_mode === 'dark' || (s.theme_mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            if (themeModeToApply) {
+              try { localStorage.setItem('nexus_theme_mode', themeModeToApply); } catch (e) { void e; }
+              const isDark = themeModeToApply === 'dark' || (themeModeToApply === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
               if (isDark) {
                 document.documentElement.classList.add('dark');
               } else {
                 document.documentElement.classList.remove('dark');
               }
             }
-            if (s.density) {
-              document.documentElement.setAttribute('data-density', s.density);
-              try { localStorage.setItem('nexus_density', s.density); } catch (e) { void e; }
+            if (mergedSettings.density) {
+              document.documentElement.setAttribute('data-density', mergedSettings.density);
+              try { localStorage.setItem('nexus_density', mergedSettings.density); } catch (e) { void e; }
             }
             if (s.text_scale) {
               document.documentElement.setAttribute('data-text-scale', s.text_scale);
@@ -600,21 +612,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!user) return { error: 'Not authenticated' };
 
+      // Map theme_mode to legacy theme column as well for database compatibility
+      const payload: Record<string, unknown> = {
+        user_id: user.id,
+        ...updates,
+        updated_at: new Date().toISOString(),
+      };
+      if (updates.theme_mode) {
+        payload.theme = updates.theme_mode === 'light' ? 'light' : 'dark';
+      }
+
       const { data: upsertedSettings, error: updateErr } = await supabase
         .from('user_settings')
-        .upsert(
-          {
-            user_id: user.id,
-            ...updates,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' }
-        )
+        .upsert(payload, { onConflict: 'user_id' })
         .select()
         .maybeSingle();
 
       if (updateErr) {
-        // A4: Revert DOM theme and state on failure
+        // Check if error is caused by missing new columns (e.g. theme_mode, density, text_scale, reduce_motion)
+        const isColumnMissing =
+          updateErr.message?.includes('theme_mode') ||
+          updateErr.message?.includes('schema cache') ||
+          updateErr.message?.includes('column') ||
+          updateErr.code === 'PGRST204';
+
+        if (isColumnMissing) {
+          console.warn('[AuthProvider] Remote user_settings column not found in schema cache, persisting locally:', updateErr.message);
+
+          // Retry remote upsert with only legacy columns (theme, accent_color)
+          const fallbackPayload: Record<string, unknown> = {
+            user_id: user.id,
+            updated_at: new Date().toISOString(),
+          };
+          if (updates.accent_color) fallbackPayload.accent_color = updates.accent_color;
+          if (updates.theme_mode) fallbackPayload.theme = updates.theme_mode === 'light' ? 'light' : 'dark';
+
+          try {
+            await supabase
+              .from('user_settings')
+              .upsert(fallbackPayload, { onConflict: 'user_id' });
+          } catch (e: unknown) {
+            void e;
+          }
+
+          // Retain user's chosen settings in memory and localStorage
+          const localUpdated = { ...(settings || DEFAULT_SETTINGS), ...updates };
+          setSettings(localUpdated);
+          try {
+            localStorage.setItem('nexus_local_settings', JSON.stringify(localUpdated));
+          } catch (e: unknown) {
+            void e;
+          }
+          return { error: null };
+        }
+
+        // A4: Revert DOM theme and state on genuine failure
         if (typeof document !== 'undefined') {
           if (prevTheme) document.documentElement.setAttribute('data-theme', prevTheme);
           if (prevIsDark) {

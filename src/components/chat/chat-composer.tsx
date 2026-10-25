@@ -56,6 +56,8 @@ export function ChatComposer({
   const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
   const [isSending, setIsSending] = React.useState(false);
   const [mentionIndex, setMentionIndex] = React.useState(0);
+  const [cursorPos, setCursorPos] = React.useState(0);
+  const [mentionDismissed, setMentionDismissed] = React.useState(false);
 
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -66,8 +68,10 @@ export function ChatComposer({
       const draft = localStorage.getItem(`nexus_draft_conv_${conversationId}`);
       if (draft) {
         setContent(draft);
+        setCursorPos(draft.length);
       } else {
         setContent('');
+        setCursorPos(0);
       }
     }
   }, [conversationId]);
@@ -90,6 +94,56 @@ export function ChatComposer({
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }, [content]);
+
+  // Active mention matching based on text immediately before cursor (e.g. "hi @al" -> "al")
+  const activeMentionMatch = React.useMemo(() => {
+    if (mentionDismissed) return null;
+    const textBeforeCursor = content.slice(0, cursorPos);
+    const match = textBeforeCursor.match(/(?:^|\s)@([a-zA-Z0-9_\-\.]*)$/);
+    if (!match) return null;
+    return match[1].toLowerCase();
+  }, [content, cursorPos, mentionDismissed]);
+
+  const filteredMentionCandidates = React.useMemo(() => {
+    if (activeMentionMatch === null || mentionCandidates.length === 0) return [];
+    return mentionCandidates.filter(
+      (m) =>
+        m.username.toLowerCase().includes(activeMentionMatch) ||
+        m.display_name.toLowerCase().includes(activeMentionMatch)
+    );
+  }, [activeMentionMatch, mentionCandidates]);
+
+  const showMentions = filteredMentionCandidates.length > 0;
+
+  React.useEffect(() => {
+    setMentionIndex(0);
+  }, [activeMentionMatch]);
+
+  const handleSelectMentionCandidate = React.useCallback(
+    (username: string) => {
+      const textBeforeCursor = content.slice(0, cursorPos);
+      const textAfterCursor = content.slice(cursorPos);
+      const replacedBefore = textBeforeCursor.replace(/(?:^|\s)@([a-zA-Z0-9_\-\.]*)$/, (m) => {
+        const leading = m.startsWith(' ') ? ' ' : '';
+        return `${leading}@${username} `;
+      });
+      const newContent = replacedBefore + textAfterCursor;
+      setContent(newContent);
+      setMentionDismissed(true);
+      if (onSelectMention) {
+        onSelectMention(username);
+      }
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const newPos = replacedBefore.length;
+          textareaRef.current.setSelectionRange(newPos, newPos);
+          setCursorPos(newPos);
+        }
+      }, 0);
+    },
+    [content, cursorPos, onSelectMention]
+  );
 
   const handleAddFiles = (filesList: FileList | null) => {
     if (!filesList || filesList.length === 0) return;
@@ -124,6 +178,8 @@ export function ChatComposer({
       await onSendMessage(trimmed, selectedFiles);
       setContent('');
       setSelectedFiles([]);
+      setCursorPos(0);
+      setMentionDismissed(false);
       if (typeof window !== 'undefined') {
         localStorage.removeItem(`nexus_draft_conv_${conversationId}`);
       }
@@ -136,27 +192,28 @@ export function ChatComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (mentionCandidates.length > 0) {
+    if (showMentions) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setMentionIndex((prev) => (prev + 1) % mentionCandidates.length);
+        setMentionIndex((prev) => (prev + 1) % filteredMentionCandidates.length);
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setMentionIndex((prev) => (prev - 1 + mentionCandidates.length) % mentionCandidates.length);
+        setMentionIndex((prev) => (prev - 1 + filteredMentionCandidates.length) % filteredMentionCandidates.length);
         return;
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        const cand = mentionCandidates[mentionIndex];
-        if (cand && onSelectMention) {
-          onSelectMention(cand.username);
+        const cand = filteredMentionCandidates[mentionIndex];
+        if (cand) {
+          handleSelectMentionCandidate(cand.username);
         }
         return;
       }
       if (e.key === 'Escape') {
         e.preventDefault();
+        setMentionDismissed(true);
         return;
       }
     }
@@ -243,19 +300,19 @@ export function ChatComposer({
       <div className="p-3">
         <div className="relative rounded-card border border-border bg-card focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 transition-all">
           {/* Mention Candidates Autocomplete */}
-          {mentionCandidates.length > 0 && (
+          {showMentions && (
             <div className="absolute bottom-full left-0 mb-2 w-72 max-h-52 overflow-y-auto rounded-card bg-popover border border-border shadow-popover p-1 z-dropdown">
               <div className="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border mb-1">
                 Mention members
               </div>
               <div className="space-y-0.5">
-                {mentionCandidates.map((m, idx) => (
+                {filteredMentionCandidates.map((m, idx) => (
                   <button
                     type="button"
                     key={m.id}
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      onSelectMention?.(m.username);
+                      handleSelectMentionCandidate(m.username);
                     }}
                     className={cn(
                       'w-full flex items-center gap-2 px-2 py-1.5 rounded-control text-xs text-left transition-colors',
@@ -292,7 +349,17 @@ export function ChatComposer({
             disabled={Boolean(disabledReason)}
             placeholder={disabledReason ? disabledReason : (placeholder || 'Type a message...')}
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={(e) => {
+              setContent(e.target.value);
+              setCursorPos(e.target.selectionStart || 0);
+              setMentionDismissed(false);
+            }}
+            onClick={(e) => {
+              setCursorPos((e.target as HTMLTextAreaElement).selectionStart || 0);
+            }}
+            onKeyUp={(e) => {
+              setCursorPos((e.target as HTMLTextAreaElement).selectionStart || 0);
+            }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             className="w-full bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none resize-none min-h-[36px] max-h-[180px] leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed select-text"

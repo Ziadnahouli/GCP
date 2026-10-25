@@ -151,11 +151,23 @@ export function useCallStats(): CallStatsContextType {
 // Procedural Web Audio Ringtone Generator (no external assets needed)
 class RingtonePlayer {
   private static activeInstance: RingtonePlayer | null = null;
+  private static isMuted: boolean = false;
   private ctx: AudioContext | null = null;
   private intervalId: NodeJS.Timeout | null = null;
   private activeGain: GainNode | null = null;
   private activeOsc: OscillatorNode | null = null;
   private isRunning: boolean = false;
+
+  static setMuted(muted: boolean) {
+    RingtonePlayer.isMuted = muted;
+    if (muted) {
+      RingtonePlayer.stopAll();
+    }
+  }
+
+  static getMuted(): boolean {
+    return RingtonePlayer.isMuted;
+  }
 
   static isPlaying(): boolean {
     return Boolean(RingtonePlayer.activeInstance && RingtonePlayer.activeInstance.isRunning);
@@ -165,12 +177,15 @@ class RingtonePlayer {
     if (RingtonePlayer.activeInstance) {
       try {
         RingtonePlayer.activeInstance.stop();
-      } catch {}
+      } catch (e) {
+        void e;
+      }
       RingtonePlayer.activeInstance = null;
     }
   }
 
   start() {
+    if (RingtonePlayer.isMuted) return;
     if (this.isRunning) return;
     RingtonePlayer.stopAll();
     RingtonePlayer.activeInstance = this;
@@ -184,7 +199,7 @@ class RingtonePlayer {
       this.ctx = new AudioCtx();
 
       const playTone = () => {
-        if (!this.isRunning || !this.ctx || this.ctx.state === 'closed') return;
+        if (RingtonePlayer.isMuted || !this.isRunning || !this.ctx || this.ctx.state === 'closed') return;
         if (this.ctx.state === 'suspended') {
           this.ctx.resume().catch(() => {});
         }
@@ -205,12 +220,16 @@ class RingtonePlayer {
           gain.connect(this.ctx.destination);
           osc.start();
           osc.stop(this.ctx.currentTime + 0.4);
-        } catch {}
+        } catch (e) {
+          void e;
+        }
       };
 
       playTone();
       this.intervalId = setInterval(playTone, 2000);
-    } catch {}
+    } catch (e) {
+      void e;
+    }
   }
 
   stop() {
@@ -223,20 +242,26 @@ class RingtonePlayer {
       try {
         this.activeGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.activeGain.gain.setValueAtTime(0, this.ctx.currentTime);
-      } catch {}
+      } catch (e) {
+        void e;
+      }
       this.activeGain = null;
     }
     if (this.activeOsc) {
       try {
         this.activeOsc.stop();
         this.activeOsc.disconnect();
-      } catch {}
+      } catch (e) {
+        void e;
+      }
       this.activeOsc = null;
     }
     if (this.ctx) {
       try {
         this.ctx.close();
-      } catch {}
+      } catch (e) {
+        void e;
+      }
       this.ctx = null;
     }
     if (RingtonePlayer.activeInstance === this) {
@@ -357,6 +382,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const profileRef = React.useRef(profile);
   React.useEffect(() => {
     profileRef.current = profile;
+    const isDnd = profile?.status === 'dnd';
+    RingtonePlayer.setMuted(isDnd);
   }, [profile]);
 
   const settingsRef = React.useRef(settings);
@@ -383,6 +410,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const isStartingCallRef = React.useRef<boolean>(false);
   const ringingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const calleeRingingTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const calleePollIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
+  const calleeRoomChannelRef = React.useRef<RealtimeChannel | null>(null);
   const iceWatchdogTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const iceRestartingRef = React.useRef<boolean>(false);
   const activeCallPayloadRef = React.useRef<IncomingCallData | null>(null);
@@ -857,6 +886,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (calleeRingingTimerRef.current) {
       clearTimeout(calleeRingingTimerRef.current);
       calleeRingingTimerRef.current = null;
+    }
+    if (calleePollIntervalRef.current) {
+      clearInterval(calleePollIntervalRef.current);
+      calleePollIntervalRef.current = null;
+    }
+    if (calleeRoomChannelRef.current) {
+      try {
+        realtimeHub.release(calleeRoomChannelRef.current);
+      } catch (e) {
+        void e;
+      }
+      calleeRoomChannelRef.current = null;
     }
     if (ringingBeaconRef.current) {
       clearInterval(ringingBeaconRef.current);
@@ -1963,6 +2004,47 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const sendDirectSignalRef = React.useRef(sendDirectSignal);
   sendDirectSignalRef.current = sendDirectSignal;
 
+  const dismissIncomingCall = React.useCallback(
+    (reason?: string) => {
+      if (calleePollIntervalRef.current) {
+        clearInterval(calleePollIntervalRef.current);
+        calleePollIntervalRef.current = null;
+      }
+      if (calleeRoomChannelRef.current) {
+        try {
+          realtimeHub.release(calleeRoomChannelRef.current);
+        } catch (e) {
+          void e;
+        }
+        calleeRoomChannelRef.current = null;
+      }
+      RingtonePlayer.stopAll();
+      if (ringtoneRef.current) {
+        ringtoneRef.current.stop();
+        ringtoneRef.current = null;
+      }
+      if (calleeRingingTimerRef.current) {
+        clearTimeout(calleeRingingTimerRef.current);
+        calleeRingingTimerRef.current = null;
+      }
+      setIncomingCall(null);
+      incomingCallRef.current = null;
+      setCallStatus('idle');
+      callStatusRef.current = 'idle';
+      activeConversationIdRef.current = null;
+      setActiveConversationId(null);
+      peerUserIdRef.current = null;
+      setPeerUserId(null);
+      stopMediaTracksRef.current();
+      if (reason) {
+        toast({ title: 'Call Ended', description: reason, type: 'info' });
+      }
+    },
+    [toast]
+  );
+  const dismissIncomingCallRef = React.useRef(dismissIncomingCall);
+  dismissIncomingCallRef.current = dismissIncomingCall;
+
   // 1. GLOBAL SIGNALING LISTENER: Subscribes on mount for the authenticated user
   React.useEffect(() => {
     if (!user?.id || !supabase) return;
@@ -2132,7 +2214,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setPeerUserId(payload.callerId);
 
         // L6: Respect Do Not Disturb (DND)
-        const isDnd = profileRef.current?.status === 'dnd' || profile?.status === 'dnd';
+        const isDnd = profileRef.current?.status === 'dnd';
         if (isDnd) {
           console.debug('[CallSignaling] Callee is in Do Not Disturb mode. Suppressing audible ringtone.');
         } else {
@@ -2144,6 +2226,72 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        // Active 1-second poll to ensure Callee never gets stuck if caller ends call
+        if (calleePollIntervalRef.current) {
+          clearInterval(calleePollIntervalRef.current);
+          calleePollIntervalRef.current = null;
+        }
+        calleePollIntervalRef.current = setInterval(async () => {
+          if (callStatusRef.current !== 'incoming_ringing') {
+            if (calleePollIntervalRef.current) {
+              clearInterval(calleePollIntervalRef.current);
+              calleePollIntervalRef.current = null;
+            }
+            return;
+          }
+          const convId = incomingCallRef.current?.conversationId || activeConversationIdRef.current;
+          const sessId = incomingCallRef.current?.id || dbCallSessionIdRef.current;
+          if (!convId && !sessId) return;
+
+          try {
+            let query = supabase
+              .from('call_sessions')
+              .select('id, status, conversation_id')
+              .order('started_at', { ascending: false })
+              .limit(1);
+
+            if (sessId) {
+              query = query.eq('id', sessId);
+            } else if (convId) {
+              query = query.eq('conversation_id', convId);
+            }
+
+            const { data: sessList } = await query;
+            const currentSession = sessList?.[0];
+
+            if (currentSession && (currentSession.status === 'ended' || currentSession.status === 'rejected')) {
+              console.debug('[CallSignaling] Callee active poll detected call ended/rejected in DB. Auto-dismissing.');
+              dismissIncomingCallRef.current('Caller cancelled the call.');
+            }
+          } catch (err) {
+            console.warn('[CallSignaling] Error during callee active poll:', err);
+          }
+        }, 1000);
+
+        // Also subscribe Callee directly to call-room channel to immediately catch room call_ended events
+        if (payload.conversationId && supabase) {
+          if (calleeRoomChannelRef.current) {
+            try {
+              realtimeHub.release(calleeRoomChannelRef.current);
+            } catch (e) {
+              void e;
+            }
+            calleeRoomChannelRef.current = null;
+          }
+          const roomChan = realtimeHub
+            .acquire(`call-room-${payload.conversationId}`, { config: { private: true } }, supabase)
+            .on('broadcast', { event: 'call_ended' }, () => {
+              console.debug('[CallSignaling] Callee received call_ended broadcast on call-room channel.');
+              dismissIncomingCallRef.current('Caller cancelled the call.');
+            })
+            .on('broadcast', { event: 'squad_call_ended' }, () => {
+              console.debug('[CallSignaling] Callee received squad_call_ended broadcast on call-room channel.');
+              dismissIncomingCallRef.current('Squad call ended.');
+            });
+          roomChan.subscribe();
+          calleeRoomChannelRef.current = roomChan;
+        }
+
         // L6: Cap incoming ring duration at 35s to prevent perpetual ringing
         if (calleeRingingTimerRef.current) {
           clearTimeout(calleeRingingTimerRef.current);
@@ -2151,15 +2299,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         calleeRingingTimerRef.current = setTimeout(() => {
           if (callStatusRef.current === 'incoming_ringing') {
             console.debug('[CallSignaling] Callee ring duration expired (35s timeout). Auto-dismissing.');
-            RingtonePlayer.stopAll();
-            if (ringtoneRef.current) {
-              ringtoneRef.current.stop();
-              ringtoneRef.current = null;
-            }
-            setIncomingCall(null);
-            incomingCallRef.current = null;
-            setCallStatus('idle');
-            callStatusRef.current = 'idle';
+            dismissIncomingCallRef.current();
             toast({
               title: 'Missed Call',
               description: `${payload.callerName || 'Squadmate'} tried to call you.`,
@@ -2320,25 +2460,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .on('broadcast', { event: 'call_ended' }, () => {
-        RingtonePlayer.stopAll();
-        if (ringtoneRef.current) {
-          ringtoneRef.current.stop();
-          ringtoneRef.current = null;
-        }
-        if (calleeRingingTimerRef.current) {
-          clearTimeout(calleeRingingTimerRef.current);
-          calleeRingingTimerRef.current = null;
-        }
-        setIncomingCall(null);
-        incomingCallRef.current = null;
-        setCallStatus('idle');
-        callStatusRef.current = 'idle';
-        activeConversationIdRef.current = null;
-        setActiveConversationId(null);
-        peerUserIdRef.current = null;
-        setPeerUserId(null);
-        stopMediaTracksRef.current();
-        toast({ title: 'Call Ended', description: 'Call was cancelled or ended.', type: 'info' });
+        dismissIncomingCallRef.current('Call was cancelled or ended.');
       })
       .on(
         'postgres_changes',
@@ -2359,25 +2481,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               !row.conversation_id;
 
             if (callStatusRef.current === 'incoming_ringing' && isMatch) {
-              RingtonePlayer.stopAll();
-              if (ringtoneRef.current) {
-                ringtoneRef.current.stop();
-                ringtoneRef.current = null;
-              }
-              if (calleeRingingTimerRef.current) {
-                clearTimeout(calleeRingingTimerRef.current);
-                calleeRingingTimerRef.current = null;
-              }
-              setIncomingCall(null);
-              incomingCallRef.current = null;
-              setCallStatus('idle');
-              callStatusRef.current = 'idle';
-              activeConversationIdRef.current = null;
-              setActiveConversationId(null);
-              peerUserIdRef.current = null;
-              setPeerUserId(null);
-              stopMediaTracksRef.current();
-              toast({ title: 'Call Cancelled', description: 'Caller cancelled the call.', type: 'info' });
+              dismissIncomingCallRef.current('Caller cancelled the call.');
             }
             return;
           }
@@ -2434,10 +2538,78 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
               setActiveConversationId(payload.conversationId);
               setPeerUserId(payload.callerId);
 
-              if (!ringtoneRef.current && !RingtonePlayer.isPlaying()) {
+              // Respect DND mode: do not start ringtone if DND is active
+              const isDnd = profileRef.current?.status === 'dnd';
+              if (!isDnd && !ringtoneRef.current && !RingtonePlayer.isPlaying()) {
                 const player = new RingtonePlayer();
                 player.start();
                 ringtoneRef.current = player;
+              }
+
+              // Active 1-second poll to ensure Callee never gets stuck if caller ends call
+              if (calleePollIntervalRef.current) {
+                clearInterval(calleePollIntervalRef.current);
+                calleePollIntervalRef.current = null;
+              }
+              calleePollIntervalRef.current = setInterval(async () => {
+                if (callStatusRef.current !== 'incoming_ringing') {
+                  if (calleePollIntervalRef.current) {
+                    clearInterval(calleePollIntervalRef.current);
+                    calleePollIntervalRef.current = null;
+                  }
+                  return;
+                }
+                const convId = incomingCallRef.current?.conversationId || activeConversationIdRef.current;
+                const sessId = incomingCallRef.current?.id || dbCallSessionIdRef.current;
+                if (!convId && !sessId) return;
+
+                try {
+                  let query = supabase
+                    .from('call_sessions')
+                    .select('id, status, conversation_id')
+                    .order('started_at', { ascending: false })
+                    .limit(1);
+
+                  if (sessId) {
+                    query = query.eq('id', sessId);
+                  } else if (convId) {
+                    query = query.eq('conversation_id', convId);
+                  }
+
+                  const { data: sessList } = await query;
+                  const currentSession = sessList?.[0];
+
+                  if (currentSession && (currentSession.status === 'ended' || currentSession.status === 'rejected')) {
+                    console.debug('[CallSignaling] Callee active poll detected call ended/rejected in DB. Auto-dismissing.');
+                    dismissIncomingCallRef.current('Caller cancelled the call.');
+                  }
+                } catch (err) {
+                  console.warn('[CallSignaling] Error during callee active poll:', err);
+                }
+              }, 1000);
+
+              // Also subscribe Callee directly to call-room channel to immediately catch room call_ended events
+              if (payload.conversationId && supabase) {
+                if (calleeRoomChannelRef.current) {
+                  try {
+                    realtimeHub.release(calleeRoomChannelRef.current);
+                  } catch (e) {
+                    void e;
+                  }
+                  calleeRoomChannelRef.current = null;
+                }
+                const roomChan = realtimeHub
+                  .acquire(`call-room-${payload.conversationId}`, { config: { private: true } }, supabase)
+                  .on('broadcast', { event: 'call_ended' }, () => {
+                    console.debug('[CallSignaling] Callee received call_ended broadcast on call-room channel.');
+                    dismissIncomingCallRef.current('Caller cancelled the call.');
+                  })
+                  .on('broadcast', { event: 'squad_call_ended' }, () => {
+                    console.debug('[CallSignaling] Callee received squad_call_ended broadcast on call-room channel.');
+                    dismissIncomingCallRef.current('Squad call ended.');
+                  });
+                roomChan.subscribe();
+                calleeRoomChannelRef.current = roomChan;
               }
             }
           } catch (err) {
@@ -3383,6 +3555,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(ringingTimerRef.current);
       ringingTimerRef.current = null;
     }
+    if (calleePollIntervalRef.current) {
+      clearInterval(calleePollIntervalRef.current);
+      calleePollIntervalRef.current = null;
+    }
+    if (calleeRoomChannelRef.current) {
+      try {
+        realtimeHub.release(calleeRoomChannelRef.current);
+      } catch (e) {
+        void e;
+      }
+      calleeRoomChannelRef.current = null;
+    }
 
     // C5: Disconnect server voice channel if active before answering
     if (audioSessionCoordinator.isServerVoiceActive()) {
@@ -3931,12 +4115,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    if (!isGroup && target) {
-      sendDirectSignal(`user-signals-${target}`, 'call_ended', {
-        conversationId: convId,
-        senderId: user?.id,
+    const targetUserIds = new Set<string>();
+    if (peerUserIdRef.current) targetUserIds.add(peerUserIdRef.current);
+    if (peerUserId) targetUserIds.add(peerUserId);
+    if (incomingCallRef.current?.callerId) targetUserIds.add(incomingCallRef.current.callerId);
+    if (activeCallPayloadRef.current?.targetUserId) targetUserIds.add(activeCallPayloadRef.current.targetUserId);
+
+    if (!isGroup) {
+      targetUserIds.forEach((targetId) => {
+        sendDirectSignal(`user-signals-${targetId}`, 'call_ended', {
+          conversationId: convId,
+          senderId: user?.id,
+        });
+        sendSignalToUser(targetId, 'call_ended', {
+          conversationId: convId,
+          senderId: user?.id,
+        });
       });
-      sendSignalToUser(target, 'call_ended', {});
     }
 
     if (convId) {
@@ -3954,13 +4149,28 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       });
 
       try {
+        const updatePayload = {
+          conversation_id: convId,
+          status: 'ended',
+          ended_at: new Date().toISOString(),
+        };
         supabase
           .from('call_sessions')
-          .update({ status: 'ended', ended_at: new Date().toISOString() })
+          .update(updatePayload)
           .eq('conversation_id', convId)
           .in('status', ['ringing', 'active', 'in_call'])
           .then(() => {}, () => {});
-      } catch {}
+
+        if (dbCallSessionIdRef.current) {
+          supabase
+            .from('call_sessions')
+            .update(updatePayload)
+            .eq('id', dbCallSessionIdRef.current)
+            .then(() => {}, () => {});
+        }
+      } catch (e) {
+        void e;
+      }
 
       if (isGroup) {
         try {

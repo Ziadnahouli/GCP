@@ -55,7 +55,7 @@ export function isNotificationCategoryEnabled(
 }
 
 export function useNotifications() {
-  const { user, settings, isConfigured } = useAuth();
+  const { user, profile, settings, isConfigured } = useAuth();
   const { toast } = useToast();
   const supabase = React.useMemo(() => getBrowserClient(), []);
 
@@ -68,6 +68,11 @@ export function useNotifications() {
     settingsRef.current = settings;
   }, [settings]);
 
+  const profileRef = React.useRef(profile);
+  React.useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
   const activeResourceIdRef = React.useRef<string | null>(null);
   const setActiveResource = React.useCallback((id: string | null) => {
     activeResourceIdRef.current = id;
@@ -78,8 +83,11 @@ export function useNotifications() {
     []
   );
 
-  // Play subtle incoming notification chime using Web Audio API
+  // Play subtle incoming notification chime using Web Audio API (strictly suppressed in DND mode)
   const playNotificationChime = React.useCallback(() => {
+    if (profileRef.current?.status === 'dnd') {
+      return;
+    }
     if (!settingsRef.current?.sound_effects_enabled) return;
     try {
       const AudioCtx =
@@ -99,12 +107,17 @@ export function useNotifications() {
         osc.start();
         osc.stop(ctx.currentTime + 0.28);
       }
-    } catch {}
+    } catch (e) {
+      void e;
+    }
   }, []);
 
-  // Display browser desktop notification if enabled and permitted
+  // Display browser desktop notification if enabled, permitted, and not in DND mode
   const displayDesktopNotification = React.useCallback(
     (item: NotificationItem) => {
+      if (profileRef.current?.status === 'dnd') {
+        return;
+      }
       if (!settingsRef.current?.desktop_notifications) return;
       if (typeof window === 'undefined' || !('Notification' in window)) return;
 

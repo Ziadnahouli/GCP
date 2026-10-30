@@ -15,6 +15,7 @@ import {
   Sparkles,
   X,
   Crown,
+  Lock,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Server, Channel, ChannelMessage, hasServerPermission, hasChannelPermission } from '@/lib/types/server';
@@ -179,14 +180,25 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
     try {
       const res = await sendMessage(content);
       if (res?.error) {
+        let friendlyTitle = 'Cannot Send Message';
+        let friendlyDesc = res.error;
+
+        if (
+          res.error.toLowerCase().includes('violates row-level security policy') ||
+          res.error.toLowerCase().includes('permission') ||
+          res.error.toLowerCase().includes('is_channel_member_active')
+        ) {
+          friendlyTitle = 'Permission Restricted';
+          friendlyDesc = 'You do not have permission to send messages in this channel.';
+        } else if (res.error.toLowerCase().includes('timeout') || res.error.toLowerCase().includes('timed out')) {
+          friendlyTitle = 'Timed Out';
+          friendlyDesc = 'You are currently timed out in this server.';
+        }
+
         toast({
-          title: 'Channel message failed',
-          description: `${res.error}`,
+          title: friendlyTitle,
+          description: friendlyDesc,
           type: 'error',
-          action: {
-            label: 'Open logs',
-            onClick: () => triggerOpenLogsWindow(),
-          },
         });
       } else {
         setInputText('');
@@ -459,19 +471,25 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   <div ref={messagesEndRef} />
                 </div>
 
-                <form onSubmit={handleSend} className="p-2.5 border-t border-border flex gap-1.5">
-                  <input
-                    type="text"
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    disabled={!canSendMessages}
-                    placeholder={canSendMessages ? "Chat in voice lounge..." : "Message permissions restricted"}
-                    className="flex-1 bg-card border border-border rounded-control px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-                  />
-                  <Button type="submit" size="sm" disabled={!inputText.trim() || isSending || !canSendMessages} className="h-8 px-2.5">
-                    <Send className="w-3.5 h-3.5" />
-                  </Button>
-                </form>
+                {!canSendMessages ? (
+                  <div className="p-2.5 border-t border-border bg-card/60 flex items-center justify-center gap-2 text-muted-foreground select-none">
+                    <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-xs font-medium">You do not have permission to send messages in this channel.</span>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSend} className="p-2.5 border-t border-border flex gap-1.5">
+                    <input
+                      type="text"
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      placeholder="Chat in voice lounge..."
+                      className="flex-1 bg-card border border-border rounded-control px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    <Button type="submit" size="sm" disabled={!inputText.trim() || isSending} className="h-8 px-2.5">
+                      <Send className="w-3.5 h-3.5" />
+                    </Button>
+                  </form>
+                )}
               </div>
             )}
           </div>
@@ -722,55 +740,59 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                   </div>
                 )}
 
-                <form
-                  onSubmit={handleSend}
-                  className="flex items-center gap-2 bg-card border border-border rounded-control p-1.5 px-3 focus-within:ring-1 focus-within:ring-ring transition-all"
-                >
-                  {canUseSoundboard && (
-                    <button
-                      type="button"
-                      onClick={() => setShowSoundboard(true)}
-                      aria-label="Soundboard"
-                      className="text-muted-foreground hover:text-warning p-1 rounded-control transition-colors shrink-0"
-                      title="Soundboard"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                    </button>
-                  )}
-
-                  <textarea
-                    ref={textareaRef}
-                    rows={1}
-                    value={inputText}
-                    onChange={(e) => handleInputChange(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={!canSendMessages}
-                    aria-label={`Message #${channel.name}`}
-                    placeholder={
-                      isTimedOut
-                        ? 'You are currently timed out in this server'
-                        : canSendMessages
-                        ? `Message #${channel.name}...`
-                        : "You don't have permission to post messages here"
-                    }
-                    className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none resize-none max-h-28 py-1 font-normal disabled:opacity-50"
-                  />
-
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    size="sm"
-                    aria-label="Send channel message"
-                    disabled={!inputText.trim() || isSending || !canSendMessages}
-                    className="h-7 w-7 p-0 shrink-0"
+                {!canSendMessages ? (
+                  <div className="flex items-center justify-center gap-2 bg-card/60 border border-border rounded-control p-3 text-muted-foreground select-none">
+                    <Lock className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <span className="text-xs font-medium">
+                      {isTimedOut
+                        ? `You are currently timed out in this server until ${new Date(currentMember!.timeout_until!).toLocaleTimeString()}`
+                        : 'You do not have permission to send messages in this channel.'}
+                    </span>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={handleSend}
+                    className="flex items-center gap-2 bg-card border border-border rounded-control p-1.5 px-3 focus-within:ring-1 focus-within:ring-ring transition-all"
                   >
-                    {isSending ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Send className="w-3.5 h-3.5" />
+                    {canUseSoundboard && (
+                      <button
+                        type="button"
+                        onClick={() => setShowSoundboard(true)}
+                        aria-label="Soundboard"
+                        className="text-muted-foreground hover:text-warning p-1 rounded-control transition-colors shrink-0"
+                        title="Soundboard"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                      </button>
                     )}
-                  </Button>
-                </form>
+
+                    <textarea
+                      ref={textareaRef}
+                      rows={1}
+                      value={inputText}
+                      onChange={(e) => handleInputChange(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      aria-label={`Message #${channel.name}`}
+                      placeholder={`Message #${channel.name}...`}
+                      className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none resize-none max-h-28 py-1 font-normal"
+                    />
+
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      aria-label="Send channel message"
+                      disabled={!inputText.trim() || isSending}
+                      className="h-7 w-7 p-0 shrink-0"
+                    >
+                      {isSending ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                    </Button>
+                  </form>
+                )}
               </div>
             </div>
           </>

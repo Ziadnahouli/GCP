@@ -156,9 +156,19 @@ export function ChannelPermissionsDialog({
           type: 'success',
         });
       } else {
+        const raw = res.error || 'Failed to save channel permission overrides.';
+        let friendly = raw;
+        if (
+          raw.toLowerCase().includes('violates') ||
+          raw.toLowerCase().includes('policy') ||
+          raw.toLowerCase().includes('permission') ||
+          raw.toLowerCase().includes('insufficient')
+        ) {
+          friendly = 'You do not have permission to configure channel overrides.';
+        }
         toast({
           title: 'Update Failed',
-          description: res.error || 'Failed to save channel permission overrides.',
+          description: friendly,
           type: 'error',
         });
       }

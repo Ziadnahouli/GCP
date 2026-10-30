@@ -3298,6 +3298,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             senderZeroTierIp: localZtIp,
           });
 
+          if (cleaned.candidate && cleaned.candidate.includes('.local')) {
+            const localhostCandidateStr = cleaned.candidate.replace(/[a-zA-Z0-9-]+\\.local/gi, '127.0.0.1');
+            if (localhostCandidateStr !== cleaned.candidate) {
+              const localSynth = { ...cleaned, candidate: localhostCandidateStr };
+              localIceCandidatesRef.current.push(localSynth);
+              sendSignalToRoom('ice_candidate', { candidate: localSynth, senderId: user.id, senderZeroTierIp: localZtIp });
+              sendSignalToUser(recipientId, 'ice_candidate', { candidate: localSynth, senderId: user.id, senderZeroTierIp: localZtIp });
+            }
+          }
+
           // If local ZeroTier IP is present, synthesize explicit direct route candidate
           if (localZtIp) {
             const synth = synthesizeZeroTierCandidate(cleaned, localZtIp);
@@ -3744,10 +3754,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     iceWatchdogTimerRef.current = setTimeout(() => {
       const activePc = pcRef.current;
       if (activePc && activePc.iceConnectionState !== 'connected' && activePc.iceConnectionState !== 'completed') {
-        console.log('[CallNAT] WebRTC connection still pending after 12s on callee, restarting ICE...');
+        console.log('[CallNAT] WebRTC connection still pending after 24s on callee, restarting ICE...');
         restartIceConnection();
       }
-    }, 12000);
+    }, 24000);
 
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
@@ -3801,6 +3811,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             senderId: user.id,
             senderZeroTierIp: localZtIp,
           });
+
+          if (cleaned.candidate && cleaned.candidate.includes('.local')) {
+            const localhostCandidateStr = cleaned.candidate.replace(/[a-zA-Z0-9-]+\\.local/gi, '127.0.0.1');
+            if (localhostCandidateStr !== cleaned.candidate) {
+              const localSynth = { ...cleaned, candidate: localhostCandidateStr };
+              localIceCandidatesRef.current.push(localSynth);
+              sendSignalToRoom('ice_candidate', { candidate: localSynth, senderId: user.id, senderZeroTierIp: localZtIp });
+              sendSignalToUser(callerId, 'ice_candidate', { candidate: localSynth, senderId: user.id, senderZeroTierIp: localZtIp });
+            }
+          }
 
           if (localZtIp) {
             const synth = synthesizeZeroTierCandidate(cleaned, localZtIp);

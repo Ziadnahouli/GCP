@@ -144,17 +144,34 @@ export function RolesTab({
     setSavingPerms(true);
     try {
       if (onUpdateRolePermissions) {
-        await onUpdateRolePermissions(server.id, activeRole.id, perms);
+        const res = (await onUpdateRolePermissions(server.id, activeRole.id, perms)) as
+          | { ok?: boolean; error?: string }
+          | undefined;
+        if (res && res.ok === false) {
+          throw new Error(res.error || 'Failed to save role permissions.');
+        }
       }
       toast({
         title: 'Permissions Saved',
         description: `Updated permissions for "${activeRole.name}".`,
         type: 'success',
       });
-    } catch {
+    } catch (err: unknown) {
+      const raw = (err as Error)?.message || 'Failed to save role permissions.';
+      let friendly = raw;
+      if (
+        raw.toLowerCase().includes('violates') ||
+        raw.toLowerCase().includes('policy') ||
+        raw.toLowerCase().includes('permission') ||
+        raw.toLowerCase().includes('insufficient')
+      ) {
+        friendly = 'You do not have permission to modify this role.';
+      } else if (raw.toLowerCase().includes('equal or higher position')) {
+        friendly = 'You cannot modify a role with equal or higher rank than your own.';
+      }
       toast({
         title: 'Update Failed',
-        description: 'Failed to save role permissions.',
+        description: friendly,
         type: 'error',
       });
     } finally {

@@ -193,8 +193,8 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
   const effectiveConversation = currentConversation || fetchedConversation;
   const isGroup = effectiveConversation?.type === 'group';
-  const otherMember = effectiveConversation?.members?.find((m: any) => m.user_id !== user?.id)?.profile;
-  const targetUserId = otherMember?.id;
+  const otherMember = effectiveConversation?.members?.find((m: { user_id?: string }) => m.user_id !== user?.id);
+  const targetUserId = otherMember?.user_id || (otherMember as { profile?: { id?: string } })?.profile?.id;
 
   // Blocked / Privacy verification
   const [dmBlockedReason, setDmBlockedReason] = React.useState<string | null>(null);
@@ -239,16 +239,24 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
   // Handlers
   const handleVoiceCall = () => {
+    if (isGroup) {
+      startCall('', conversationId, false);
+      return;
+    }
     if (!targetUserId) {
-      toast({ title: 'Group call', description: 'Group voice calling is starting...', type: 'info' });
+      toast({ title: 'Unable to Call', description: 'Could not find squadmate to call.', type: 'error' });
       return;
     }
     startCall(targetUserId, conversationId, false);
   };
 
   const handleVideoCall = () => {
+    if (isGroup) {
+      startCall('', conversationId, true);
+      return;
+    }
     if (!targetUserId) {
-      toast({ title: 'Group call', description: 'Group video calling is starting...', type: 'info' });
+      toast({ title: 'Unable to Call', description: 'Could not find squadmate to call.', type: 'error' });
       return;
     }
     startCall(targetUserId, conversationId, true);

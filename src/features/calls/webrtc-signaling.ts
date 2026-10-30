@@ -185,8 +185,36 @@ export async function processIncomingIceCandidate(
           } else {
             pendingCandidates.push(unmasked);
           }
-        } catch (e) {
+        } catch (e: unknown) {
           console.warn('[CallZeroTier] Error applying unmasked candidate:', e);
+        }
+      }
+    }
+  }
+
+  // 1b. If candidate contains .local, synthesize 127.0.0.1 candidate for localhost testing
+  if (candidate.candidate && candidate.candidate.includes('.local')) {
+    const localhostCand = candidate.candidate.replace(/[a-zA-Z0-9-]+\.local/gi, '127.0.0.1');
+    if (localhostCand !== candidate.candidate) {
+      const localhostObj: RTCIceCandidateInit = {
+        ...candidate,
+        candidate: localhostCand,
+      };
+      const localhostKey = JSON.stringify({
+        candidate: localhostObj.candidate,
+        sdpMid: localhostObj.sdpMid,
+        sdpMLineIndex: localhostObj.sdpMLineIndex,
+      });
+      if (!seenCandidates.has(localhostKey)) {
+        addBoundedSet(seenCandidates, localhostKey, 1000);
+        try {
+          if (pc.remoteDescription && pc.remoteDescription.type) {
+            await pc.addIceCandidate(new RTCIceCandidate(localhostObj));
+          } else {
+            pendingCandidates.push(localhostObj);
+          }
+        } catch {
+          // Loopback pair not needed if direct host connects
         }
       }
     }

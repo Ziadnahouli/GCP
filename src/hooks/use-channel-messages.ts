@@ -562,8 +562,16 @@ export function useChannelMessages(channelId: string | null) {
         }
 
         return { error: null };
-      } catch (err: any) {
-        const errMsg = err?.message || 'Failed to send channel message';
+      } catch (err: unknown) {
+        const rawMsg = (err as Error)?.message || 'Failed to send channel message';
+        let errMsg = rawMsg;
+        if (
+          rawMsg.toLowerCase().includes('violates row-level security policy') ||
+          rawMsg.toLowerCase().includes('permission') ||
+          rawMsg.toLowerCase().includes('is_channel_member_active')
+        ) {
+          errMsg = 'You do not have permission to send messages in this channel.';
+        }
         setMessages((prev) =>
           prev.map((m) => (m.id === messageId ? { ...m, status: 'failed', error: errMsg } : m))
         );
@@ -591,18 +599,34 @@ export function useChannelMessages(channelId: string | null) {
         });
 
         if (error) {
+          let errMsg = error.message;
+          if (
+            errMsg.toLowerCase().includes('violates row-level security policy') ||
+            errMsg.toLowerCase().includes('permission') ||
+            errMsg.toLowerCase().includes('is_channel_member_active')
+          ) {
+            errMsg = 'You do not have permission to send messages in this channel.';
+          }
           setMessages((prev) =>
-            prev.map((m) => (m.id === messageId ? { ...m, status: 'failed', error: error.message } : m))
+            prev.map((m) => (m.id === messageId ? { ...m, status: 'failed', error: errMsg } : m))
           );
-          return { error: error.message };
+          return { error: errMsg };
         }
 
         setMessages((prev) =>
           prev.map((m) => (m.id === messageId ? { ...m, status: 'sent', error: undefined } : m))
         );
         return { error: null };
-      } catch (err: any) {
-        const errMsg = err?.message || 'Retry failed';
+      } catch (err: unknown) {
+        const rawMsg = (err as Error)?.message || 'Retry failed';
+        let errMsg = rawMsg;
+        if (
+          rawMsg.toLowerCase().includes('violates row-level security policy') ||
+          rawMsg.toLowerCase().includes('permission') ||
+          rawMsg.toLowerCase().includes('is_channel_member_active')
+        ) {
+          errMsg = 'You do not have permission to send messages in this channel.';
+        }
         setMessages((prev) =>
           prev.map((m) => (m.id === messageId ? { ...m, status: 'failed', error: errMsg } : m))
         );

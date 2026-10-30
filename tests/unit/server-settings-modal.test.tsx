@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Server, RoleDefinition, ServerMember } from '@/lib/types/server';
+import { UserProfile } from '@/lib/types/profile';
 import { ServerSettingsModal } from '@/components/servers/server-settings-modal';
 import { TimeoutMemberDialog } from '@/components/servers/settings/TimeoutMemberDialog';
 import { DeleteChannelDialog } from '@/components/servers/settings/DeleteChannelDialog';
@@ -9,12 +10,27 @@ import { DeleteServerDialog } from '@/components/servers/settings/DeleteServerDi
 import { KickMemberDialog } from '@/components/servers/settings/KickMemberDialog';
 import { BanMemberDialog } from '@/components/servers/settings/BanMemberDialog';
 
+const createMockProfile = (id: string, displayName: string, username: string): UserProfile => ({
+  id,
+  username,
+  display_name: displayName,
+  avatar_url: null,
+  banner_url: null,
+  banner_color: '#7c3aed',
+  bio: '',
+  custom_status: null,
+  status: 'online',
+  game_activity: null,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+});
+
 // Mock Auth
 const mockUser = { id: 'owner-uuid-1', email: 'owner@nexus.gg' };
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
     user: mockUser,
-    profile: { id: mockUser.id, display_name: 'OwnerUser', username: 'owner_user' },
+    profile: createMockProfile(mockUser.id, 'OwnerUser', 'owner_user'),
   }),
 }));
 
@@ -75,7 +91,7 @@ const testMembers: ServerMember[] = [
     user_id: 'owner-uuid-1',
     role: 'owner',
     joined_at: new Date().toISOString(),
-    profile: { id: 'owner-uuid-1', display_name: 'OwnerUser', username: 'owner_user' },
+    profile: createMockProfile('owner-uuid-1', 'OwnerUser', 'owner_user'),
   },
   {
     id: 'mem-2',
@@ -84,7 +100,7 @@ const testMembers: ServerMember[] = [
     role: 'member',
     role_id: 'mem-role-id',
     joined_at: new Date().toISOString(),
-    profile: { id: 'member-uuid-2', display_name: 'RegularMember', username: 'reg_mem' },
+    profile: createMockProfile('member-uuid-2', 'RegularMember', 'reg_mem'),
   },
 ];
 
@@ -158,7 +174,7 @@ describe('Server Settings Modal & Dialog Flow Tests (Clean Pro)', () => {
       user_id: 'target-uuid',
       role: 'member',
       joined_at: new Date().toISOString(),
-      profile: { id: 'target-uuid', display_name: 'TargetUser', username: 'target_u' },
+      profile: createMockProfile('target-uuid', 'TargetUser', 'target_u'),
     };
 
     render(

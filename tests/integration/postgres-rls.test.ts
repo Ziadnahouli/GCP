@@ -168,7 +168,7 @@ describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
       INSERT INTO public.channels (id, server_id, name, type) VALUES
         ('${CHANNEL_ID}', '${SERVER_ID}', 'general', 'text'),
         ('${OTHER_CHANNEL_ID}', '${OTHER_SERVER_ID}', 'secret-intel', 'text')
-      ON CONFLICT DO NOTHING;
+      ON CONFLICT (server_id, lower(name), type) DO UPDATE SET id = EXCLUDED.id;
 
       INSERT INTO storage.buckets (id, name, public) VALUES
         ('avatars', 'avatars', true),

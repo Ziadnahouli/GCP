@@ -122,6 +122,7 @@ export async function POST(request: Request) {
 
     // 2. Authorize access & resolve authoritative room name (Fail-closed design)
     let finalRoomName: string | null = null;
+    let effectiveServerId: string | null = null;
 
     if (conversationId) {
       // Direct / Group conversation call: Verify caller is a conversation member
@@ -224,6 +225,7 @@ export async function POST(request: Request) {
         );
       }
 
+      effectiveServerId = targetServerId;
       finalRoomName = `nexus-voice-${channelId.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
     } else if (serverId) {
       // Server-wide voice room: Verify server membership, bans, and timeouts
@@ -269,6 +271,7 @@ export async function POST(request: Request) {
         );
       }
 
+      effectiveServerId = serverId;
       finalRoomName = `nexus-server-${serverId.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
     } else if (roomName) {
       // Specific roomName requested: Strictly validate prefix and verify membership
@@ -426,6 +429,7 @@ export async function POST(request: Request) {
             );
           }
 
+          effectiveServerId = targetServerId;
           finalRoomName = roomName;
         }
       } else if (roomName.startsWith('nexus-server-')) {
@@ -480,6 +484,7 @@ export async function POST(request: Request) {
           );
         }
 
+        effectiveServerId = candidateSrvId;
         finalRoomName = roomName;
       } else {
         return NextResponse.json(
@@ -499,6 +504,39 @@ export async function POST(request: Request) {
         { error: 'Forbidden: Unable to verify access to requested room' },
         { status: 403 }
       );
+    }
+
+    // Voice permissions check for server rooms
+    let canSpeak = true;
+    let canShare = true;
+
+    if (effectiveServerId && typeof (supabase as any).rpc === 'function') {
+      const { data: canConnect } = await supabase.rpc('has_server_permission', {
+        p_server_id: effectiveServerId,
+        p_user_id: targetUserId,
+        p_permission: 'connect_voice',
+      });
+
+      if (canConnect === false) {
+        return NextResponse.json(
+          { error: 'Forbidden: You do not have permission to connect to voice channels in this server' },
+          { status: 403 }
+        );
+      }
+
+      const { data: speakPerm } = await supabase.rpc('has_server_permission', {
+        p_server_id: effectiveServerId,
+        p_user_id: targetUserId,
+        p_permission: 'speak_voice',
+      });
+      canSpeak = speakPerm !== false;
+
+      const { data: sharePerm } = await supabase.rpc('has_server_permission', {
+        p_server_id: effectiveServerId,
+        p_user_id: targetUserId,
+        p_permission: 'share_screen',
+      });
+      canShare = sharePerm !== false;
     }
 
     // 3. LiveKit Cloud credentials check — fail closed with controlled fallback, no hardcoded secrets!
@@ -524,13 +562,17 @@ export async function POST(request: Request) {
       ttl: 3600, // 1 hour token validity
     });
 
+    const publishSources: TrackSource[] = [TrackSource.CAMERA];
+    if (canSpeak) publishSources.push(TrackSource.MICROPHONE);
+    if (canShare) publishSources.push(TrackSource.SCREEN_SHARE);
+
     at.addGrant({
       roomJoin: true,
       room: finalRoomName,
-      canPublish: true,
+      canPublish: publishSources.length > 0,
       canSubscribe: true,
       canPublishData: true,
-      canPublishSources: [TrackSource.CAMERA, TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE],
+      canPublishSources: publishSources,
     });
 
     const token = await at.toJwt();

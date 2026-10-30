@@ -1,57 +1,51 @@
 'use client';
 
 import * as React from 'react';
-import { createPortal } from 'react-dom';
 import {
   Settings,
   Shield,
   Hash,
-  Volume2,
-  Trash2,
-  X,
-  AlertTriangle,
-  CheckCircle2,
-  Edit2,
-  Plus,
-  UserMinus,
-  Crown,
-  LogOut,
-  Save,
-  Sliders,
-  Check,
-  Sparkles,
-  Clock,
-  ShieldAlert,
-  Ban,
+  Users,
   Link2,
-  Copy,
+  Ban,
   FileText,
-  Loader2,
   Flag,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
   Server,
-  Channel,
   ChannelType,
   ServerRole,
   RoleDefinition,
   ServerPermission,
-  ALL_SERVER_PERMISSIONS,
-  DEFAULT_ROLE_PERMISSIONS,
   ServerBan,
   ModerationAuditLog,
   ServerInvite,
 } from '@/lib/types/server';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Avatar } from '@/components/ui/avatar';
-import { Input } from '@/components/ui/input';
 import { useAuth } from '@/features/auth/auth-provider';
-import { useServers } from '@/hooks/use-servers';
+import { useServers, usePermissions } from '@/hooks/use-servers';
 import { useToast } from '@/components/ui/toast';
-import { useModalEscape } from '@/hooks/use-modal-escape';
 import { cn } from '@/lib/utils';
-import { DEFAULT_ROLE_COLORS, ROLE_PRESET_COLORS } from '@/lib/design/colors';
+
+// Subcomponents
+import { OverviewTab } from './settings/OverviewTab';
+import { ChannelsTab } from './settings/ChannelsTab';
+import { RolesTab } from './settings/RolesTab';
+import { MembersTab } from './settings/MembersTab';
+import { InvitesTab } from './settings/InvitesTab';
+import { BansTab } from './settings/BansTab';
+import { AuditTab } from './settings/AuditTab';
+import { ReportsTab } from './settings/ReportsTab';
+import { DangerTab } from './settings/DangerTab';
 
 interface ServerSettingsModalProps {
   open: boolean;
@@ -68,12 +62,23 @@ interface ServerSettingsModalProps {
   onUpdateMemberRole?: (serverId: string, userId: string, newRole: ServerRole) => Promise<unknown>;
   onKickMember?: (serverId: string, userId: string) => Promise<unknown>;
   onLeaveServer?: (serverId: string) => Promise<unknown>;
-  onTransferOwnership?: (serverId: string, newOwnerId: string) => Promise<boolean>;
+  onTransferOwnership?: (serverId: string, newOwnerId: string) => Promise<boolean | unknown>;
   onCreateRole?: (serverId: string, name: string, color: string, permissions: ServerPermission[]) => Promise<unknown>;
   onUpdateRole?: (serverId: string, roleId: string, updates: Partial<RoleDefinition>) => Promise<unknown>;
   onDeleteRole?: (serverId: string, roleId: string) => Promise<unknown>;
   onUpdateRolePermissions?: (serverId: string, roleIdOrName: string, permissions: ServerPermission[]) => Promise<unknown>;
 }
+
+type TabKey =
+  | 'overview'
+  | 'channels'
+  | 'roles'
+  | 'members'
+  | 'invites'
+  | 'bans'
+  | 'audit'
+  | 'reports'
+  | 'danger';
 
 export function ServerSettingsModal({
   open,
@@ -93,8 +98,7 @@ export function ServerSettingsModal({
   onDeleteRole,
   onUpdateRolePermissions,
 }: ServerSettingsModalProps) {
-  useModalEscape(open, onOpenChange);
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const {
     banMember,
     unbanMember,
@@ -109,1557 +113,364 @@ export function ServerSettingsModal({
     dismissReport,
   } = useServers();
   const { toast } = useToast();
-  const [mounted, setMounted] = React.useState(false);
+  const permissions = usePermissions(server.id);
 
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
+  // SS-S1 & SS-R4: Strict server ownership check (never fallback to true if owner_id is missing)
+  const isOwner = Boolean(user?.id && server.owner_id && server.owner_id === user.id);
 
-  const [activeTab, setActiveTab] = React.useState<
-    'overview' | 'channels' | 'roles' | 'members' | 'invites' | 'bans' | 'audit' | 'reports' | 'danger'
-  >('overview');
-  const [serverName, setServerName] = React.useState(server.name);
-  const [serverDesc, setServerDesc] = React.useState(server.description || '');
-  const [savingOverview, setSavingOverview] = React.useState(false);
+  // Active tab state
+  const [activeTab, setActiveTab] = React.useState<TabKey>('overview');
+  const [isOverviewDirty, setIsOverviewDirty] = React.useState(false);
 
-  // Moderation state
+  // Async data states
   const [auditLogs, setAuditLogs] = React.useState<ModerationAuditLog[]>([]);
   const [bansList, setBansList] = React.useState<ServerBan[]>([]);
   const [invitesList, setInvitesList] = React.useState<ServerInvite[]>([]);
   const [reportsList, setReportsList] = React.useState<any[]>([]);
-  const [loadingModeration, setLoadingModeration] = React.useState(false);
+  const [loadingData, setLoadingData] = React.useState(false);
 
-  // Invite creator state
-  const [inviteMaxUses, setInviteMaxUses] = React.useState(0);
-  const [inviteExpiresHours, setInviteExpiresHours] = React.useState(24);
-  const [isCreatingInvite, setIsCreatingInvite] = React.useState(false);
+  // Calculate highest rank for the current user
+  const userHighestRoleRank = React.useMemo(() => {
+    if (isOwner) return 9999;
+    const currentMember = server.members?.find((m) => m.user_id === user?.id);
+    if (!currentMember) return 0;
+    if (currentMember.role_id) {
+      const r = server.roles?.find((role) => role.id === currentMember.role_id);
+      if (r) return r.position ?? 0;
+    }
+    if (currentMember.role === 'admin') return 100;
+    if (currentMember.role === 'moderator') return 50;
+    return 10;
+  }, [isOwner, server.members, server.roles, user?.id]);
 
+  // Load tab-specific async data
   React.useEffect(() => {
     if (!open) return;
-    // Always check reports count for badge
-    fetchServerReports(server.id).then(setReportsList).catch(() => {});
 
-    if (activeTab === 'audit') {
-      setLoadingModeration(true);
+    if (activeTab === 'audit' && (isOwner || permissions.can('view_audit_log'))) {
+      setLoadingData(true);
       fetchAuditLogs(server.id)
         .then(setAuditLogs)
-        .finally(() => setLoadingModeration(false));
-    } else if (activeTab === 'bans') {
-      setLoadingModeration(true);
+        .catch(() => {})
+        .finally(() => setLoadingData(false));
+    } else if (activeTab === 'bans' && (isOwner || permissions.can('ban_members'))) {
+      setLoadingData(true);
       fetchBans(server.id)
         .then(setBansList)
-        .finally(() => setLoadingModeration(false));
-    } else if (activeTab === 'invites') {
-      setLoadingModeration(true);
+        .catch(() => {})
+        .finally(() => setLoadingData(false));
+    } else if (activeTab === 'invites' && (isOwner || permissions.can('manage_invites') || permissions.can('create_invites'))) {
+      setLoadingData(true);
       fetchInvites(server.id)
         .then(setInvitesList)
-        .finally(() => setLoadingModeration(false));
-    } else if (activeTab === 'reports') {
-      setLoadingModeration(true);
+        .catch(() => {})
+        .finally(() => setLoadingData(false));
+    } else if (activeTab === 'reports' && (isOwner || permissions.can('manage_reports'))) {
+      setLoadingData(true);
       fetchServerReports(server.id)
         .then(setReportsList)
-        .finally(() => setLoadingModeration(false));
+        .catch(() => {})
+        .finally(() => setLoadingData(false));
     }
-  }, [activeTab, open, server.id, fetchAuditLogs, fetchBans, fetchInvites, fetchServerReports]);
-
-  // Edit channel state
-  const [editingChannelId, setEditingChannelId] = React.useState<string | null>(null);
-  const [editChannelName, setEditChannelName] = React.useState('');
-  const [editChannelTopic, setEditChannelTopic] = React.useState('');
-
-  // Quick create channel in settings
-  const [showAddChannel, setShowAddChannel] = React.useState(false);
-  const [newChanName, setNewChanName] = React.useState('');
-  const [newChanType, setNewChanType] = React.useState<ChannelType>('text');
-
-  // Custom Role creation state
-  const [showCreateRole, setShowCreateRole] = React.useState(false);
-  const [newRoleName, setNewRoleName] = React.useState('');
-  const [newRoleColor, setNewRoleColor] = React.useState<string>(DEFAULT_ROLE_COLORS.defaultNewRole);
-  const [newRolePermissions, setNewRolePermissions] = React.useState<ServerPermission[]>([
-    'send_messages',
-    'connect_voice',
-    'speak_voice',
-    'share_screen',
+  }, [
+    activeTab,
+    open,
+    server.id,
+    isOwner,
+    permissions,
+    fetchAuditLogs,
+    fetchBans,
+    fetchInvites,
+    fetchServerReports,
   ]);
-  const [savingRole, setSavingRole] = React.useState(false);
 
-  // Selected role for editing permissions in the Roles tab
-  const [selectedRoleId, setSelectedRoleId] = React.useState<string>('admin');
-  const [rolePermDrafts, setRolePermDrafts] = React.useState<Record<string, ServerPermission[]>>({});
-
-  // Sync state when server prop changes
-  React.useEffect(() => {
-    setServerName(server.name);
-    setServerDesc(server.description || '');
-  }, [server]);
-
-  if (!open) return null;
-
-  const isOwner = server.owner_id === user?.id || !server.owner_id;
-
-  const handleSaveOverview = async () => {
-    if (!serverName.trim()) {
-      toast({ title: 'Invalid Name', description: 'Server name cannot be empty', type: 'error' });
-      return;
-    }
-    setSavingOverview(true);
-    try {
-      if (onUpdateServer) {
-        await onUpdateServer(server.id, {
-          name: serverName.trim(),
-          description: serverDesc.trim() || null,
-        });
-      }
-      toast({ title: 'Server Updated', description: 'General settings saved successfully.', type: 'success' });
-    } catch {
-      toast({ title: 'Error', description: 'Failed to update server settings', type: 'error' });
-    } finally {
-      setSavingOverview(false);
-    }
-  };
-
-  const handleSaveChannelEdit = async (channelId: string) => {
-    if (!editChannelName.trim()) return;
-    try {
-      if (onUpdateChannel) {
-        await onUpdateChannel(server.id, channelId, {
-          name: editChannelName.trim(),
-          topic: editChannelTopic.trim() || null,
-        });
-      }
-      setEditingChannelId(null);
-      toast({ title: 'Channel Updated', description: `#${editChannelName} saved.`, type: 'success' });
-    } catch {
-      toast({ title: 'Error', description: 'Failed to update channel', type: 'error' });
-    }
-  };
-
-  const handleCreateChannelSubmit = async () => {
-    if (!newChanName.trim()) return;
-    try {
-      if (onCreateChannel) {
-        await onCreateChannel(server.id, newChanName.trim(), newChanType);
-      }
-      setNewChanName('');
-      setShowAddChannel(false);
-      toast({
-        title: 'Channel Created',
-        description: `${newChanType === 'text' ? '#' : '🔊'} ${newChanName} created.`,
-        type: 'success',
-      });
-    } catch {
-      toast({ title: 'Error', description: 'Failed to create channel', type: 'error' });
-    }
-  };
-
-  // Create custom role
-  const handleCreateRoleSubmit = async () => {
-    if (!newRoleName.trim()) {
-      toast({ title: 'Role Name Required', description: 'Please enter a name for the role.', type: 'error' });
-      return;
-    }
-    setSavingRole(true);
-    try {
-      if (onCreateRole) {
-        await onCreateRole(server.id, newRoleName.trim(), newRoleColor, newRolePermissions);
-      }
-      toast({
-        title: 'Role Created',
-        description: `Role "${newRoleName}" created with ${newRolePermissions.length} permissions.`,
-        type: 'success',
-      });
-      setNewRoleName('');
-      setNewRolePermissions(['send_messages', 'connect_voice', 'speak_voice', 'share_screen']);
-      setShowCreateRole(false);
-    } catch {
-      toast({ title: 'Error', description: 'Failed to create role', type: 'error' });
-    } finally {
-      setSavingRole(false);
-    }
-  };
-
-  // Get active permissions for currently selected role in Roles tab
-  const getRolePermissions = (roleIdOrName: string): ServerPermission[] => {
-    if (rolePermDrafts[roleIdOrName]) {
-      return rolePermDrafts[roleIdOrName];
-    }
-    const custom = (server.roles || []).find((r) => r.id === roleIdOrName || r.name.toLowerCase() === roleIdOrName.toLowerCase());
-    if (custom) return custom.permissions;
-
-    if (roleIdOrName === 'owner') return DEFAULT_ROLE_PERMISSIONS.owner;
-    if (roleIdOrName === 'admin') return DEFAULT_ROLE_PERMISSIONS.admin;
-    if (roleIdOrName === 'moderator') return DEFAULT_ROLE_PERMISSIONS.moderator;
-    return DEFAULT_ROLE_PERMISSIONS.member;
-  };
-
-  const togglePermissionForRole = (roleIdOrName: string, perm: ServerPermission) => {
-    const current = getRolePermissions(roleIdOrName);
-    const updated = current.includes(perm)
-      ? current.filter((p) => p !== perm)
-      : [...current, perm];
-
-    setRolePermDrafts((prev) => ({
-      ...prev,
-      [roleIdOrName]: updated,
-    }));
-  };
-
-  const handleSaveRolePermissions = async (roleIdOrName: string) => {
-    const perms = getRolePermissions(roleIdOrName);
-    try {
-      if (onUpdateRolePermissions) {
-        await onUpdateRolePermissions(server.id, roleIdOrName, perms);
-      }
-      toast({
-        title: 'Permissions Saved',
-        description: `Updated permissions for ${roleIdOrName}.`,
-        type: 'success',
-      });
-    } catch {
-      toast({ title: 'Error', description: 'Failed to update role permissions', type: 'error' });
-    }
-  };
-
-  // Combine built-in roles with custom server roles
-  const allAvailableRoles = [
-    { id: 'admin', name: 'Admin', color: DEFAULT_ROLE_COLORS.admin, is_custom: false },
-    { id: 'moderator', name: 'Moderator', color: DEFAULT_ROLE_COLORS.moderator, is_custom: false },
-    { id: 'member', name: 'Member', color: DEFAULT_ROLE_COLORS.member, is_custom: false },
-    ...(server.roles || []),
+  // Navigation Items
+  const navItems: { key: TabKey; label: string; icon: React.ReactNode; visible: boolean; badge?: number }[] = [
+    {
+      key: 'overview',
+      label: 'Overview',
+      icon: <Settings className="w-4 h-4" />,
+      visible: true,
+    },
+    {
+      key: 'channels',
+      label: 'Channels',
+      icon: <Hash className="w-4 h-4" />,
+      visible: isOwner || permissions.can('manage_channels'),
+    },
+    {
+      key: 'roles',
+      label: 'Roles & Perms',
+      icon: <Shield className="w-4 h-4" />,
+      visible: isOwner || permissions.can('manage_roles'),
+    },
+    {
+      key: 'members',
+      label: 'Members',
+      icon: <Users className="w-4 h-4" />,
+      visible: true,
+      badge: server.members?.length,
+    },
+    {
+      key: 'invites',
+      label: 'Invites',
+      icon: <Link2 className="w-4 h-4" />,
+      visible: isOwner || permissions.can('create_invites') || permissions.can('manage_invites'),
+    },
+    {
+      key: 'bans',
+      label: 'Bans',
+      icon: <Ban className="w-4 h-4" />,
+      visible: isOwner || permissions.can('ban_members'),
+    },
+    {
+      key: 'audit',
+      label: 'Audit Log',
+      icon: <FileText className="w-4 h-4" />,
+      visible: isOwner || permissions.can('view_audit_log'),
+    },
+    {
+      key: 'reports',
+      label: 'Reports',
+      icon: <Flag className="w-4 h-4" />,
+      visible: isOwner || permissions.can('manage_reports'),
+    },
+    {
+      key: 'danger',
+      label: 'Danger Zone',
+      icon: <AlertTriangle className="w-4 h-4 text-destructive" />,
+      visible: true,
+    },
   ];
 
-  const PRESET_COLORS = ROLE_PRESET_COLORS;
+  const handleTabChange = (key: TabKey) => {
+    setActiveTab(key);
+  };
 
-  if (!open || !mounted || typeof document === 'undefined') return null;
+  const handleBanConfirm = async (serverId: string, userId: string, reason?: string) => {
+    return banMember(serverId, userId, reason);
+  };
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 select-none animate-in fade-in duration-200">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
-        onClick={() => onOpenChange(false)}
-      />
+  const handleTimeoutConfirm = async (
+    serverId: string,
+    userId: string,
+    durationMinutes: number,
+    reason?: string
+  ) => {
+    return timeoutMember(serverId, userId, durationMinutes, reason);
+  };
 
-      {/* Main Modal Shell */}
-      <div className="relative w-full max-w-4xl h-[640px] max-h-[92vh] rounded-2xl border border-border bg-surface-default shadow-modal overflow-hidden flex flex-col md:flex-row z-10">
-        {/* Left Sidebar Navigation */}
+  const handleCreateInviteSubmit = async (
+    serverId: string,
+    maxUses: number,
+    expiresHours: number
+  ) => {
+    const res = await createInvite(serverId, maxUses, expiresHours);
+    const newInv = res?.invite;
+    if (newInv) {
+      setInvitesList((prev) => [newInv, ...prev]);
+    }
+  };
+
+  const handleRevokeInviteSubmit = async (inviteId: string) => {
+    await revokeInvite(inviteId);
+    setInvitesList((prev) =>
+      prev.map((i) => (i.id === inviteId ? { ...i, is_revoked: true } : i))
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="w-full sm:max-w-4xl h-[90dvh] sm:h-[700px] sm:max-h-[88vh] p-0 overflow-hidden flex flex-col md:flex-row gap-0"
+        showClose={false}
+      >
+        <DialogTitle className="sr-only">Server Settings - {server.name}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Configure server settings, manage channels, members, roles, and moderation permissions.
+        </DialogDescription>
+
+        {/* Sidebar Navigation */}
         <aside className="w-full md:w-56 bg-surface-sidebar border-b md:border-b-0 md:border-r border-border p-3 md:p-4 flex flex-row md:flex-col justify-between shrink-0 overflow-x-auto no-scrollbar">
           <div className="space-y-1 w-full flex flex-row md:flex-col gap-1 md:gap-0">
             <div className="hidden md:flex items-center gap-2 px-2 py-1.5 mb-2">
               <Settings className="w-4 h-4 text-primary" />
-              <span className="font-bold text-xs uppercase tracking-wider text-muted-foreground/80">
-                Server Settings
+              <span className="font-semibold text-xs tracking-wider uppercase text-muted-foreground truncate">
+                {server.name}
               </span>
             </div>
 
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
-                activeTab === 'overview'
-                  ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
-              )}
-            >
-              <Settings className="w-3.5 h-3.5" />
-              <span>Overview</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('channels')}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
-                activeTab === 'channels'
-                  ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
-              )}
-            >
-              <Hash className="w-3.5 h-3.5" />
-              <span>Channels</span>
-              <Badge variant="outline" className="ml-auto text-xs px-1 py-0 border-border">
-                {server.channels?.length || 0}
-              </Badge>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('roles')}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
-                activeTab === 'roles'
-                  ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
-              )}
-            >
-              <Shield className="w-3.5 h-3.5 text-primary" />
-              <span>Roles & Perms</span>
-              {(server.roles?.length || 0) > 0 && (
-                <Badge variant="outline" className="ml-auto text-xs px-1 py-0 border-primary/30 text-primary">
-                  {server.roles?.length}
-                </Badge>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('members')}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
-                activeTab === 'members'
-                  ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
-              )}
-            >
-              <Crown className="w-3.5 h-3.5 text-warning" />
-              <span>Members</span>
-              <Badge variant="outline" className="ml-auto text-xs px-1 py-0 border-border">
-                {(server.members?.length || 0) + 1}
-              </Badge>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('invites')}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
-                activeTab === 'invites'
-                  ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
-              )}
-            >
-              <Link2 className="w-3.5 h-3.5 text-primary" />
-              <span>Invites & Access</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('bans')}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
-                activeTab === 'bans'
-                  ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
-              )}
-            >
-              <ShieldAlert className="w-3.5 h-3.5 text-danger" />
-              <span>Bans & Restrictions</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('audit')}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
-                activeTab === 'audit'
-                  ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
-              )}
-            >
-              <FileText className="w-3.5 h-3.5 text-success" />
-              <span>Audit Logs</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('reports')}
-              className={cn(
-                'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
-                activeTab === 'reports'
-                  ? 'bg-primary text-primary-foreground shadow-subtle'
-                  : 'text-muted-foreground hover:bg-surface-default hover:text-foreground'
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <Flag className="w-3.5 h-3.5 text-warning" />
-                <span>Reports & Flags</span>
-              </div>
-              {reportsList.filter((r) => r.status === 'pending').length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-xs font-bold bg-warning text-black">
-                  {reportsList.filter((r) => r.status === 'pending').length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('danger')}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left shrink-0',
-                activeTab === 'danger'
-                  ? 'bg-danger/20 text-danger border border-danger/30'
-                  : 'text-muted-foreground hover:bg-danger/10 hover:text-danger'
-              )}
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-danger" />
-              <span>Danger Zone</span>
-            </button>
+            {navItems
+              .filter((item) => item.visible)
+              .map((item) => {
+                const isActive = activeTab === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => handleTabChange(item.key)}
+                    className={cn(
+                      'flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap w-full text-left',
+                      isActive
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-muted-foreground hover:bg-card/50 hover:text-foreground'
+                    )}
+                  >
+                    <span className="shrink-0">{item.icon}</span>
+                    <span className="truncate flex-1">{item.label}</span>
+                    {item.badge !== undefined && item.badge > 0 && (
+                      <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-normal">
+                        {item.badge}
+                      </Badge>
+                    )}
+                  </button>
+                );
+              })}
           </div>
 
-          <div className="hidden md:block pt-3 border-t border-border">
-            <div className="text-xs text-muted-foreground/60 font-mono truncate">
-              ID: {server.id.slice(0, 8)}...
-            </div>
+          {/* Close button for desktop sidebar */}
+          <div className="hidden md:flex flex-col gap-1 border-t border-border pt-3 mt-auto">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+              className="text-xs text-muted-foreground hover:text-foreground justify-start gap-2 h-8"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Close Settings</span>
+            </Button>
           </div>
         </aside>
 
-        {/* Right Content View */}
-        <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-surface-default overflow-hidden relative">
-          {/* Top Title Bar with Close Button */}
-          <div className="h-14 border-b border-border px-6 flex items-center justify-between shrink-0">
-            <div>
-              <h2 className="text-sm font-bold text-foreground">
-                {activeTab === 'overview' && 'Server Overview'}
-                {activeTab === 'channels' && 'Manage Channels'}
-                {activeTab === 'roles' && 'Roles & Permission Matrix'}
-                {activeTab === 'members' && 'Squad Members & Role Assignments'}
-                {activeTab === 'invites' && 'Server Invites & Access Control'}
-                {activeTab === 'bans' && 'Bans & Security Restrictions'}
-                {activeTab === 'audit' && 'Moderation Audit Logs'}
-                {activeTab === 'reports' && 'Member & Content Reports'}
-                {activeTab === 'danger' && 'Danger Zone'}
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                {server.name} — Customized headquarters for gaming comms.
-              </p>
-            </div>
-
-            <button
+        {/* Main Content Area */}
+        <main className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden relative">
+          {/* Header on mobile */}
+          <div className="flex md:hidden items-center justify-between p-3 border-b border-border bg-card/20">
+            <span className="text-xs font-semibold truncate">{server.name}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => onOpenChange(false)}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
-              title="Close settings"
+              className="h-7 w-7 text-muted-foreground"
             >
               <X className="w-4 h-4" />
-            </button>
+            </Button>
           </div>
 
-          {/* Scrollable Tab Body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* 1. OVERVIEW TAB */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
             {activeTab === 'overview' && (
-              <div className="space-y-5 max-w-lg">
-                <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1.5">
-                    Server Name
-                  </label>
-                  <input
-                    type="text"
-                    value={serverName}
-                    onChange={(e) => setServerName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface-panel text-foreground text-xs focus:outline-none focus:border-primary/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1.5">
-                    Server Description
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={serverDesc}
-                    onChange={(e) => setServerDesc(e.target.value)}
-                    placeholder="Tell your squad what this headquarters is for..."
-                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface-panel text-foreground text-xs focus:outline-none focus:border-primary/50 resize-none font-normal"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1.5">
-                    Server Invite ID
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={server.id}
-                      className="flex-1 px-3 py-2 rounded-xl border border-border bg-surface-panel/50 text-muted-foreground text-xs font-mono select-all"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        navigator.clipboard.writeText(server.id);
-                        toast({ title: 'ID Copied', description: 'Server ID copied to clipboard.', type: 'success' });
-                      }}
-                      className="text-xs"
-                    >
-                      Copy
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <Button
-                    onClick={handleSaveOverview}
-                    disabled={savingOverview}
-                    className="bg-primary hover:bg-primary-hover text-primary-foreground font-semibold text-xs gap-2 shadow-subtle px-5"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>{savingOverview ? 'Saving...' : 'Save Changes'}</span>
-                  </Button>
-                </div>
-              </div>
+              <OverviewTab
+                server={server}
+                onUpdateServer={onUpdateServer}
+                canManageServer={isOwner || permissions.can('manage_server')}
+                toast={toast}
+                isDirty={isOverviewDirty}
+                setIsDirty={setIsOverviewDirty}
+              />
             )}
 
-            {/* 2. CHANNELS TAB */}
             {activeTab === 'channels' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    Organize your text chatter and voice lounges.
-                  </span>
-                  <Button
-                    size="sm"
-                    onClick={() => setShowAddChannel(true)}
-                    className="bg-primary hover:bg-primary-hover text-primary-foreground font-semibold text-xs gap-1.5 h-8 shadow-subtle"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Create Channel</span>
-                  </Button>
-                </div>
-
-                {/* Inline Add Channel Box */}
-                {showAddChannel && (
-                  <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3 animate-in fade-in duration-150">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">New Channel</span>
-                      <button onClick={() => setShowAddChannel(false)} className="text-muted-foreground hover:text-foreground">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setNewChanType('text')}
-                        className={cn(
-                          'flex-1 p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors',
-                          newChanType === 'text' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'
-                        )}
-                      >
-                        <Hash className="w-3.5 h-3.5" /> Text
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNewChanType('voice')}
-                        className={cn(
-                          'flex-1 p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors',
-                          newChanType === 'voice' ? 'border-success bg-success/10 text-success' : 'border-border text-muted-foreground'
-                        )}
-                      >
-                        <Volume2 className="w-3.5 h-3.5" /> Voice
-                      </button>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newChanName}
-                        onChange={(e) => setNewChanName(e.target.value)}
-                        placeholder={newChanType === 'text' ? 'channel-name' : 'Voice Lounge Name'}
-                        className="flex-1 px-3 py-2 rounded-lg border border-border bg-surface-panel text-xs text-foreground focus:outline-none focus:border-primary/50"
-                      />
-                      <Button size="sm" onClick={handleCreateChannelSubmit} disabled={!newChanName.trim()} className="text-xs">
-                        Create
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Channels List */}
-                <div className="space-y-1.5">
-                  {server.channels.map((chan) => {
-                    const isEditing = editingChannelId === chan.id;
-
-                    return (
-                      <div
-                        key={chan.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-border bg-surface-panel/40 hover:bg-surface-panel transition-colors"
-                      >
-                        {isEditing ? (
-                          <div className="flex-1 flex items-center gap-2 pr-3">
-                            <input
-                              type="text"
-                              value={editChannelName}
-                              onChange={(e) => setEditChannelName(e.target.value)}
-                              className="px-2.5 py-1 rounded-lg border border-border bg-surface-panel text-xs text-foreground font-semibold"
-                            />
-                            <input
-                              type="text"
-                              value={editChannelTopic}
-                              onChange={(e) => setEditChannelTopic(e.target.value)}
-                              placeholder="Channel topic (optional)"
-                              className="flex-1 px-2.5 py-1 rounded-lg border border-border bg-surface-panel text-xs text-muted-foreground"
-                            />
-                            <Button size="sm" onClick={() => handleSaveChannelEdit(chan.id)} className="h-7 text-xs px-2.5">
-                              Save
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => setEditingChannelId(null)} className="h-7 text-xs px-2">
-                              Cancel
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            {chan.type === 'voice' ? (
-                              <Volume2 className="w-4 h-4 text-success shrink-0" />
-                            ) : (
-                              <Hash className="w-4 h-4 text-primary shrink-0" />
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <span className="text-xs font-semibold text-foreground truncate block">
-                                {chan.name}
-                              </span>
-                              {chan.topic && (
-                                <span className="text-xs text-muted-foreground truncate block">
-                                  {chan.topic}
-                                </span>
-                              )}
-                            </div>
-                            <Badge variant="outline" className="text-xs uppercase font-mono px-1.5 py-0 border-border text-muted-foreground">
-                              {chan.type}
-                            </Badge>
-                          </div>
-                        )}
-
-                        {!isEditing && (
-                          <div className="flex items-center gap-1 shrink-0 ml-2">
-                            <button
-                              onClick={() => {
-                                setEditingChannelId(chan.id);
-                                setEditChannelName(chan.name);
-                                setEditChannelTopic(chan.topic || '');
-                              }}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
-                              title="Edit Channel"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-
-                            {onDeleteChannel && server.channels.length > 1 && (
-                              <button
-                                onClick={async () => {
-                                  if (confirm(`Delete channel #${chan.name}?`)) {
-                                    await onDeleteChannel(server.id, chan.id);
-                                    toast({ title: 'Channel Deleted', description: `#${chan.name} was removed.`, type: 'info' });
-                                  }
-                                }}
-                                className="p-1.5 rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
-                                title="Delete Channel"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <ChannelsTab
+                server={server}
+                canManageChannels={isOwner || permissions.can('manage_channels')}
+                toast={toast}
+                onCreateChannel={onCreateChannel}
+                onUpdateChannel={onUpdateChannel}
+                onDeleteChannel={onDeleteChannel}
+              />
             )}
 
-            {/* 3. ROLES & PERMISSIONS TAB */}
             {activeTab === 'roles' && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xs font-bold text-foreground">Role Permissions & Custom Roles</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Configure permissions for every role or create custom clan titles with specific privileges.
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => setShowCreateRole((prev) => !prev)}
-                    className="bg-primary hover:bg-primary-hover text-primary-foreground font-semibold text-xs gap-1.5 h-8 shadow-subtle"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Create Custom Role</span>
-                  </Button>
-                </div>
-
-                {/* Create Custom Role Box */}
-                {showCreateRole && (
-                  <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-4 animate-in fade-in duration-150">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4 text-primary" />
-                        <span>Create New Custom Role</span>
-                      </span>
-                      <button onClick={() => setShowCreateRole(false)} className="text-muted-foreground hover:text-foreground">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-foreground block mb-1">
-                          Role Name
-                        </label>
-                        <input
-                          type="text"
-                          value={newRoleName}
-                          onChange={(e) => setNewRoleName(e.target.value)}
-                          placeholder="e.g. VIP Squad, Scrim Captain"
-                          className="w-full px-3 py-2 rounded-lg border border-border bg-surface-panel text-xs text-foreground focus:outline-none focus:border-primary/50"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-medium text-foreground block mb-1">
-                          Role Color
-                        </label>
-                        <div className="flex items-center gap-1.5">
-                          {PRESET_COLORS.map((c) => (
-                            <button
-                              key={c}
-                              type="button"
-                              onClick={() => setNewRoleColor(c)}
-                              style={{ backgroundColor: c }}
-                              className={cn(
-                                'w-6 h-6 rounded-full transition-transform',
-                                newRoleColor === c ? 'ring-2 ring-white scale-110' : 'opacity-70 hover:opacity-100'
-                              )}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Permissions Selector for New Role */}
-                    <div>
-                      <label className="text-xs font-medium text-foreground block mb-1.5">
-                        Role Permissions ({newRolePermissions.length} selected)
-                      </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1 bg-surface-panel/40 rounded-xl border border-border">
-                        {ALL_SERVER_PERMISSIONS.map((perm) => {
-                          const isChecked = newRolePermissions.includes(perm.id);
-                          return (
-                            <div
-                              key={perm.id}
-                              onClick={() => {
-                                setNewRolePermissions((prev) =>
-                                  prev.includes(perm.id)
-                                    ? prev.filter((p) => p !== perm.id)
-                                    : [...prev, perm.id]
-                                );
-                              }}
-                              className={cn(
-                                'p-2 rounded-lg border text-xs cursor-pointer transition-colors flex items-start gap-2',
-                                isChecked
-                                  ? 'border-primary/50 bg-primary/10 text-foreground'
-                                  : 'border-border bg-surface-default text-muted-foreground hover:bg-surface-hover'
-                              )}
-                            >
-                              <div className={cn(
-                                'w-4 h-4 rounded border flex items-center justify-center shrink-0 mt-0.5',
-                                isChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-border'
-                              )}>
-                                {isChecked && <Check className="w-3 h-3" />}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="font-semibold text-xs leading-none">{perm.label}</div>
-                                <div className="text-xs text-muted-foreground/70 leading-snug mt-0.5 truncate">{perm.description}</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-1">
-                      <Button size="sm" variant="ghost" onClick={() => setShowCreateRole(false)} className="text-xs">
-                        Cancel
-                      </Button>
-                      <Button size="sm" onClick={handleCreateRoleSubmit} disabled={!newRoleName.trim() || savingRole} className="text-xs">
-                        {savingRole ? 'Creating...' : 'Save Role'}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Role Picker Pill Row */}
-                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                  {allAvailableRoles.map((r) => {
-                    const isSelected = selectedRoleId === r.id;
-                    return (
-                      <button
-                        key={r.id}
-                        onClick={() => setSelectedRoleId(r.id)}
-                        className={cn(
-                          'px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-colors shrink-0',
-                          isSelected
-                            ? 'bg-surface-hover text-foreground border-primary/50 shadow-subtle'
-                            : 'bg-surface-panel/40 border-border text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
-                        <span>{r.name}</span>
-                        {r.is_custom && (
-                          <Badge variant="subtle" className="text-xs px-1 py-0">Custom</Badge>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Active Role's Permissions Checklist */}
-                {selectedRoleId && (
-                  <div className="p-4 rounded-xl border border-border bg-surface-panel/30 space-y-3">
-                    <div className="flex items-center justify-between pb-2 border-b border-border">
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-4 h-4 text-primary" />
-                        <span className="text-xs font-bold text-foreground">
-                          Permissions for: <span className="capitalize">{allAvailableRoles.find((r) => r.id === selectedRoleId)?.name || selectedRoleId}</span>
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {/* Custom role delete */}
-                        {allAvailableRoles.find((r) => r.id === selectedRoleId)?.is_custom && onDeleteRole && (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={async () => {
-                              if (confirm(`Delete custom role?`)) {
-                                await onDeleteRole(server.id, selectedRoleId);
-                                setSelectedRoleId('admin');
-                                toast({ title: 'Role Deleted', description: 'Custom role removed.', type: 'info' });
-                              }
-                            }}
-                            className="h-7 text-xs px-2.5"
-                          >
-                            Delete Role
-                          </Button>
-                        )}
-
-                        <Button
-                          size="sm"
-                          onClick={() => handleSaveRolePermissions(selectedRoleId)}
-                          className="h-7 text-xs px-3 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold"
-                        >
-                          <Save className="w-3 h-3 mr-1" /> Save Permissions
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
-                      {ALL_SERVER_PERMISSIONS.map((perm) => {
-                        const activePerms = getRolePermissions(selectedRoleId);
-                        const isGranted = activePerms.includes(perm.id);
-
-                        return (
-                          <div
-                            key={perm.id}
-                            onClick={() => togglePermissionForRole(selectedRoleId, perm.id)}
-                            className={cn(
-                              'p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start gap-2.5',
-                              isGranted
-                                ? 'border-primary/40 bg-primary/10 text-foreground'
-                                : 'border-border bg-surface-panel/20 text-muted-foreground/70 hover:text-muted-foreground'
-                            )}
-                          >
-                            <div className={cn(
-                              'w-4 h-4 rounded border flex items-center justify-center shrink-0 mt-0.5',
-                              isGranted ? 'bg-primary border-primary text-primary-foreground' : 'border-border'
-                            )}>
-                              {isGranted && <Check className="w-3 h-3" />}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="font-semibold text-xs flex items-center justify-between">
-                                <span>{perm.label}</span>
-                                <span className="text-xs font-mono opacity-50 uppercase">{perm.category}</span>
-                              </div>
-                              <div className="text-xs text-muted-foreground leading-snug mt-0.5">
-                                {perm.description}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <RolesTab
+                server={server}
+                canManageRoles={isOwner || permissions.can('manage_roles')}
+                userHighestRoleRank={userHighestRoleRank}
+                toast={toast}
+                onCreateRole={onCreateRole}
+                onUpdateRole={onUpdateRole}
+                onDeleteRole={onDeleteRole}
+                onUpdateRolePermissions={onUpdateRolePermissions}
+              />
             )}
 
-            {/* 4. MEMBERS TAB */}
             {activeTab === 'members' && (
-              <div className="space-y-4">
-                <div className="text-xs text-muted-foreground">
-                  View server squad members, grant roles, and manage permissions.
-                </div>
-
-                <div className="space-y-2">
-                  {/* Owner Row */}
-                  {(() => {
-                    const ownerMember = server.members.find((m) => m.user_id === server.owner_id);
-                    const ownerProfile = ownerMember?.profile || (isOwner ? profile : null);
-                    return (
-                      <div className="flex items-center justify-between p-3 rounded-xl border border-warning/20 bg-warning/5">
-                        <div className="flex items-center gap-3">
-                          <Avatar
-                            src={ownerProfile?.avatar_url || null}
-                            name={ownerProfile?.display_name || 'Owner'}
-                            size="sm"
-                          />
-                          <div>
-                            <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                              <span>{ownerProfile?.display_name || 'Server Creator'}</span>
-                              <span className="text-xs text-muted-foreground font-mono">
-                                {isOwner ? '(You)' : ownerProfile?.username ? `@${ownerProfile.username}` : ''}
-                              </span>
-                            </div>
-                            <div className="text-xs text-warning font-mono">All Permissions Granted</div>
-                          </div>
-                        </div>
-                        <Badge variant="default" className="text-xs bg-warning/20 text-warning border-warning/30 gap-1">
-                          <Crown className="w-3 h-3" /> Owner
-                        </Badge>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Other Members */}
-                  {(() => {
-                    const otherMembers = server.members.filter((mem) => mem.user_id !== server.owner_id);
-                    if (otherMembers.length === 0) {
-                      return (
-                        <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
-                          No other squad members have joined yet. Share your invite link to assemble your squad!
-                        </div>
-                      );
-                    }
-
-                    return otherMembers.map((mem) => (
-                      <div
-                        key={mem.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-border bg-surface-panel/40"
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <Avatar
-                            src={mem.profile?.avatar_url || null}
-                            name={mem.profile?.display_name || 'Member'}
-                            size="sm"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs font-semibold text-foreground truncate">
-                              {mem.profile?.display_name || 'Squad Member'}
-                            </div>
-                            <div className="text-xs text-muted-foreground font-mono truncate">
-                              @{mem.profile?.username || 'member'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          {/* Role Selector Dropdown */}
-                          {onUpdateMemberRole && (
-                            <select
-                              value={mem.role}
-                              onChange={async (e) => {
-                                const newRole = e.target.value as ServerRole;
-                                await onUpdateMemberRole(server.id, mem.user_id, newRole);
-                                toast({
-                                  title: 'Role Updated',
-                                  description: `Assigned ${newRole} to ${mem.profile?.display_name || 'member'}.`,
-                                  type: 'success',
-                                });
-                              }}
-                              className="px-2.5 py-1 rounded-lg border border-border bg-surface-panel text-xs text-foreground font-medium focus:outline-none focus:border-primary/50"
-                            >
-                              <option value="admin">Admin</option>
-                              <option value="moderator">Moderator</option>
-                              <option value="member">Member</option>
-                              {(server.roles || []).map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.name} (Custom)
-                                </option>
-                              ))}
-                            </select>
-                          )}
-
-                          {/* Timeout Button */}
-                          <button
-                            onClick={async () => {
-                              const mins = prompt('Enter timeout duration in minutes (0 to remove):', '60');
-                              if (mins === null) return;
-                              const numMins = parseInt(mins, 10);
-                              if (isNaN(numMins)) return;
-                              const seconds = numMins * 60;
-                              const reason = prompt('Reason for timeout:', 'Violation of server rules') || 'Moderator timeout';
-                              const res = await timeoutMember(server.id, mem.user_id, seconds, reason);
-                              if (res.success) {
-                                toast({
-                                  title: seconds > 0 ? 'Member Timed Out' : 'Timeout Removed',
-                                  description: seconds > 0 ? `Timed out for ${numMins} minutes.` : 'Member can now chat.',
-                                  type: 'info',
-                                });
-                              } else {
-                                toast({ title: 'Timeout Failed', description: res.error || 'Failed', type: 'error' });
-                              }
-                            }}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors"
-                            title="Timeout Member"
-                          >
-                            <Clock className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Ban Button */}
-                          <button
-                            onClick={async () => {
-                              const reason = prompt(`Reason for banning ${mem.profile?.display_name || 'member'}:`, 'Violating squad conduct');
-                              if (reason === null) return;
-                              const res = await banMember(server.id, mem.user_id, reason);
-                              if (res.success) {
-                                toast({
-                                  title: 'Member Banned',
-                                  description: `${mem.profile?.display_name || 'Member'} was banned from the server.`,
-                                  type: 'info',
-                                });
-                              } else {
-                                toast({ title: 'Ban Failed', description: res.error || 'Failed to ban', type: 'error' });
-                              }
-                            }}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
-                            title="Ban from Server"
-                          >
-                            <Ban className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Kick Button */}
-                          {onKickMember && (
-                            <button
-                              onClick={async () => {
-                                if (confirm(`Kick ${mem.profile?.display_name || 'member'} from the server?`)) {
-                                  await onKickMember(server.id, mem.user_id);
-                                  toast({
-                                    title: 'Member Removed',
-                                    description: `${mem.profile?.display_name || 'Member'} was removed.`,
-                                    type: 'info',
-                                  });
-                                }
-                              }}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
-                              title="Kick from Server"
-                            >
-                              <UserMinus className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          {/* Transfer Ownership Button */}
-                          {isOwner && onTransferOwnership && (
-                            <button
-                              onClick={async () => {
-                                const targetName = mem.profile?.display_name || mem.profile?.username || 'this member';
-                                const confirmed = window.confirm(
-                                  `Are you sure you want to transfer server ownership to ${targetName}?\n\nYou will be demoted to Admin and will no longer be the server owner.`
-                                );
-                                if (!confirmed) return;
-                                const success = await onTransferOwnership(server.id, mem.user_id);
-                                if (success) {
-                                  toast({
-                                    title: 'Ownership Transferred',
-                                    description: `Server ownership has been successfully transferred to ${targetName}.`,
-                                    type: 'success',
-                                  });
-                                } else {
-                                  toast({
-                                    title: 'Transfer Failed',
-                                    description: 'Could not transfer ownership. Please check your network and try again.',
-                                    type: 'error',
-                                  });
-                                }
-                              }}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-warning hover:bg-warning/10 transition-colors"
-                              title="Transfer Server Ownership"
-                            >
-                              <Crown className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </div>
+              <MembersTab
+                server={server}
+                currentUserId={user?.id}
+                canKick={isOwner || permissions.can('kick_members')}
+                canBan={isOwner || permissions.can('ban_members')}
+                canTimeout={isOwner || permissions.can('moderate_members')}
+                canManageRoles={isOwner || permissions.can('manage_roles')}
+                userHighestRoleRank={userHighestRoleRank}
+                toast={toast}
+                onUpdateMemberRole={onUpdateMemberRole}
+                onKickMember={onKickMember}
+                onBanMember={handleBanConfirm}
+                onTimeoutMember={handleTimeoutConfirm}
+              />
             )}
 
-            {/* TAB: SERVER INVITES */}
             {activeTab === 'invites' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-border">
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Server Invites & Access Links</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Generate revocable squad invite codes with custom usage limits and expirations.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Create Invite Strip */}
-                <div className="p-3.5 rounded-xl border border-border bg-surface-default flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs uppercase font-bold text-muted-foreground">Expires In</label>
-                      <select
-                        value={inviteExpiresHours}
-                        onChange={(e) => setInviteExpiresHours(parseInt(e.target.value, 10))}
-                        className="px-2 py-1 rounded-lg border border-border bg-surface-panel text-xs text-foreground focus:outline-none"
-                      >
-                        <option value="24">24 Hours</option>
-                        <option value="168">7 Days</option>
-                        <option value="0">Never</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs uppercase font-bold text-muted-foreground">Max Uses</label>
-                      <select
-                        value={inviteMaxUses}
-                        onChange={(e) => setInviteMaxUses(parseInt(e.target.value, 10))}
-                        className="px-2 py-1 rounded-lg border border-border bg-surface-panel text-xs text-foreground focus:outline-none"
-                      >
-                        <option value="0">Unlimited</option>
-                        <option value="1">1 Use</option>
-                        <option value="5">5 Uses</option>
-                        <option value="25">25 Uses</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      setIsCreatingInvite(true);
-                      try {
-                        const res = await createInvite(server.id, inviteMaxUses, inviteExpiresHours);
-                        if (res.invite) {
-                          toast({ title: 'Invite Created', description: `Code: ${res.invite.code}`, type: 'success' });
-                          fetchInvites(server.id).then(setInvitesList);
-                        } else {
-                          toast({ title: 'Failed', description: res.error || 'Could not create', type: 'error' });
-                        }
-                      } finally {
-                        setIsCreatingInvite(false);
-                      }
-                    }}
-                    disabled={isCreatingInvite}
-                    className="text-xs mt-3 shrink-0"
-                  >
-                    {isCreatingInvite ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
-                    Generate New Invite
-                  </Button>
-                </div>
-
-                {/* Invites List */}
-                <div className="space-y-2 select-none">
-                  {loadingModeration ? (
-                    <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      Loading invites...
-                    </div>
-                  ) : invitesList.length === 0 ? (
-                    <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
-                      No active custom invites. Default server ID link is also functional.
-                    </div>
-                  ) : (
-                    invitesList.map((inv) => (
-                      <div
-                        key={inv.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-border bg-surface-panel/40"
-                      >
-                        <div>
-                          <div className="text-xs font-mono font-bold text-foreground flex items-center gap-2">
-                            <span className="text-primary">{inv.code}</span>
-                            {inv.is_revoked && (
-                              <span className="text-xs px-1.5 py-0.2 rounded bg-danger/20 text-danger border border-danger/30">
-                                Revoked
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            Uses: {inv.uses} / {inv.max_uses === 0 ? 'Unlimited' : inv.max_uses} • Expires:{' '}
-                            {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString() : 'Never'}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              const link = `${window.location.origin}/?join=${inv.code}`;
-                              navigator.clipboard.writeText(link);
-                              toast({ title: 'Copied', description: 'Invite link copied to clipboard.', type: 'info' });
-                            }}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-default"
-                            title="Copy Invite Link"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
-                          {!inv.is_revoked && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={async () => {
-                                const res = await revokeInvite(inv.id);
-                                if (res.success) {
-                                  toast({ title: 'Invite Revoked', description: 'Code invalidated.', type: 'info' });
-                                  fetchInvites(server.id).then(setInvitesList);
-                                }
-                              }}
-                              className="text-xs text-danger hover:text-danger/90 hover:bg-danger/10 h-7"
-                            >
-                              Revoke
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              <InvitesTab
+                server={server}
+                invites={invitesList}
+                loading={loadingData}
+                canCreateInvites={isOwner || permissions.can('create_invites')}
+                canManageInvites={isOwner || permissions.can('manage_invites')}
+                toast={toast}
+                onCreateInvite={handleCreateInviteSubmit}
+                onRevokeInvite={handleRevokeInviteSubmit}
+              />
             )}
 
-            {/* TAB: BANS & RESTRICTIONS */}
             {activeTab === 'bans' && (
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Server Bans & Blacklist</h4>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Users banned from joining or interacting with this server. Unbanning permits them to rejoin with an invite link.
-                  </p>
-                </div>
-
-                <div className="space-y-2 select-none">
-                  {loadingModeration ? (
-                    <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      Loading bans...
-                    </div>
-                  ) : bansList.length === 0 ? (
-                    <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
-                      No users are currently banned from this server.
-                    </div>
-                  ) : (
-                    bansList.map((ban) => (
-                      <div
-                        key={ban.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-danger/20 bg-danger/5"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Avatar
-                            src={ban.profile?.avatar_url}
-                            name={ban.profile?.display_name || 'Banned'}
-                            size="sm"
-                          />
-                          <div>
-                            <div className="text-xs font-semibold text-foreground">
-                              {ban.profile?.display_name || 'User'}
-                              <span className="text-xs text-muted-foreground ml-1 font-mono">
-                                @{ban.profile?.username || 'user'}
-                              </span>
-                            </div>
-                            <div className="text-xs text-danger/80 mt-0.5">
-                              Reason: {ban.reason || 'No reason specified'}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={async () => {
-                              const res = await unbanMember(server.id, ban.user_id, true);
-                              if (res.success) {
-                                toast({
-                                  title: 'User Unbanned',
-                                  description: 'Ban record lifted and server membership restored!',
-                                  type: 'success',
-                                });
-                                fetchBans(server.id).then(setBansList);
-                              }
-                            }}
-                            className="text-xs border-border hover:bg-surface-active h-7"
-                          >
-                            Unban
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="default"
-                            onClick={async () => {
-                              const res = await unbanMember(server.id, ban.user_id, true);
-                              if (res.success) {
-                                toast({
-                                  title: 'User Unbanned & Restored',
-                                  description: 'Ban record lifted and server membership restored!',
-                                  type: 'success',
-                                });
-                                fetchBans(server.id).then(setBansList);
-                              }
-                            }}
-                            className="text-xs bg-success hover:bg-success/90 active:bg-success/80 text-primary-foreground h-7 font-medium"
-                          >
-                            Unban & Restore
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              <BansTab
+                server={server}
+                bans={bansList}
+                loading={loadingData}
+                canBan={isOwner || permissions.can('ban_members')}
+                toast={toast}
+                onUnbanMember={unbanMember}
+              />
             )}
 
-            {/* TAB: AUDIT LOGS */}
             {activeTab === 'audit' && (
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Moderation Audit Logs</h4>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Immutable history of staff moderation actions, timeouts, bans, and invite revocations.
-                  </p>
-                </div>
-
-                <div className="space-y-2 select-none">
-                  {loadingModeration ? (
-                    <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      Loading audit logs...
-                    </div>
-                  ) : auditLogs.length === 0 ? (
-                    <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
-                      No moderation actions recorded in the server log yet.
-                    </div>
-                  ) : (
-                    auditLogs.map((log) => (
-                      <div
-                        key={log.id}
-                        className="p-3 rounded-xl border border-border bg-surface-panel/40 flex items-start justify-between gap-3"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="font-semibold text-foreground">
-                              {log.actor?.display_name || 'Moderator'}
-                            </span>
-                            <span className="px-1.5 py-0.2 rounded text-xs font-mono uppercase bg-primary/15 text-primary border border-primary/30">
-                              {log.action}
-                            </span>
-                            {log.target && (
-                              <span className="text-muted-foreground">
-                                on <span className="text-foreground font-semibold">{log.target.display_name}</span>
-                              </span>
-                            )}
-                          </div>
-                          {log.reason && (
-                            <div className="text-xs text-muted-foreground/80 mt-1">
-                              Reason: &ldquo;{log.reason}&rdquo;
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="text-xs text-muted-foreground/60 font-mono shrink-0">
-                          {new Date(log.created_at).toLocaleString()}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              <AuditTab
+                server={server}
+                auditLogs={auditLogs}
+                loading={loadingData}
+              />
             )}
 
-            {/* TAB: REPORTS & CONTENT FLAGS */}
             {activeTab === 'reports' && (
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Reports & Safety Queue</h4>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    User reports submitted regarding behavior, harassment, or offensive chat content in this server.
-                  </p>
-                </div>
-
-                <div className="space-y-2 select-none">
-                  {loadingModeration ? (
-                    <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      Loading reports...
-                    </div>
-                  ) : reportsList.length === 0 ? (
-                    <div className="p-6 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
-                      No reports have been submitted for this server. Comms are peaceful!
-                    </div>
-                  ) : (
-                    reportsList.map((rep) => (
-                      <div
-                        key={rep.id}
-                        className="p-3.5 rounded-xl border border-border bg-surface-default space-y-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-3">
-                            <Avatar
-                              src={rep.reported?.avatar_url}
-                              name={rep.reported?.display_name || 'Reported'}
-                              size="sm"
-                            />
-                            <div>
-                              <div className="text-xs font-semibold text-foreground flex items-center gap-2">
-                                <span>Reported: {rep.reported?.display_name || 'User'}</span>
-                                <span className="text-xs text-muted-foreground font-mono">
-                                  @{rep.reported?.username || 'user'}
-                                </span>
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    'text-xs uppercase px-1.5 py-0.2 font-mono',
-                                    rep.status === 'pending'
-                                      ? 'border-warning/40 text-warning bg-warning/10'
-                                      : rep.status === 'resolved'
-                                      ? 'border-success/40 text-success bg-success/10'
-                                      : 'border-border text-muted-foreground'
-                                  )}
-                                >
-                                  {rep.status}
-                                </Badge>
-                              </div>
-                              <div className="text-xs text-warning font-medium mt-0.5">
-                                Reason: {rep.reason}
-                              </div>
-                              {rep.description && (
-                                <p className="text-xs text-foreground/80 mt-1 bg-surface-default p-2 rounded-lg border border-border">
-                                  &ldquo;{rep.description}&rdquo;
-                                </p>
-                              )}
-                              <div className="text-xs text-muted-foreground/60 mt-1">
-                                Reported by {rep.reporter?.display_name || 'A squadmate'} on {new Date(rep.created_at).toLocaleString()}
-                                {rep.action_taken && ` • Action: ${rep.action_taken}`}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {rep.status === 'pending' && (
-                          <div className="flex items-center gap-2 pt-2 border-t border-border">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={async () => {
-                                await timeoutMember(server.id, rep.reported_user_id, 900, 'Report: ' + rep.reason);
-                                await resolveReport(rep.id, 'Timed out member (15m)');
-                                toast({ title: 'Member Timed Out', description: 'Timed out for 15 minutes.', type: 'info' });
-                                fetchServerReports(server.id).then(setReportsList);
-                              }}
-                              className="text-xs h-7 border-warning/30 text-warning hover:bg-warning/10"
-                            >
-                              Timeout (15m)
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={async () => {
-                                await banMember(server.id, rep.reported_user_id, 'Report: ' + rep.reason);
-                                await resolveReport(rep.id, 'Banned member');
-                                toast({ title: 'Member Banned', description: 'User banned from server.', type: 'error' });
-                                fetchServerReports(server.id).then(setReportsList);
-                              }}
-                              className="text-xs h-7"
-                            >
-                              Ban User
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={async () => {
-                                await dismissReport(rep.id);
-                                toast({ title: 'Report Dismissed', description: 'Marked as dismissed.', type: 'info' });
-                                fetchServerReports(server.id).then(setReportsList);
-                              }}
-                              className="text-xs h-7 text-muted-foreground hover:text-foreground"
-                            >
-                              Dismiss
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={async () => {
-                                await resolveReport(rep.id, 'Reviewed and resolved');
-                                toast({ title: 'Report Resolved', description: 'Marked as resolved.', type: 'success' });
-                                fetchServerReports(server.id).then(setReportsList);
-                              }}
-                              className="text-xs h-7 border-success/30 text-success hover:bg-success/10 ml-auto"
-                            >
-                              Mark Resolved
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              <ReportsTab
+                server={server}
+                reports={reportsList}
+                loading={loadingData}
+                canManageReports={isOwner || permissions.can('manage_reports')}
+                toast={toast}
+                onResolveReport={resolveReport}
+                onDismissReport={dismissReport}
+              />
             )}
 
-            {/* 5. DANGER ZONE TAB */}
             {activeTab === 'danger' && (
-              <div className="space-y-4 max-w-lg">
-                {isOwner && onDeleteServer && (
-                  <div className="p-4 rounded-xl border border-danger/30 bg-danger/5 space-y-3">
-                    <div className="flex items-center gap-2 text-danger font-bold text-xs">
-                      <AlertTriangle className="w-4 h-4" />
-                      <span>Delete This Server</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Permanently remove this server, all text channels, message logs, and voice rooms. This action cannot be undone.
-                    </p>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={async () => {
-                        if (confirm(`Are you absolutely sure you want to delete ${server.name}?`)) {
-                          await onDeleteServer(server.id);
-                          onOpenChange(false);
-                          toast({ title: 'Server Deleted', description: `${server.name} was removed.`, type: 'info' });
-                        }
-                      }}
-                      className="text-xs font-semibold"
-                    >
-                      Delete Server
-                    </Button>
-                  </div>
-                )}
-
-                {onLeaveServer && (
-                  <div className="p-4 rounded-xl border border-border bg-surface-panel/40 space-y-3">
-                    <div className="flex items-center gap-2 text-foreground font-bold text-xs">
-                      <LogOut className="w-4 h-4 text-muted-foreground" />
-                      <span>Leave Server</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {isOwner
-                        ? 'As the owner, you must transfer ownership to another member before leaving.'
-                        : 'Remove yourself from this server. You can rejoin using an invite link.'}
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        if (isOwner) {
-                          toast({
-                            title: 'Transfer Ownership Required',
-                            description: 'Please go to the Members tab and transfer ownership before leaving.',
-                            type: 'error',
-                          });
-                          setActiveTab('members');
-                          return;
-                        }
-                        if (confirm(`Leave ${server.name}?`)) {
-                          await onLeaveServer(server.id);
-                          onOpenChange(false);
-                          toast({ title: 'Left Server', description: `You left ${server.name}.`, type: 'info' });
-                        }
-                      }}
-                      className="text-xs font-semibold text-danger border-danger/30 hover:bg-danger/10"
-                    >
-                      Leave Server
-                    </Button>
-                  </div>
-                )}
-              </div>
+              <DangerTab
+                server={server}
+                isOwner={isOwner}
+                currentUserId={user?.id}
+                toast={toast}
+                onDeleteServer={onDeleteServer}
+                onTransferOwnership={onTransferOwnership}
+                onLeaveServer={onLeaveServer}
+                onCloseModal={() => onOpenChange(false)}
+              />
             )}
           </div>
         </main>
-      </div>
-    </div>,
-    document.body
+      </DialogContent>
+    </Dialog>
   );
 }

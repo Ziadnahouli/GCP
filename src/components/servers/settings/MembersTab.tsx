@@ -279,16 +279,16 @@ export function MembersTab({
                       </span>
                       {isOwner && (
                         <span title="Server Owner">
-                          <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <Crown className="w-3.5 h-3.5 text-warning shrink-0" />
                         </span>
                       )}
                       {remainingTimeout && (
-                        <Badge variant="destructive" className="text-[10px] py-0 px-1.5 gap-1">
+                        <Badge variant="destructive" className="text-xs py-0 px-1.5 gap-1">
                           <Clock className="w-2.5 h-2.5" /> {remainingTimeout}
                         </Badge>
                       )}
                     </div>
-                    <span className="text-[11px] text-muted-foreground truncate block">
+                    <span className="text-xs text-muted-foreground truncate block">
                       @{member.profile?.username || 'user'}
                     </span>
                   </div>
@@ -350,7 +350,7 @@ export function MembersTab({
                           variant="ghost"
                           size="icon"
                           onClick={() => setTimingOutMember(member)}
-                          className="h-7 w-7 text-muted-foreground hover:text-amber-500"
+                          className="h-7 w-7 text-muted-foreground hover:text-warning"
                           title="Timeout Member"
                         >
                           <Clock className="w-3.5 h-3.5" />

@@ -105,7 +105,7 @@ export function BansTab({
                         <span className="text-xs font-semibold text-foreground truncate">
                           {displayName}
                         </span>
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           banned {new Date(ban.created_at).toLocaleDateString()}
                         </span>
                       </div>

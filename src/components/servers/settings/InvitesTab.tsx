@@ -129,15 +129,15 @@ export function InvitesTab({
 
   const getInviteStatus = (inv: ServerInvite) => {
     if (inv.is_revoked) {
-      return <Badge variant="destructive" className="text-[10px]">Revoked</Badge>;
+      return <Badge variant="destructive" className="text-xs">Revoked</Badge>;
     }
     if (inv.max_uses > 0 && inv.uses >= inv.max_uses) {
-      return <Badge variant="neutral" className="text-[10px]">Used Up</Badge>;
+      return <Badge variant="neutral" className="text-xs">Used Up</Badge>;
     }
     if (inv.expires_at && new Date(inv.expires_at).getTime() < Date.now()) {
-      return <Badge variant="outline" className="text-[10px] text-muted-foreground">Expired</Badge>;
+      return <Badge variant="outline" className="text-xs text-muted-foreground">Expired</Badge>;
     }
-    return <Badge variant="default" className="text-[10px] bg-emerald-600 hover:bg-emerald-600">Active</Badge>;
+    return <Badge variant="default" className="text-xs bg-success text-success-foreground hover:bg-success/90">Active</Badge>;
   };
 
   return (
@@ -251,7 +251,7 @@ export function InvitesTab({
                       </code>
                       {getInviteStatus(inv)}
                     </div>
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Users className="w-3 h-3" />
                         {inv.uses} {inv.max_uses > 0 ? `/ ${inv.max_uses}` : ''} uses
@@ -277,7 +277,7 @@ export function InvitesTab({
                     >
                       {isCopied ? (
                         <>
-                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          <Check className="w-3.5 h-3.5 text-success" />
                           <span>Copied</span>
                         </>
                       ) : (

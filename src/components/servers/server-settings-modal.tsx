@@ -319,7 +319,7 @@ export function ServerSettingsModal({
                     <span className="shrink-0">{item.icon}</span>
                     <span className="truncate flex-1">{item.label}</span>
                     {item.badge !== undefined && item.badge > 0 && (
-                      <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-normal">
+                      <Badge variant="outline" className="text-xs py-0 px-1.5 font-normal">
                         {item.badge}
                       </Badge>
                     )}

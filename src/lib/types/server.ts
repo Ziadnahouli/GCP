@@ -266,6 +266,9 @@ export interface ReportItem {
   details?: string | null;
   status: 'pending' | 'resolved' | 'dismissed';
   created_at: string;
+  reporter?: { id?: string; username?: string; display_name?: string; avatar_url?: string | null } | null;
+  reported?: { id?: string; username?: string; display_name?: string; avatar_url?: string | null } | null;
+  reported_user?: { id?: string; username?: string; display_name?: string; avatar_url?: string | null } | null;
 }
 
 export interface Server {

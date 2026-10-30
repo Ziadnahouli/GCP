@@ -351,7 +351,7 @@ export function RolesTab({
 
                   <div className="flex items-center gap-1.5 shrink-0">
                     {role.is_system ? (
-                      <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-normal">
+                      <Badge variant="outline" className="text-xs py-0 px-1.5 font-normal">
                         System
                       </Badge>
                     ) : (
@@ -390,12 +390,12 @@ export function RolesTab({
                     <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
                       {activeRole.name} Permissions
                       {isOwnerRole && (
-                        <Badge variant="subtle" className="text-[10px] gap-1">
+                        <Badge variant="subtle" className="text-xs gap-1">
                           <Lock className="w-2.5 h-2.5" /> All Permissions (Locked)
                         </Badge>
                       )}
                     </h4>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       Hierarchy position: {activeRole.position}
                     </p>
                   </div>
@@ -427,7 +427,7 @@ export function RolesTab({
               <div className="space-y-4 max-h-[420px] overflow-y-auto pr-2">
                 {PERMISSION_GROUPS.map((group) => (
                   <div key={group.title} className="space-y-2">
-                    <h5 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       {group.title}
                     </h5>
                     <div className="space-y-1.5">
@@ -451,7 +451,7 @@ export function RolesTab({
                               <span className="text-xs font-medium text-foreground block">
                                 {perm.label}
                               </span>
-                              <span className="text-[11px] text-muted-foreground block">
+                              <span className="text-xs text-muted-foreground block">
                                 {perm.description}
                               </span>
                             </div>

@@ -12,12 +12,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Server } from '@/lib/types/server';
+import { Server, ReportItem } from '@/lib/types/server';
 import { ToastItem } from '@/components/ui/toast';
 
 interface ReportsTabProps {
   server: Server;
-  reports: any[];
+  reports: ReportItem[];
   loading: boolean;
   canManageReports: boolean;
   toast: (options: Omit<ToastItem, 'id'>) => void;
@@ -164,7 +164,7 @@ export function ReportsTab({
                         </span>
                         <Badge
                           variant={isPending ? 'destructive' : 'outline'}
-                          className="text-[10px] uppercase font-mono"
+                          className="text-xs uppercase font-mono"
                         >
                           {report.status || 'pending'}
                         </Badge>
@@ -174,7 +174,7 @@ export function ReportsTab({
                       </p>
                     </div>
 
-                    <span className="text-[11px] text-muted-foreground shrink-0">
+                    <span className="text-xs text-muted-foreground shrink-0">
                       {new Date(report.created_at).toLocaleDateString()}
                     </span>
                   </div>

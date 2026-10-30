@@ -66,7 +66,7 @@ export function DeleteChannelDialog({
 
         <div className="py-2 space-y-3">
           {isLastTextChannel ? (
-            <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 text-sm">
+            <div className="flex items-start gap-2.5 p-3 rounded-lg bg-warning/10 border border-warning/20 text-warning text-sm">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <span>You cannot delete the last text channel in this server. Every server must have at least one text channel.</span>
             </div>

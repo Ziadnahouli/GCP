@@ -74,7 +74,7 @@ export function TransferOwnershipDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-amber-500">
+          <DialogTitle className="flex items-center gap-2 text-warning">
             <Crown className="w-5 h-5" />
             Transfer Server Ownership
           </DialogTitle>
@@ -127,7 +127,7 @@ export function TransferOwnershipDialog({
           </div>
 
           {selectedMember && (
-            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 space-y-2 text-xs">
+            <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 text-warning space-y-2 text-xs">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span className="font-semibold">Important Loss of Ownership</span>

@@ -267,7 +267,7 @@ export function ChannelsTab({
               autoFocus
             />
             {newType === 'text' && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Text channel names will be lowercased and spaces replaced with dashes.
               </p>
             )}
@@ -392,7 +392,7 @@ export function ChannelsTab({
                         {channel.name}
                       </span>
                       {channel.topic && (
-                        <span className="text-[11px] text-muted-foreground truncate block">
+                        <span className="text-xs text-muted-foreground truncate block">
                           {channel.topic}
                         </span>
                       )}
@@ -473,13 +473,13 @@ export function ChannelsTab({
                     className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card/40 hover:bg-card/70 transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <Volume2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <Volume2 className="w-4 h-4 text-success shrink-0" />
                       <div className="min-w-0">
                         <span className="text-xs font-medium text-foreground truncate block">
                           {channel.name}
                         </span>
                         {channel.topic && (
-                          <span className="text-[11px] text-muted-foreground truncate block">
+                          <span className="text-xs text-muted-foreground truncate block">
                             {channel.topic}
                           </span>
                         )}

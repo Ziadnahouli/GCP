@@ -223,7 +223,7 @@ export function OverviewTab({
                   setIconUrl('');
                   setIsDirty(true);
                 }}
-                className="h-8 text-xs text-destructive hover:text-destructive"
+                className="h-8 text-xs text-destructive hover:text-destructive/80"
               >
                 Remove Icon
               </Button>

@@ -128,10 +128,10 @@ export function DangerTab({
 
         {/* Transfer Ownership (Owner only) */}
         {isOwner && (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 gap-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border border-warning/30 bg-warning/5 gap-4">
             <div className="space-y-0.5">
               <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Crown className="w-3.5 h-3.5 text-amber-500" />
+                <Crown className="w-3.5 h-3.5 text-warning" />
                 Transfer Ownership
               </h4>
               <p className="text-xs text-muted-foreground">
@@ -143,7 +143,7 @@ export function DangerTab({
               variant="outline"
               size="sm"
               onClick={() => setShowTransfer(true)}
-              className="text-xs text-amber-500 hover:bg-amber-500/10 border-amber-500/30 shrink-0 gap-1.5"
+              className="text-xs text-warning hover:bg-warning/10 border-warning/30 shrink-0 gap-1.5"
             >
               <Crown className="w-3.5 h-3.5" />
               Transfer Server

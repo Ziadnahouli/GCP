@@ -33,20 +33,20 @@ export function AuditTab({
       case 'delete_server':
       case 'delete_channel':
       case 'delete_role':
-        return <Badge variant="destructive" className="text-[10px] uppercase font-mono">{action}</Badge>;
+        return <Badge variant="destructive" className="text-xs uppercase font-mono">{action}</Badge>;
       case 'kick':
       case 'timeout':
       case 'revoke_invite':
-        return <Badge variant="neutral" className="text-[10px] uppercase font-mono text-amber-500 bg-amber-500/10">{action}</Badge>;
+        return <Badge variant="neutral" className="text-xs uppercase font-mono text-warning bg-warning/10">{action}</Badge>;
       case 'unban':
       case 'untimeout':
-        return <Badge variant="neutral" className="text-[10px] uppercase font-mono text-emerald-500 bg-emerald-500/10">{action}</Badge>;
+        return <Badge variant="neutral" className="text-xs uppercase font-mono text-success bg-success/10">{action}</Badge>;
       case 'create_channel':
       case 'create_role':
       case 'create_invite':
-        return <Badge variant="outline" className="text-[10px] uppercase font-mono text-primary border-primary/30">{action}</Badge>;
+        return <Badge variant="outline" className="text-xs uppercase font-mono text-primary border-primary/30">{action}</Badge>;
       default:
-        return <Badge variant="outline" className="text-[10px] uppercase font-mono">{action}</Badge>;
+        return <Badge variant="outline" className="text-xs uppercase font-mono">{action}</Badge>;
     }
   };
 
@@ -145,14 +145,14 @@ export function AuditTab({
                       )}
                     </div>
 
-                    <span className="text-[11px] text-muted-foreground shrink-0 flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {new Date(log.created_at).toLocaleString()}
                     </span>
                   </div>
 
                   {details && Object.keys(details).length > 0 && (
-                    <div className="text-[11px] text-muted-foreground bg-muted/30 rounded p-1.5 font-mono overflow-x-auto">
+                    <div className="text-xs text-muted-foreground bg-muted/30 rounded p-1.5 font-mono overflow-x-auto">
                       {Boolean(details.reason) && <div>Reason: <span className="text-foreground">{String(details.reason)}</span></div>}
                       {details.duration_minutes !== undefined && <div>Duration: <span className="text-foreground">{String(details.duration_minutes)}m</span></div>}
                       {Boolean(details.channel_name) && <div>Channel: <span className="text-foreground">{String(details.channel_name)}</span></div>}

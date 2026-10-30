@@ -1328,8 +1328,8 @@ export function useServersInternal() {
         saveServersRef.current(updated);
         notifyServersUpdate();
         return { ok: true, data: newRole };
-      } catch (e: any) {
-        return { ok: false, error: e?.message || 'Failed to create role' };
+      } catch (e: unknown) {
+        return { ok: false, error: e instanceof Error ? e.message : 'Failed to create role' };
       }
     },
     [servers, user, notifyServersUpdate]
@@ -1371,10 +1371,10 @@ export function useServersInternal() {
         saveServersRef.current(updated);
         notifyServersUpdate();
         return { ok: true };
-      } catch (e: any) {
+      } catch (e: unknown) {
         setServers(rollbackServers);
         saveServersRef.current(rollbackServers);
-        return { ok: false, error: e?.message || 'Failed to update role' };
+        return { ok: false, error: e instanceof Error ? e.message : 'Failed to update role' };
       }
     },
     [servers, user, notifyServersUpdate]
@@ -1410,10 +1410,10 @@ export function useServersInternal() {
         saveServersRef.current(updated);
         notifyServersUpdate();
         return { ok: true };
-      } catch (e: any) {
+      } catch (e: unknown) {
         setServers(rollbackServers);
         saveServersRef.current(rollbackServers);
-        return { ok: false, error: e?.message || 'Failed to delete role' };
+        return { ok: false, error: e instanceof Error ? e.message : 'Failed to delete role' };
       }
     },
     [servers, user, notifyServersUpdate]

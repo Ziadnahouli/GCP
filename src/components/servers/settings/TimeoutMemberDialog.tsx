@@ -79,7 +79,7 @@ export function TimeoutMemberDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-amber-500" />
+            <Clock className="w-5 h-5 text-warning" />
             Timeout {memberName}
           </DialogTitle>
           <DialogDescription>
@@ -172,7 +172,7 @@ export function TimeoutMemberDialog({
             variant="primary"
             onClick={handleApply}
             disabled={submitting}
-            className="bg-amber-600 hover:bg-amber-700 text-white"
+            className="bg-warning hover:bg-warning/90 text-warning-foreground"
           >
             {submitting ? 'Applying...' : 'Apply Timeout'}
           </Button>

@@ -80,6 +80,8 @@ END;
 $$;
 
 -- 3. SS-S2 & SS-S5: HARDEN TIMEOUT RPC
+DROP FUNCTION IF EXISTS public.timeout_server_member(UUID, UUID, INTEGER, TEXT);
+DROP FUNCTION IF EXISTS public.timeout_server_member(UUID, UUID, INTEGER);
 CREATE OR REPLACE FUNCTION public.timeout_server_member(
     p_server_id UUID,
     p_user_id UUID,
@@ -200,6 +202,8 @@ END;
 $$;
 
 -- 4. SS-S5: HARDEN BAN AND KICK RPCS WITH ROLE HIERARCHY
+DROP FUNCTION IF EXISTS public.ban_server_member(UUID, UUID, TEXT);
+DROP FUNCTION IF EXISTS public.ban_server_member(UUID, UUID);
 CREATE OR REPLACE FUNCTION public.ban_server_member(
     p_server_id UUID,
     p_user_id UUID,
@@ -286,6 +290,8 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.kick_server_member(UUID, UUID, TEXT);
+DROP FUNCTION IF EXISTS public.kick_server_member(UUID, UUID);
 CREATE OR REPLACE FUNCTION public.kick_server_member(
     p_server_id UUID,
     p_user_id UUID,
@@ -368,6 +374,9 @@ END;
 $$;
 
 -- 5. SS-S3: HARDEN REPORT RESOLUTION
+DROP FUNCTION IF EXISTS public.resolve_report(UUID, TEXT, TEXT);
+DROP FUNCTION IF EXISTS public.resolve_report(UUID, TEXT);
+DROP FUNCTION IF EXISTS public.resolve_report(UUID);
 CREATE OR REPLACE FUNCTION public.resolve_report(
     p_report_id UUID,
     p_status TEXT DEFAULT 'resolved',

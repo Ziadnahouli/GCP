@@ -37,6 +37,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_unique_server_name_type
     ON public.channels (server_id, lower(name), type);
 
 -- 2. SS-H2: ATOMIC DELETE_CHANNEL RPC
+DROP FUNCTION IF EXISTS public.delete_channel(UUID);
 CREATE OR REPLACE FUNCTION public.delete_channel(
     p_channel_id UUID
 )

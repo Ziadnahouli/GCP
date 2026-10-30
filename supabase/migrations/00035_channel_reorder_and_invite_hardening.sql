@@ -5,6 +5,7 @@
 -- ==============================================================================
 
 -- 1. REORDER CHANNELS RPC
+DROP FUNCTION IF EXISTS public.reorder_channels(UUID, UUID[]);
 CREATE OR REPLACE FUNCTION public.reorder_channels(
     p_server_id UUID,
     p_ordered_ids UUID[]
@@ -50,6 +51,9 @@ $$;
 GRANT EXECUTE ON FUNCTION public.reorder_channels(UUID, UUID[]) TO authenticated;
 
 -- 2. HARDEN CREATE_SERVER_INVITE (PERMISSION, RATE LIMITING, AND AUDIT)
+DROP FUNCTION IF EXISTS public.create_server_invite(UUID, INT, INT);
+DROP FUNCTION IF EXISTS public.create_server_invite(UUID, INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS public.create_server_invite(UUID);
 CREATE OR REPLACE FUNCTION public.create_server_invite(
     p_server_id UUID,
     p_max_uses INT DEFAULT 0,

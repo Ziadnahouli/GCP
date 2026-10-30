@@ -137,6 +137,7 @@ BEGIN
 END $$;
 
 -- 5. THE SOURCE OF TRUTH: HAS_SERVER_PERMISSION
+DROP FUNCTION IF EXISTS public.has_server_permission(UUID, UUID, TEXT);
 CREATE OR REPLACE FUNCTION public.has_server_permission(
     p_server_id UUID,
     p_user_id UUID,

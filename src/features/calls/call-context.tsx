@@ -2510,7 +2510,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
                 .maybeSingle(),
               supabase
                 .from('conversations')
-                .select('name, is_group, type')
+                .select('name, type')
                 .eq('id', row.conversation_id)
                 .maybeSingle(),
             ]);
@@ -2707,7 +2707,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const [convRes, membersRes] = await Promise.all([
         supabase
           .from('conversations')
-          .select('type, name, is_group')
+          .select('type, name')
           .eq('id', conversationId)
           .maybeSingle(),
         supabase

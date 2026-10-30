@@ -48,14 +48,12 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              process.env.NODE_ENV === 'production'
-                ? "script-src 'self' 'unsafe-inline'"
-                : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' 'unsafe-eval'",
               "worker-src 'self' blob:",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "media-src 'self' blob: data: https:",
-              "connect-src 'self' https: wss:",
+              "connect-src 'self' https: wss: http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*",
               "font-src 'self' data:",
               "frame-ancestors 'none'",
             ].join('; '),

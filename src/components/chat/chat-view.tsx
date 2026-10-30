@@ -207,9 +207,9 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
 
     let active = true;
     supabase
-      .from('blocked_users')
+      .from('blocks')
       .select('id')
-      .or(`and(user_id.eq.${user.id},blocked_user_id.eq.${targetUserId}),and(user_id.eq.${targetUserId},blocked_user_id.eq.${user.id})`)
+      .or(`and(blocker_id.eq.${user.id},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${user.id})`)
       .then(({ data }) => {
         if (!active) return;
         if (data && data.length > 0) {

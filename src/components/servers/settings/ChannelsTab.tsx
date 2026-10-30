@@ -10,12 +10,14 @@ import {
   ArrowUp,
   ArrowDown,
   AlertCircle,
+  Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Channel, ChannelType, Server } from '@/lib/types/server';
 import { DeleteChannelDialog } from './DeleteChannelDialog';
+import { ChannelPermissionsDialog } from './ChannelPermissionsDialog';
 import { useServers } from '@/hooks/use-servers';
 import { ToastItem } from '@/components/ui/toast';
 
@@ -53,6 +55,9 @@ export function ChannelsTab({
 
   // Delete channel state
   const [deletingChannel, setDeletingChannel] = React.useState<Channel | null>(null);
+
+  // Channel permissions state
+  const [permissionsChannel, setPermissionsChannel] = React.useState<Channel | null>(null);
 
   // Reorder loading state
   const [reordering, setReordering] = React.useState(false);
@@ -427,6 +432,16 @@ export function ChannelsTab({
                         type="button"
                         variant="ghost"
                         size="icon"
+                        onClick={() => setPermissionsChannel(channel)}
+                        className="h-7 w-7 text-muted-foreground hover:text-primary"
+                        title="Channel Permissions"
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handleStartEdit(channel)}
                         className="h-7 w-7 text-muted-foreground hover:text-foreground"
                         title="Edit Channel"
@@ -514,6 +529,16 @@ export function ChannelsTab({
                           type="button"
                           variant="ghost"
                           size="icon"
+                          onClick={() => setPermissionsChannel(channel)}
+                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                          title="Channel Permissions"
+                        >
+                          <Shield className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
                           onClick={() => handleStartEdit(channel)}
                           className="h-7 w-7 text-muted-foreground hover:text-foreground"
                           title="Edit Channel"
@@ -549,6 +574,15 @@ export function ChannelsTab({
           deletingChannel?.type === 'text' && textChannels.length <= 1
         }
         onConfirm={handleDeleteConfirm}
+      />
+
+      {/* Channel Permissions Radix Dialog */}
+      <ChannelPermissionsDialog
+        open={Boolean(permissionsChannel)}
+        onOpenChange={(open) => !open && setPermissionsChannel(null)}
+        channel={permissionsChannel}
+        server={server}
+        toast={toast}
       />
     </div>
   );

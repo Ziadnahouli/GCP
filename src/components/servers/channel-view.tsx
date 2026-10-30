@@ -17,7 +17,7 @@ import {
   Crown,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Server, Channel, ChannelMessage, hasServerPermission } from '@/lib/types/server';
+import { Server, Channel, ChannelMessage, hasServerPermission, hasChannelPermission } from '@/lib/types/server';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useChannelMessages } from '@/hooks/use-channel-messages';
 import { useAuth } from '@/features/auth/auth-provider';
@@ -126,12 +126,12 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
     return new Date(currentMember.timeout_until) > new Date();
   }, [currentMember?.timeout_until]);
 
-  // Permissions for current user
-  const canSendMessages = !isTimedOut && hasServerPermission(server, user?.id, 'send_messages');
-  const canConnectVoice = hasServerPermission(server, user?.id, 'connect_voice');
-  const canSpeakVoice = !isTimedOut && hasServerPermission(server, user?.id, 'speak_voice');
-  const canShareScreen = !isTimedOut && hasServerPermission(server, user?.id, 'share_screen');
-  const canUseSoundboard = !isTimedOut && hasServerPermission(server, user?.id, 'use_soundboard');
+  // Permissions for current user (checking channel-level overrides and role permissions)
+  const canSendMessages = !isTimedOut && hasChannelPermission(server, channel.id, user?.id, 'send_messages');
+  const canConnectVoice = hasChannelPermission(server, channel.id, user?.id, 'connect_voice');
+  const canSpeakVoice = !isTimedOut && hasChannelPermission(server, channel.id, user?.id, 'speak_voice');
+  const canShareScreen = !isTimedOut && hasChannelPermission(server, channel.id, user?.id, 'share_screen');
+  const canUseSoundboard = !isTimedOut && hasChannelPermission(server, channel.id, user?.id, 'use_soundboard');
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

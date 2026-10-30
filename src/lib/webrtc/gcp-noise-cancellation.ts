@@ -183,9 +183,9 @@ export async function createGcpNoisePipeline(
       return createFallbackPipeline(currentMode, 'AudioContext not supported in this browser');
     }
 
-    // Strictly enforce 48 kHz for RNNoise neural speech enhancement (N8)
-    if (audioContext.sampleRate !== 48000) {
-      const msg = `AudioContext initialized at ${audioContext.sampleRate} Hz (48 kHz required for neural engine)`;
+    // Adapt gracefully to standard audio rates (16 kHz - 96 kHz)
+    if (audioContext.sampleRate < 16000 || audioContext.sampleRate > 96000) {
+      const msg = `AudioContext initialized at unsupported ${audioContext.sampleRate} Hz`;
       console.warn(`[GcpAudio] ${msg}; falling back to browser-native processing.`);
       return createFallbackPipeline(currentMode, msg, audioContext);
     }

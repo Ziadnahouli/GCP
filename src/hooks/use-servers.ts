@@ -12,6 +12,8 @@ import {
   ServerInvite,
   MutationResult,
   hasServerPermission,
+  hasChannelPermission,
+  ChannelPermissionOverride,
   ALL_SERVER_PERMISSIONS,
   DEFAULT_ROLE_PERMISSIONS,
 } from '@/lib/types/server';
@@ -56,6 +58,22 @@ export function useServersInternal() {
         `);
 
       if (!error && srvData) {
+        const overridesByChannel = new Map<string, ChannelPermissionOverride[]>();
+        try {
+          const { data: overridesData } = await supabase
+            .from('channel_permission_overrides')
+            .select('id, channel_id, role_id, allow, deny');
+          if (overridesData && Array.isArray(overridesData)) {
+            for (const ov of overridesData as { id?: string; channel_id: string; role_id: string; allow: ServerPermission[]; deny: ServerPermission[] }[]) {
+              const list = overridesByChannel.get(ov.channel_id) || [];
+              list.push(ov);
+              overridesByChannel.set(ov.channel_id, list);
+            }
+          }
+        } catch {
+          // Fallback if table not yet migrated
+        }
+
         const parsed: Server[] = srvData
           .filter((s) => !DUMMY_SERVER_IDS.has(s.id))
           // Only show servers where user is the owner or an existing member
@@ -66,7 +84,12 @@ export function useServersInternal() {
           })
           .map((s) => {
             // A5: Sort real channels directly; default channels are created in DB trigger
-            const channels = (s.channels || []).sort((a: Channel, b: Channel) => a.position - b.position);
+            const channels = (s.channels || [])
+              .sort((a: Channel, b: Channel) => a.position - b.position)
+              .map((c: Channel) => ({
+                ...c,
+                permission_overrides: overridesByChannel.get(c.id) || [],
+              }));
 
             const rawRoles = (s.server_roles || []).sort((a: any, b: any) => b.position - a.position);
             const roles: RoleDefinition[] = rawRoles.map((r: any) => ({
@@ -188,6 +211,9 @@ export function useServersInternal() {
         fetchServers();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'server_roles' }, () => {
+        fetchServers();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'channel_permission_overrides' }, () => {
         fetchServers();
       })
       .on('broadcast', { event: 'servers_update' }, () => {
@@ -1583,15 +1609,28 @@ export function useServersInternal() {
       }
       const rollbackServers = servers;
       try {
-        const { error } = await supabase.rpc('update_server_role', {
+        const { error: rpcError } = await supabase.rpc('update_server_role', {
           p_role_id: roleId,
           p_name: updates.name || null,
           p_color: updates.color || null,
           p_permissions: updates.permissions || null,
         });
 
-        if (error) {
-          return { ok: false, error: error.message };
+        if (rpcError) {
+          // Direct table update fallback if RPC is not present
+          const patch: Record<string, unknown> = {};
+          if (updates.name !== undefined) patch.name = updates.name;
+          if (updates.color !== undefined) patch.color = updates.color;
+          if (updates.permissions !== undefined) patch.permissions = updates.permissions;
+
+          const { error: tableError } = await supabase
+            .from('server_roles')
+            .update(patch)
+            .eq('id', roleId);
+
+          if (tableError) {
+            return { ok: false, error: rpcError.message || tableError.message };
+          }
         }
 
         const updated = servers.map((srv) => {
@@ -1624,12 +1663,20 @@ export function useServersInternal() {
       }
       const rollbackServers = servers;
       try {
-        const { error } = await supabase.rpc('delete_server_role', {
+        const { error: rpcError } = await supabase.rpc('delete_server_role', {
           p_role_id: roleId,
         });
 
-        if (error) {
-          return { ok: false, error: error.message };
+        if (rpcError) {
+          // Direct table delete fallback if RPC is not present
+          const { error: tableError } = await supabase
+            .from('server_roles')
+            .delete()
+            .eq('id', roleId);
+
+          if (tableError) {
+            return { ok: false, error: rpcError.message || tableError.message };
+          }
         }
 
         const updated = servers.map((srv) => {
@@ -1651,6 +1698,82 @@ export function useServersInternal() {
         setServers(rollbackServers);
         saveServersRef.current(rollbackServers);
         return { ok: false, error: e instanceof Error ? e.message : 'Failed to delete role' };
+      }
+    },
+    [servers, user, notifyServersUpdate]
+  );
+
+  const setChannelPermissionOverride = React.useCallback(
+    async (
+      serverId: string,
+      channelId: string,
+      roleId: string,
+      allow: ServerPermission[],
+      deny: ServerPermission[]
+    ): Promise<MutationResult> => {
+      if (!user || !supabase) {
+        return { ok: false, error: 'Authentication required' };
+      }
+      const rollbackServers = servers;
+      try {
+        const { error: rpcErr } = await supabase.rpc('set_channel_permission_override', {
+          p_channel_id: channelId,
+          p_role_id: roleId,
+          p_allow: allow,
+          p_deny: deny,
+        });
+
+        if (rpcErr) {
+          if (allow.length === 0 && deny.length === 0) {
+            await supabase
+              .from('channel_permission_overrides')
+              .delete()
+              .eq('channel_id', channelId)
+              .eq('role_id', roleId);
+          } else {
+            const { error: tableErr } = await supabase
+              .from('channel_permission_overrides')
+              .upsert(
+                {
+                  channel_id: channelId,
+                  role_id: roleId,
+                  allow,
+                  deny,
+                },
+                { onConflict: 'channel_id,role_id' }
+              );
+            if (tableErr) {
+              return { ok: false, error: rpcErr.message || tableErr.message };
+            }
+          }
+        }
+
+        const updated = servers.map((srv) => {
+          if (srv.id === serverId) {
+            const channels = (srv.channels || []).map((ch) => {
+              if (ch.id === channelId) {
+                const existing = (ch.permission_overrides || []).filter((o) => o.role_id !== roleId);
+                const nextOverrides =
+                  allow.length > 0 || deny.length > 0
+                    ? [...existing, { channel_id: channelId, role_id: roleId, allow, deny }]
+                    : existing;
+                return { ...ch, permission_overrides: nextOverrides };
+              }
+              return ch;
+            });
+            return { ...srv, channels };
+          }
+          return srv;
+        });
+
+        setServers(updated);
+        saveServersRef.current(updated);
+        notifyServersUpdate();
+        return { ok: true };
+      } catch (e: unknown) {
+        setServers(rollbackServers);
+        saveServersRef.current(rollbackServers);
+        return { ok: false, error: e instanceof Error ? e.message : 'Failed to set channel permission' };
       }
     },
     [servers, user, notifyServersUpdate]
@@ -1703,6 +1826,7 @@ export function useServersInternal() {
     updateRole,
     deleteRole,
     updateRolePermissions,
+    setChannelPermissionOverride,
   };
 }
 
@@ -1749,6 +1873,7 @@ export function useServers(): UseServersReturn {
       updateRole: async () => ({ success: false }),
       deleteRole: async () => ({ success: false }),
       updateRolePermissions: async () => ({ success: false }),
+      setChannelPermissionOverride: async () => ({ ok: false }),
     } as unknown as UseServersReturn;
   }
   return context;
@@ -1782,6 +1907,10 @@ export function usePermissions(serverId: string | null | undefined) {
       return hasServerPermission(server, user.id, permission);
     };
 
+    const canInChannel = (channelId: string, permission: ServerPermission): boolean => {
+      return hasChannelPermission(server, channelId, user.id, permission);
+    };
+
     const permissions = ALL_SERVER_PERMISSIONS
       .map((p) => p.id)
       .filter((p) => can(p));
@@ -1789,6 +1918,7 @@ export function usePermissions(serverId: string | null | undefined) {
     return {
       isOwner,
       can,
+      canInChannel,
       permissions,
     };
   }, [servers, serverId, user]);

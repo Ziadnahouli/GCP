@@ -149,6 +149,9 @@ export class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
     }
 
     const config: any = {};
+    if (wasmBinary) {
+      config.wasmBinary = wasmBinary;
+    }
     if (wasmModule && typeof WebAssembly !== 'undefined') {
       config.instantiateWasm = (imports: any, successCallback: any) => {
         WebAssembly.instantiate(wasmModule, imports)
@@ -156,12 +159,21 @@ export class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
             successCallback(instance, wasmModule);
           })
           .catch((err) => {
-            console.error('[GcpWorklet] instantiateWasm error:', err);
+            console.warn('[GcpWorklet] instantiateWasm module failed, trying wasmBinary:', err);
+            if (wasmBinary) {
+              WebAssembly.instantiate(wasmBinary, imports)
+                .then((res) => {
+                  successCallback(res.instance, res.module);
+                })
+                .catch((binErr) => {
+                  this.port.postMessage({ type: 'ERROR', error: String(binErr) });
+                });
+            } else {
+              this.port.postMessage({ type: 'ERROR', error: String(err) });
+            }
           });
         return {};
       };
-    } else if (wasmBinary) {
-      config.wasmBinary = wasmBinary;
     }
 
     const mod = await createRNNWasmModule(config);

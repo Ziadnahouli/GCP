@@ -2447,8 +2447,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             await drainPendingRemoteCandidates();
             console.log('[CallNAT] ICE restart answer applied successfully via mailbox.');
           }
-        } catch (e) {
-          console.warn('[CallNAT] Error applying ice_restart_answer in mailbox:', e);
+        } catch (e: unknown) {
+          if ((e as { name?: string })?.name !== 'InvalidStateError') console.warn('[CallNAT] Error applying ice_restart_answer in mailbox:', e);
         }
       })
       .on('broadcast', { event: 'media_renegotiate_offer' }, ({ payload }) => {
@@ -3392,8 +3392,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             await drainPendingRemoteCandidates();
             console.log('[CallNAT] ICE restart answer applied in caller room.');
           }
-        } catch (e) {
-          console.warn('[CallNAT] Error applying ice_restart_answer in caller room:', e);
+        } catch (e: unknown) {
+          if ((e as { name?: string })?.name !== 'InvalidStateError') console.warn('[CallNAT] Error applying ice_restart_answer in caller room:', e);
         }
       })
       .on('broadcast', { event: 'media_renegotiate_offer' }, ({ payload }) => {
@@ -3885,8 +3885,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             await drainPendingRemoteCandidates();
             console.log('[CallNAT] ICE restart answer applied in callee room.');
           }
-        } catch (e) {
-          console.warn('[CallNAT] Error applying ice_restart_answer in callee room:', e);
+        } catch (e: unknown) {
+          if ((e as { name?: string })?.name !== 'InvalidStateError') console.warn('[CallNAT] Error applying ice_restart_answer in callee room:', e);
         }
       })
       .on('broadcast', { event: 'media_renegotiate_offer' }, ({ payload }) => {

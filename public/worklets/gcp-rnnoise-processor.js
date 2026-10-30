@@ -874,6 +874,9 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
             throw new Error('createRNNWasmModule is not defined in worklet scope');
         }
         const config = {};
+        if (wasmBinary) {
+            config.wasmBinary = wasmBinary;
+        }
         if (wasmModule && typeof WebAssembly !== 'undefined') {
             config.instantiateWasm = (imports, successCallback) => {
                 WebAssembly.instantiate(wasmModule, imports)
@@ -881,13 +884,22 @@ class GcpNeuralNoiseProcessor extends AudioWorkletProcessor {
                     successCallback(instance, wasmModule);
                 })
                     .catch((err) => {
-                    console.error('[GcpWorklet] instantiateWasm error:', err);
+                    console.warn('[GcpWorklet] instantiateWasm module failed, trying wasmBinary:', err);
+                    if (wasmBinary) {
+                        WebAssembly.instantiate(wasmBinary, imports)
+                            .then((res) => {
+                            successCallback(res.instance, res.module);
+                        })
+                            .catch((binErr) => {
+                            this.port.postMessage({ type: 'ERROR', error: String(binErr) });
+                        });
+                    }
+                    else {
+                        this.port.postMessage({ type: 'ERROR', error: String(err) });
+                    }
                 });
                 return {};
             };
-        }
-        else if (wasmBinary) {
-            config.wasmBinary = wasmBinary;
         }
         const mod = await createRNNWasmModule(config);
         this.rnnModule = mod && mod.ready && typeof mod._malloc !== 'function' ? await mod.ready : mod;

@@ -125,7 +125,9 @@ export function MixerAdapterBridge() {
     if (typeof window === 'undefined' || !activeCallId) return;
 
     let isPolling = true;
+    let consecutiveFailures = 0;
     const checkDesktopDsp = async () => {
+      if (consecutiveFailures >= 3) return;
       try {
         const res = await fetch('http://127.0.0.1:48123/api/audio/dsp', {
           method: 'GET',
@@ -134,6 +136,7 @@ export function MixerAdapterBridge() {
         });
         if (!isPolling) return;
         if (res.ok) {
+          consecutiveFailures = 0;
           const data = await res.json();
           if (data && data.desktop_dsp_active && data.bypass_browser_dsp) {
             // Signal browser WebRTC pipeline not to double-process
@@ -144,9 +147,12 @@ export function MixerAdapterBridge() {
             );
             return;
           }
+        } else {
+          consecutiveFailures++;
         }
       } catch {
         // Desktop bridge offline or unreachable; browser WebRTC DSP should run normally
+        consecutiveFailures++;
       }
       if (isPolling) {
         window.dispatchEvent(

@@ -177,6 +177,60 @@ export function hasServerPermission(
   return DEFAULT_ROLE_PERMISSIONS.member.includes(permission);
 }
 
+export interface ChannelPermissionOverride {
+  id?: string;
+  channel_id: string;
+  role_id: string;
+  allow: ServerPermission[];
+  deny: ServerPermission[];
+}
+
+export function hasChannelPermission(
+  server: Server | null | undefined,
+  channelId: string | null | undefined,
+  userId: string | null | undefined,
+  permission: ServerPermission
+): boolean {
+  if (!server) return false;
+  if (!userId) {
+    return permission === 'connect_voice' || permission === 'speak_voice' || permission === 'send_messages';
+  }
+  if (server.owner_id === userId) return true;
+
+  const member = server.members?.find((m) => m.user_id === userId);
+  if (member?.timeout_until && new Date(member.timeout_until) > new Date()) {
+    if (['send_messages', 'send_attachments', 'speak_voice', 'share_screen', 'use_soundboard', 'mention_everyone'].includes(permission)) {
+      return false;
+    }
+  }
+
+  if (channelId && server.channels) {
+    const channel = server.channels.find((c) => c.id === channelId);
+    if (channel && channel.permission_overrides && channel.permission_overrides.length > 0) {
+      let roleId = member?.role_id;
+      if (!roleId && member && server.roles) {
+        const matched = server.roles.find(
+          (r) => r.id === member.role || r.name.toLowerCase() === member.role.toLowerCase()
+        );
+        if (matched) roleId = matched.id;
+      }
+      if (roleId) {
+        const override = channel.permission_overrides.find((o) => o.role_id === roleId);
+        if (override) {
+          if (override.deny && override.deny.includes(permission)) {
+            return false;
+          }
+          if (override.allow && override.allow.includes(permission)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return hasServerPermission(server, userId, permission);
+}
+
 export interface Channel {
   id: string;
   server_id: string;
@@ -185,6 +239,7 @@ export interface Channel {
   topic?: string | null;
   position: number;
   created_at: string;
+  permission_overrides?: ChannelPermissionOverride[];
 }
 
 export interface ServerMember {

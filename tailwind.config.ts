@@ -95,11 +95,12 @@ const config: Config = {
       zIndex: {
         base: '0',
         sticky: '10',
-        dropdown: '20',
         sheet: '30',
         dialog: '40',
-        toast: '50',
-        'call-overlay': '60',
+        dropdown: '50',
+        popover: '50',
+        toast: '60',
+        'call-overlay': '70',
       },
       transitionDuration: {
         fast: '120ms',

@@ -9,6 +9,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Server } from '@/lib/types/server';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { validateFile } from '@/lib/storage/upload';
+import { useAuth } from '@/features/auth/auth-provider';
 import { ToastItem } from '@/components/ui/toast';
 
 interface OverviewTabProps {
@@ -31,6 +32,7 @@ export function OverviewTab({
   isDirty,
   setIsDirty,
 }: OverviewTabProps) {
+  const { user } = useAuth();
   const [name, setName] = React.useState(server.name);
   const [description, setDescription] = React.useState(server.description || '');
   const [iconUrl, setIconUrl] = React.useState(server.icon_url || '');
@@ -96,7 +98,8 @@ export function OverviewTab({
     try {
       const supabase = getBrowserClient();
       const ext = file.name.split('.').pop() || 'png';
-      const filePath = `server-icons/${server.id}/${Date.now()}.${ext}`;
+      const userPrefix = user?.id || 'server-icons';
+      const filePath = `${userPrefix}/server-icons/${server.id}_${Date.now()}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
@@ -121,7 +124,7 @@ export function OverviewTab({
       console.error('Failed to upload server icon:', err);
       toast({
         title: 'Upload Failed',
-        description: 'Could not upload icon. You can also paste an image URL directly.',
+        description: (err as Error)?.message || 'Could not upload icon. You can also paste an image URL directly.',
         type: 'error',
       });
     } finally {
@@ -153,11 +156,15 @@ export function OverviewTab({
     setSaving(true);
     try {
       if (onUpdateServer) {
-        await onUpdateServer(server.id, {
+        const res = (await onUpdateServer(server.id, {
           name: trimmedName,
           description: description.trim() || null,
           icon_url: iconUrl.trim() || null,
-        });
+        })) as { ok?: boolean; error?: string } | undefined;
+
+        if (res && res.ok === false) {
+          throw new Error(res.error || 'Failed to update server.');
+        }
       }
       setIsDirty(false);
       toast({
@@ -165,10 +172,10 @@ export function OverviewTab({
         description: 'Overview settings have been saved.',
         type: 'success',
       });
-    } catch {
+    } catch (err: unknown) {
       toast({
         title: 'Save Failed',
-        description: 'Failed to update server overview settings.',
+        description: (err as Error)?.message || 'Failed to update server overview settings.',
         type: 'error',
       });
     } finally {

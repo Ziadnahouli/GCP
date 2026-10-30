@@ -467,5 +467,65 @@ describe('Server Settings Security & Permissions Audit Regression Gate (SS-S1 - 
       expect(msgCheck.rows.length).toBe(0);
     });
   });
+
+  describe('SS-S6: Server Deletion and Member Integrity Guard', () => {
+    it('prevents non-owner (admin) from deleting server via delete_server RPC', async () => {
+      await asUser(BOB_ID);
+
+      await expect(
+        db.query(`
+          SELECT public.delete_server('${SERVER_ID}');
+        `)
+      ).rejects.toThrow(/only the server owner/i);
+    });
+
+    it('allows server owner to delete server via delete_server RPC cascading all members and channels', async () => {
+      await asUser(ALICE_ID);
+
+      const delRes = await db.query<{ delete_server: boolean }>(`
+        SELECT public.delete_server('${SERVER_ID}');
+      `);
+      expect(delRes.rows[0].delete_server).toBe(true);
+
+      // Verify server is deleted
+      const srvCheck = await db.query(`
+        SELECT 1 FROM public.servers WHERE id = '${SERVER_ID}';
+      `);
+      expect(srvCheck.rows.length).toBe(0);
+
+      // Verify cascading delete on server_members
+      const memCheck = await db.query(`
+        SELECT 1 FROM public.server_members WHERE server_id = '${SERVER_ID}';
+      `);
+      expect(memCheck.rows.length).toBe(0);
+    });
+
+    it('restores default member role_id when unbanning a user', async () => {
+      // Put Dave in bans
+      await asSuperuser();
+      await db.exec(`
+        DELETE FROM public.server_members WHERE server_id = '${SERVER_ID}' AND user_id = '${DAVE_ID}';
+        INSERT INTO public.server_bans (server_id, user_id, banned_by, reason)
+        VALUES ('${SERVER_ID}', '${DAVE_ID}', '${ALICE_ID}', 'Spam');
+      `);
+
+      await asUser(ALICE_ID);
+
+      // Unban Dave with restore
+      const unbanRes = await db.query<{ unban_server_member: boolean }>(`
+        SELECT public.unban_server_member('${SERVER_ID}', '${DAVE_ID}', true);
+      `);
+      expect(unbanRes.rows[0].unban_server_member).toBe(true);
+
+      // Verify Dave is reinserted with a valid system Member role_id
+      const memberCheck = await db.query<{ role: string; role_id: string }>(`
+        SELECT role, role_id FROM public.server_members
+        WHERE server_id = '${SERVER_ID}' AND user_id = '${DAVE_ID}';
+      `);
+      expect(memberCheck.rows.length).toBe(1);
+      expect(memberCheck.rows[0].role).toBe('member');
+      expect(memberCheck.rows[0].role_id).toBeTruthy();
+    });
+  });
 });
 

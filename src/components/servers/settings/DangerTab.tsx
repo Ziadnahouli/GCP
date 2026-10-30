@@ -37,7 +37,10 @@ export function DangerTab({
   const handleDeleteConfirm = async () => {
     try {
       if (onDeleteServer) {
-        await onDeleteServer(server.id);
+        const res = (await onDeleteServer(server.id)) as { ok?: boolean; error?: string } | undefined;
+        if (res && res.ok === false) {
+          throw new Error(res.error || 'Failed to delete server.');
+        }
       }
       toast({
         title: 'Server Deleted',
@@ -57,7 +60,10 @@ export function DangerTab({
   const handleTransferConfirm = async (newOwnerId: string) => {
     try {
       if (onTransferOwnership) {
-        await onTransferOwnership(server.id, newOwnerId);
+        const res = (await onTransferOwnership(server.id, newOwnerId)) as { ok?: boolean; error?: string } | undefined;
+        if (res && res.ok === false) {
+          throw new Error(res.error || 'Failed to transfer ownership.');
+        }
       }
       toast({
         title: 'Ownership Transferred',
@@ -77,7 +83,10 @@ export function DangerTab({
   const handleLeaveConfirm = async () => {
     try {
       if (onLeaveServer) {
-        await onLeaveServer(server.id);
+        const res = (await onLeaveServer(server.id)) as { ok?: boolean; error?: string } | undefined;
+        if (res && res.ok === false) {
+          throw new Error(res.error || 'Failed to leave server.');
+        }
       }
       toast({
         title: 'Left Server',

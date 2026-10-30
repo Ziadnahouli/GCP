@@ -27,6 +27,7 @@ import { Server, ServerMember, ServerRole } from '@/lib/types/server';
 import { TimeoutMemberDialog } from './TimeoutMemberDialog';
 import { BanMemberDialog } from './BanMemberDialog';
 import { KickMemberDialog } from './KickMemberDialog';
+import { DEFAULT_ROLE_COLORS } from '@/lib/design/colors';
 import { ToastItem } from '@/components/ui/toast';
 
 interface MembersTabProps {
@@ -133,17 +134,26 @@ export function MembersTab({
     }
   };
 
-  const handleTimeoutConfirm = async (durationMinutes: number, reason: string) => {
+  const handleTimeoutConfirm = async (durationSeconds: number, reason: string) => {
     if (!timingOutMember) return;
     try {
       if (onTimeoutMember) {
-        await onTimeoutMember(server.id, timingOutMember.user_id, durationMinutes, reason);
+        const res = (await onTimeoutMember(
+          server.id,
+          timingOutMember.user_id,
+          durationSeconds,
+          reason
+        )) as { success?: boolean; error?: string } | undefined;
+        if (res && res.success === false) {
+          throw new Error(res.error || 'Failed to execute timeout.');
+        }
       }
+      const durationMins = Math.ceil(durationSeconds / 60);
       toast({
-        title: durationMinutes > 0 ? 'Member Timed Out' : 'Timeout Removed',
+        title: durationSeconds > 0 ? 'Member Timed Out' : 'Timeout Removed',
         description:
-          durationMinutes > 0
-            ? `Timed out ${timingOutMember.profile?.display_name || 'member'} for ${durationMinutes} minutes.`
+          durationSeconds > 0
+            ? `Timed out ${timingOutMember.profile?.display_name || 'member'} for ${durationMins} minutes.`
             : `Removed timeout for ${timingOutMember.profile?.display_name || 'member'}.`,
         type: 'success',
       });
@@ -160,11 +170,14 @@ export function MembersTab({
     if (!banningMember) return;
     try {
       if (onBanMember) {
-        await onBanMember(server.id, banningMember.user_id, reason);
+        const res = (await onBanMember(server.id, banningMember.user_id, reason)) as { success?: boolean; error?: string } | undefined;
+        if (res && res.success === false) {
+          throw new Error(res.error || 'Failed to ban member.');
+        }
       }
       toast({
         title: 'Member Banned',
-        description: `Banned ${banningMember.profile?.display_name || 'member'} from the server.`,
+        description: `Banned ${banningMember.profile?.display_name || 'member'}. Notification sent via DM.`,
         type: 'success',
       });
     } catch (err: unknown) {
@@ -180,7 +193,10 @@ export function MembersTab({
     if (!kickingMember) return;
     try {
       if (onKickMember) {
-        await onKickMember(server.id, kickingMember.user_id);
+        const res = (await onKickMember(server.id, kickingMember.user_id)) as { success?: boolean; error?: string } | undefined;
+        if (res && res.success === false) {
+          throw new Error(res.error || 'Failed to kick member.');
+        }
       }
       toast({
         title: 'Member Kicked',
@@ -260,9 +276,23 @@ export function MembersTab({
               member.profile?.display_name || member.profile?.username || 'Member';
 
             // Find current role definition
-            const currentRoleDef = member.role_id
+            const matchedRole = member.role_id
               ? roles.find((r) => r.id === member.role_id)
               : roles.find((r) => r.name.toLowerCase() === (member.role || 'member').toLowerCase());
+
+            const currentRoleDef = matchedRole || {
+              id: member.role || 'member',
+              name: member.role ? member.role.charAt(0).toUpperCase() + member.role.slice(1) : 'Member',
+              color: member.role === 'admin' ? DEFAULT_ROLE_COLORS.admin : member.role === 'moderator' ? DEFAULT_ROLE_COLORS.moderator : DEFAULT_ROLE_COLORS.member,
+              position: 1,
+              permissions: [],
+              is_system: true,
+              is_custom: false,
+            };
+
+            const selectedRoleValue = member.role_id && roles.some((r) => r.id === member.role_id)
+              ? member.role_id
+              : (matchedRole?.id || roles.find((r) => r.name.toLowerCase() === (member.role || 'member').toLowerCase())?.id || roles[0]?.id || 'member');
 
             return (
               <div
@@ -299,21 +329,25 @@ export function MembersTab({
                   {/* Role Selector */}
                   {canManageRoles && !isOwner && canModerateTarget ? (
                     <Select
-                      value={member.role_id || member.role || 'member'}
+                      value={selectedRoleValue}
                       onValueChange={(val) => handleRoleChange(member, val)}
                     >
                       <SelectTrigger className="h-7 w-28 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {roles
+                        {(roles.length > 0 ? roles : [
+                          { id: 'admin', name: 'Admin', color: DEFAULT_ROLE_COLORS.admin, position: 3 },
+                          { id: 'moderator', name: 'Moderator', color: DEFAULT_ROLE_COLORS.moderator, position: 2 },
+                          { id: 'member', name: 'Member', color: DEFAULT_ROLE_COLORS.member, position: 1 },
+                        ])
                           .filter((r) => (r.position ?? 0) < userHighestRoleRank || userHighestRoleRank >= 9999)
                           .map((r) => (
                             <SelectItem key={r.id} value={r.id}>
                               <div className="flex items-center gap-1.5">
                                 <span
                                   className="w-2 h-2 rounded-full"
-                                  style={{ backgroundColor: r.color }}
+                                  style={{ backgroundColor: r.color || DEFAULT_ROLE_COLORS.member }}
                                 />
                                 {r.name}
                               </div>

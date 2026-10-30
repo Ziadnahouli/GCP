@@ -177,7 +177,13 @@ export function RolesTab({
     setCreating(true);
     try {
       if (onCreateRole) {
-        await onCreateRole(server.id, trimmed, newRoleColor, newRolePerms);
+        const res = (await onCreateRole(server.id, trimmed, newRoleColor, newRolePerms)) as { ok?: boolean; data?: RoleDefinition; error?: string } | undefined;
+        if (res && res.ok === false) {
+          throw new Error(res.error || 'Failed to create role. Name must be unique within the server.');
+        }
+        if (res?.data?.id) {
+          setSelectedRoleId(res.data.id);
+        }
       }
       setShowCreate(false);
       setNewRoleName('');
@@ -188,10 +194,10 @@ export function RolesTab({
         description: `Role "${trimmed}" created successfully.`,
         type: 'success',
       });
-    } catch {
+    } catch (err: unknown) {
       toast({
         title: 'Creation Failed',
-        description: 'Failed to create role. Name must be unique within the server.',
+        description: (err as Error)?.message || 'Failed to create role. Name must be unique within the server.',
         type: 'error',
       });
     } finally {
@@ -203,7 +209,10 @@ export function RolesTab({
     if (!deletingRole) return;
     try {
       if (onDeleteRole) {
-        await onDeleteRole(server.id, deletingRole.id);
+        const res = (await onDeleteRole(server.id, deletingRole.id)) as { ok?: boolean; error?: string } | undefined;
+        if (res && res.ok === false) {
+          throw new Error(res.error || 'Failed to delete role.');
+        }
       }
       if (selectedRoleId === deletingRole.id) {
         setSelectedRoleId(roles[0]?.id || '');

@@ -254,10 +254,10 @@ export function ServerSettingsModal({
   const handleTimeoutConfirm = async (
     serverId: string,
     userId: string,
-    durationMinutes: number,
+    durationSeconds: number,
     reason?: string
   ) => {
-    return timeoutMember(serverId, userId, durationMinutes, reason);
+    return timeoutMember(serverId, userId, durationSeconds, reason);
   };
 
   const handleCreateInviteSubmit = async (

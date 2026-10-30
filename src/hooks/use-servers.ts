@@ -639,11 +639,17 @@ export function useServersInternal() {
 
       if (user && supabase) {
         try {
-          const { error } = await supabase.from('servers').delete().eq('id', serverId);
-          if (error) {
-            setServers(rollbackServers);
-            saveServersRef.current(rollbackServers);
-            return { ok: false, error: error.message };
+          const { error: rpcError } = await supabase.rpc('delete_server', {
+            p_server_id: serverId,
+          });
+
+          if (rpcError) {
+            const { error: directError } = await supabase.from('servers').delete().eq('id', serverId);
+            if (directError) {
+              setServers(rollbackServers);
+              saveServersRef.current(rollbackServers);
+              return { ok: false, error: rpcError.message || directError.message };
+            }
           }
           notifyServersUpdate();
           return { ok: true };
@@ -966,13 +972,56 @@ export function useServersInternal() {
           p_reason: reason || null,
         });
         if (error) throw error;
+
+        // Automatically dispatch a direct message notification to the banned user
+        try {
+          const srv = servers.find((s) => s.id === serverId);
+          const serverName = srv?.name || 'the server';
+          const banReason = reason?.trim() || 'No reason specified.';
+
+          let convId: string | null = null;
+          const { data: convData, error: convErr } = await supabase.rpc('create_or_get_direct_conversation', {
+            target_user_id: userId,
+          });
+          if (!convErr && convData) {
+            convId = convData as string;
+          } else {
+            // Direct query fallback
+            const { data: myMemberRows } = await supabase
+              .from('conversation_members')
+              .select('conversation_id')
+              .eq('user_id', user.id);
+            if (myMemberRows && myMemberRows.length > 0) {
+              const myConvIds = myMemberRows.map((r: { conversation_id: string }) => r.conversation_id);
+              const { data: targetRows } = await supabase
+                .from('conversation_members')
+                .select('conversation_id')
+                .in('conversation_id', myConvIds)
+                .eq('user_id', userId);
+              if (targetRows && targetRows.length > 0) {
+                convId = targetRows[0].conversation_id;
+              }
+            }
+          }
+
+          if (convId) {
+            await supabase.from('messages').insert({
+              conversation_id: convId,
+              sender_id: user.id,
+              content: `⚠️ You have been banned from **${serverName}**.\n**Reason:** ${banReason}`,
+            });
+          }
+        } catch (dmErr) {
+          console.warn('Could not send ban notification DM:', dmErr);
+        }
+
         await fetchServers();
         return { success: true, error: null };
       } catch (err: any) {
         return { success: false, error: err?.message || 'Failed to ban member' };
       }
     },
-    [user, fetchServers]
+    [user, fetchServers, servers]
   );
 
   const unbanMember = React.useCallback(

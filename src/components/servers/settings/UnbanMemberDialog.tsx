@@ -59,7 +59,7 @@ export function UnbanMemberDialog({
             Unban {targetName}
           </DialogTitle>
           <DialogDescription>
-            Are you sure you want to lift the server ban for {targetName}? They will be able to rejoin via an invite link.
+            Are you sure you want to lift the server ban for {targetName}? A notification message will be sent to them informing them that they have been unbanned.
           </DialogDescription>
         </DialogHeader>
 

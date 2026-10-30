@@ -1076,7 +1076,7 @@ export function useServersInternal() {
     async (
       serverId: string,
       userId: string,
-      restoreMember = true
+      restoreMember = false
     ): Promise<{ success: boolean; error: string | null }> => {
       if (!user || !supabase) return { success: false, error: 'Not authenticated' };
       try {
@@ -1093,8 +1093,58 @@ export function useServersInternal() {
           .eq('server_id', serverId)
           .eq('user_id', userId);
 
+        // When restoreMember is false, ensure the user is removed from server_members table
+        if (!restoreMember) {
+          await supabase
+            .from('server_members')
+            .delete()
+            .eq('server_id', serverId)
+            .eq('user_id', userId);
+        }
+
         if (error) {
           console.warn('unban_server_member RPC error, ensured direct delete:', error.message);
+        }
+
+        // Send a private chat message to the unbanned user notifying them
+        try {
+          const srv = servers.find((s) => s.id === serverId);
+          const serverName = srv?.name || 'the server';
+
+          let convId: string | null = null;
+          const { data: convData, error: convErr } = await supabase.rpc('create_or_get_direct_conversation', {
+            target_user_id: userId,
+          });
+          if (!convErr && convData) {
+            convId = convData as string;
+          } else {
+            // Direct query fallback for existing DM
+            const { data: myMemberRows } = await supabase
+              .from('conversation_members')
+              .select('conversation_id')
+              .eq('user_id', user.id);
+            if (myMemberRows && myMemberRows.length > 0) {
+              const myConvIds = myMemberRows.map((r: { conversation_id: string }) => r.conversation_id);
+              const { data: targetRows } = await supabase
+                .from('conversation_members')
+                .select('conversation_id')
+                .in('conversation_id', myConvIds)
+                .eq('user_id', userId);
+              if (targetRows && targetRows.length > 0) {
+                convId = targetRows[0].conversation_id;
+              }
+            }
+          }
+
+          if (convId) {
+            await supabase.from('messages').insert({
+              conversation_id: convId,
+              sender_id: user.id,
+              content: `ℹ️ You have been unbanned from **${serverName}**.`,
+            });
+          }
+        } catch (dmErr) {
+          console.warn('Could not send unban notification DM:', dmErr);
         }
 
         await fetchServers();
@@ -1104,7 +1154,7 @@ export function useServersInternal() {
         return { success: false, error: err?.message || 'Failed to unban member' };
       }
     },
-    [user, fetchServers, supabase, notifyServersUpdate]
+    [user, fetchServers, notifyServersUpdate, servers]
   );
 
   const timeoutMember = React.useCallback(
@@ -1442,6 +1492,9 @@ export function useServersInternal() {
         return { ok: false, error: 'Authentication required' };
       }
       try {
+        let roleId: string | null = null;
+        let roleRecord: any = null;
+
         const { data, error } = await supabase.rpc('create_server_role', {
           p_server_id: serverId,
           p_name: name,
@@ -1449,37 +1502,51 @@ export function useServersInternal() {
           p_permissions: permissions,
         });
 
-        if (error) {
-          return { ok: false, error: error.message };
-        }
-
-        let rawData: any = data;
-        if (typeof data === 'string') {
-          const trimmed = data.trim();
-          if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-            try {
-              rawData = JSON.parse(trimmed);
-            } catch {
+        if (!error && data) {
+          let rawData: any = data;
+          if (typeof data === 'string') {
+            const trimmed = data.trim();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+              try {
+                rawData = JSON.parse(trimmed);
+              } catch {
+                rawData = { id: trimmed };
+              }
+            } else {
               rawData = { id: trimmed };
             }
-          } else {
-            rawData = { id: trimmed };
           }
+          roleId = (rawData && typeof rawData === 'object' && rawData.id) || (typeof data === 'string' ? data : null);
+          roleRecord = rawData;
+        } else {
+          // Direct table insert fallback if RPC failed (e.g. audit function issue or schema mismatch)
+          const { data: directData, error: directErr } = await supabase
+            .from('server_roles')
+            .insert({
+              server_id: serverId,
+              name: name.trim(),
+              color,
+              permissions,
+              is_system: false,
+            })
+            .select()
+            .single();
+
+          if (directErr) {
+            return { ok: false, error: error?.message || directErr.message };
+          }
+          roleRecord = directData;
+          roleId = directData.id;
         }
 
-        const roleId =
-          (rawData && typeof rawData === 'object' && rawData.id) ||
-          (typeof data === 'string' ? data : null) ||
-          crypto.randomUUID();
-
         const newRole: RoleDefinition = {
-          id: roleId,
-          server_id: (rawData && rawData.server_id) || serverId,
-          name: (rawData && rawData.name) || name,
-          color: (rawData && rawData.color) || color,
-          position: rawData && typeof rawData.position === 'number' ? rawData.position : 2,
-          permissions: ((rawData && rawData.permissions) || permissions || []) as ServerPermission[],
-          is_system: rawData && typeof rawData.is_system === 'boolean' ? rawData.is_system : false,
+          id: roleId || crypto.randomUUID(),
+          server_id: (roleRecord && roleRecord.server_id) || serverId,
+          name: (roleRecord && roleRecord.name) || name,
+          color: (roleRecord && roleRecord.color) || color,
+          position: roleRecord && typeof roleRecord.position === 'number' ? roleRecord.position : 2,
+          permissions: ((roleRecord && roleRecord.permissions) || permissions || []) as ServerPermission[],
+          is_system: roleRecord && typeof roleRecord.is_system === 'boolean' ? roleRecord.is_system : false,
           is_custom: true,
         };
 

@@ -526,6 +526,47 @@ describe('Server Settings Security & Permissions Audit Regression Gate (SS-S1 - 
       expect(memberCheck.rows[0].role).toBe('member');
       expect(memberCheck.rows[0].role_id).toBeTruthy();
     });
+
+    it('lifts ban without adding user to server_members by default and creates notification', async () => {
+      // Put Dave in bans
+      await asSuperuser();
+      await db.exec(`
+        DELETE FROM public.server_members WHERE server_id = '${SERVER_ID}' AND user_id = '${DAVE_ID}';
+        INSERT INTO public.server_bans (server_id, user_id, banned_by, reason)
+        VALUES ('${SERVER_ID}', '${DAVE_ID}', '${ALICE_ID}', 'Temporary restriction')
+        ON CONFLICT (server_id, user_id) DO NOTHING;
+      `);
+
+      await asUser(ALICE_ID);
+
+      // Unban Dave with default restore (false)
+      const unbanRes = await db.query<{ unban_server_member: boolean }>(`
+        SELECT public.unban_server_member('${SERVER_ID}', '${DAVE_ID}');
+      `);
+      expect(unbanRes.rows[0].unban_server_member).toBe(true);
+
+      // Verify ban is lifted from server_bans
+      const banCheck = await db.query(`
+        SELECT 1 FROM public.server_bans WHERE server_id = '${SERVER_ID}' AND user_id = '${DAVE_ID}';
+      `);
+      expect(banCheck.rows.length).toBe(0);
+
+      // Verify Dave is NOT in server_members
+      const memberCheck = await db.query(`
+        SELECT 1 FROM public.server_members WHERE server_id = '${SERVER_ID}' AND user_id = '${DAVE_ID}';
+      `);
+      expect(memberCheck.rows.length).toBe(0);
+
+      // Verify Dave received an in-app notification (checked as Dave due to RLS)
+      await asUser(DAVE_ID);
+      const notifCheck = await db.query<{ title: string; message: string }>(`
+        SELECT title, message FROM public.notifications
+        WHERE user_id = '${DAVE_ID}' AND type = 'server_unban'
+        ORDER BY created_at DESC LIMIT 1;
+      `);
+      expect(notifCheck.rows.length).toBe(1);
+      expect(notifCheck.rows[0].title).toBe('Unbanned from Server');
+    });
   });
 });
 

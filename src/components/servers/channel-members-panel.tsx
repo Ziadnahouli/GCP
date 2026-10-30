@@ -31,6 +31,7 @@ export interface ChannelMemberItem {
   username: string;
   avatar_url?: string | null;
   role: string;
+  role_id?: string | null;
   status: 'online' | 'idle' | 'dnd' | 'offline';
   game_activity?: string | null;
 }
@@ -120,6 +121,9 @@ export function ChannelMembersPanel({
               {group.items.map((m) => {
                 const isMe = m.id === currentUserId;
                 const memberRecord = (server.members || []).find((sm) => sm.user_id === m.id);
+                const memberRole = memberRecord?.role_id
+                  ? (server.roles || []).find((r) => r.id === memberRecord.role_id)
+                  : (server.roles || []).find((r) => r.name.toLowerCase() === (m.role || '').toLowerCase());
                 const isTimedOut =
                   memberRecord?.timeout_until && new Date(memberRecord.timeout_until) > new Date();
 
@@ -148,6 +152,20 @@ export function ChannelMembersPanel({
                         <span className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
                           {m.display_name}
                         </span>
+
+                        {memberRole && memberRole.is_custom && (
+                          <span
+                            className="text-xs px-1.5 py-0 rounded font-medium truncate max-w-[80px]"
+                            style={{
+                              color: memberRole.color || undefined,
+                              backgroundColor: memberRole.color ? `${memberRole.color}20` : undefined,
+                              border: memberRole.color ? `1px solid ${memberRole.color}40` : undefined,
+                            }}
+                            title={memberRole.name}
+                          >
+                            {memberRole.name}
+                          </span>
+                        )}
 
                         {isMe && (
                           <span className="text-xs text-muted-foreground font-normal">(You)</span>

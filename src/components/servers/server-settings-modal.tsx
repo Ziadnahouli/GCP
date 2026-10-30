@@ -260,6 +260,18 @@ export function ServerSettingsModal({
     return timeoutMember(serverId, userId, durationSeconds, reason);
   };
 
+  const handleUnbanMember = React.useCallback(
+    async (serverId: string, userId: string) => {
+      const res = await unbanMember(serverId, userId);
+      if (res?.success) {
+        setBansList((prev) => prev.filter((b) => b.user_id !== userId));
+        return res;
+      }
+      throw new Error(res?.error || 'Failed to unban member');
+    },
+    [unbanMember]
+  );
+
   const handleCreateInviteSubmit = async (
     serverId: string,
     maxUses: number,
@@ -432,7 +444,7 @@ export function ServerSettingsModal({
                 loading={loadingData}
                 canBan={isOwner || permissions.can('ban_members')}
                 toast={toast}
-                onUnbanMember={unbanMember}
+                onUnbanMember={handleUnbanMember}
               />
             )}
 

@@ -17,6 +17,13 @@ DECLARE
     v_is_owner BOOLEAN;
     v_owner_count INT;
 BEGIN
+    -- Allow bypass if we are transferring ownership, deleting the server, or deleting account
+    IF COALESCE(current_setting('nexus.in_transfer_server_ownership', true), 'off') = 'on' OR
+       COALESCE(current_setting('nexus.deleting_server', true), 'off') = 'on' OR
+       COALESCE(current_setting('nexus.in_user_deletion', true), 'off') = 'on' THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+
     SELECT owner_id INTO v_server_owner
     FROM public.servers
     WHERE id = COALESCE(NEW.server_id, OLD.server_id);
@@ -206,3 +213,4 @@ WHERE sm.server_id = sr.server_id
 
 -- 6. RELOAD SCHEMA CACHE
 NOTIFY pgrst, 'reload schema';
+

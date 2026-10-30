@@ -269,6 +269,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
             username: memberProfile?.username || (isCurrentUser ? (profile?.username || 'you') : 'member'),
             avatar_url: memberProfile?.avatar_url || null,
             role: m.role || (m.user_id === server.owner_id ? 'owner' : 'member'),
+            role_id: m.role_id || null,
             status: (memberProfile?.status as any) || (isCurrentUser ? 'online' : 'offline'),
             game_activity: memberProfile?.game_activity || null,
           });

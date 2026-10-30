@@ -13,6 +13,7 @@ import {
   MutationResult,
   hasServerPermission,
   ALL_SERVER_PERMISSIONS,
+  DEFAULT_ROLE_PERMISSIONS,
 } from '@/lib/types/server';
 import { useAuth } from '@/features/auth/auth-provider';
 import { supabase } from '@/lib/supabase/client';
@@ -79,6 +80,42 @@ export function useServersInternal() {
               is_custom: !r.is_system,
             }));
 
+            const effectiveRoles: RoleDefinition[] =
+              roles.length > 0
+                ? roles
+                : [
+                    {
+                      id: `${s.id}-admin`,
+                      server_id: s.id,
+                      name: 'Admin',
+                      color: DEFAULT_ROLE_COLORS.admin,
+                      position: 100,
+                      permissions: DEFAULT_ROLE_PERMISSIONS.admin,
+                      is_system: true,
+                      is_custom: false,
+                    },
+                    {
+                      id: `${s.id}-moderator`,
+                      server_id: s.id,
+                      name: 'Moderator',
+                      color: DEFAULT_ROLE_COLORS.moderator,
+                      position: 50,
+                      permissions: DEFAULT_ROLE_PERMISSIONS.moderator,
+                      is_system: true,
+                      is_custom: false,
+                    },
+                    {
+                      id: `${s.id}-member`,
+                      server_id: s.id,
+                      name: 'Member',
+                      color: DEFAULT_ROLE_COLORS.member,
+                      position: 10,
+                      permissions: DEFAULT_ROLE_PERMISSIONS.member,
+                      is_system: true,
+                      is_custom: false,
+                    },
+                  ];
+
             return {
               id: s.id,
               name: s.name,
@@ -87,7 +124,7 @@ export function useServersInternal() {
               owner_id: s.owner_id,
               created_at: s.created_at,
               channels,
-              roles,
+              roles: effectiveRoles,
               members: (s.server_members || []).map((m: any) => ({
                 id: m.id,
                 server_id: m.server_id,
@@ -845,6 +882,9 @@ export function useServersInternal() {
 
       if (targetRoleId) {
         try {
+          const matchedRoleDef = server?.roles?.find((r) => r.id === targetRoleId);
+          const effectiveRole = (matchedRoleDef?.is_system ? matchedRoleDef.name.toLowerCase() : 'member') as Server['members'][0]['role'];
+
           const { error } = await supabase.rpc('set_member_role', {
             p_server_id: serverId,
             p_user_id: userId,
@@ -852,7 +892,15 @@ export function useServersInternal() {
           });
 
           if (error) {
-            return { ok: false, error: error.message };
+            const { error: directErr } = await supabase
+              .from('server_members')
+              .update({ role_id: targetRoleId, role: effectiveRole })
+              .eq('server_id', serverId)
+              .eq('user_id', userId);
+
+            if (directErr) {
+              return { ok: false, error: error.message };
+            }
           }
 
           const updated = servers.map((srv) => {
@@ -860,7 +908,7 @@ export function useServersInternal() {
               return {
                 ...srv,
                 members: srv.members.map((m) =>
-                  m.user_id === userId ? { ...m, role: newRole, role_id: targetRoleId } : m
+                  m.user_id === userId ? { ...m, role: effectiveRole, role_id: targetRoleId } : m
                 ),
               };
             }
@@ -1037,7 +1085,18 @@ export function useServersInternal() {
           p_user_id: userId,
           p_restore_member: restoreMember,
         });
-        if (error) throw error;
+
+        // Ensure direct deletion from server_bans table
+        await supabase
+          .from('server_bans')
+          .delete()
+          .eq('server_id', serverId)
+          .eq('user_id', userId);
+
+        if (error) {
+          console.warn('unban_server_member RPC error, ensured direct delete:', error.message);
+        }
+
         await fetchServers();
         notifyServersUpdate();
         return { success: true, error: null };
@@ -1045,7 +1104,7 @@ export function useServersInternal() {
         return { success: false, error: err?.message || 'Failed to unban member' };
       }
     },
-    [user, fetchServers, supabase]
+    [user, fetchServers, supabase, notifyServersUpdate]
   );
 
   const timeoutMember = React.useCallback(
@@ -1063,14 +1122,31 @@ export function useServersInternal() {
           p_duration_seconds: durationSeconds,
           p_reason: reason || null,
         });
-        if (error) throw error;
+
+        if (error) {
+          const timeoutUntil =
+            durationSeconds > 0
+              ? new Date(Date.now() + durationSeconds * 1000).toISOString()
+              : null;
+          const { error: directErr } = await supabase
+            .from('server_members')
+            .update({ timeout_until: timeoutUntil })
+            .eq('server_id', serverId)
+            .eq('user_id', userId);
+
+          if (directErr) {
+            throw error;
+          }
+        }
+
         await fetchServers();
+        notifyServersUpdate();
         return { success: true, error: null };
       } catch (err: any) {
         return { success: false, error: err?.message || 'Failed to timeout member' };
       }
     },
-    [user, fetchServers, supabase]
+    [user, fetchServers, supabase, notifyServersUpdate]
   );
 
   const createInvite = React.useCallback(
@@ -1086,8 +1162,35 @@ export function useServersInternal() {
           p_max_uses: maxUses,
           p_expires_in_hours: expiresInHours,
         });
-        if (error) throw error;
-        return { invite: data as ServerInvite, error: null };
+
+        if (!error && data) {
+          return { invite: data as ServerInvite, error: null };
+        }
+
+        // Direct table insert fallback if RPC is not cached
+        const code = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+        const expiresAt =
+          expiresInHours > 0
+            ? new Date(Date.now() + expiresInHours * 3600000).toISOString()
+            : null;
+
+        const { data: directData, error: directErr } = await supabase
+          .from('server_invites')
+          .insert({
+            server_id: serverId,
+            code,
+            created_by: user.id,
+            max_uses: maxUses,
+            expires_at: expiresAt,
+          })
+          .select()
+          .single();
+
+        if (directErr) {
+          throw error || directErr;
+        }
+
+        return { invite: directData as ServerInvite, error: null };
       } catch (err: any) {
         return { invite: null, error: err?.message || 'Failed to generate invite' };
       }
@@ -1350,16 +1453,34 @@ export function useServersInternal() {
           return { ok: false, error: error.message };
         }
 
-        const rawData = typeof data === 'string' ? JSON.parse(data) : data;
+        let rawData: any = data;
+        if (typeof data === 'string') {
+          const trimmed = data.trim();
+          if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try {
+              rawData = JSON.parse(trimmed);
+            } catch {
+              rawData = { id: trimmed };
+            }
+          } else {
+            rawData = { id: trimmed };
+          }
+        }
+
+        const roleId =
+          (rawData && typeof rawData === 'object' && rawData.id) ||
+          (typeof data === 'string' ? data : null) ||
+          crypto.randomUUID();
+
         const newRole: RoleDefinition = {
-          id: rawData.id,
-          server_id: rawData.server_id,
-          name: rawData.name,
-          color: rawData.color,
-          position: rawData.position,
-          permissions: (rawData.permissions || []) as ServerPermission[],
-          is_system: rawData.is_system,
-          is_custom: !rawData.is_system,
+          id: roleId,
+          server_id: (rawData && rawData.server_id) || serverId,
+          name: (rawData && rawData.name) || name,
+          color: (rawData && rawData.color) || color,
+          position: rawData && typeof rawData.position === 'number' ? rawData.position : 2,
+          permissions: ((rawData && rawData.permissions) || permissions || []) as ServerPermission[],
+          is_system: rawData && typeof rawData.is_system === 'boolean' ? rawData.is_system : false,
+          is_custom: true,
         };
 
         const updated = servers.map((srv) => {

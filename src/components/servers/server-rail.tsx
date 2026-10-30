@@ -101,14 +101,22 @@ export function ServerRail({
                       onMouseEnter={() => setHoveredId(server.id)}
                       onMouseLeave={() => setHoveredId(null)}
                       className={cn(
-                        'w-9 h-9 rounded-[10px] flex items-center justify-center font-semibold text-xs tracking-wide transition-all duration-150 border touch-target-44',
+                        'w-9 h-9 rounded-[10px] flex items-center justify-center font-semibold text-xs tracking-wide transition-all duration-150 border touch-target-44 overflow-hidden',
                         isActive
                           ? 'bg-card text-foreground border-primary shadow-subtle'
                           : 'bg-surface-hover border-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground'
                       )}
                       aria-label={server.name}
                     >
-                      {initials}
+                      {server.icon_url ? (
+                        <img
+                          src={server.icon_url}
+                          alt={server.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        initials
+                      )}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right">

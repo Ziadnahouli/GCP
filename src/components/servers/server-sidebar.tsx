@@ -309,8 +309,16 @@ export function ServerSidebar({
               aria-label={`${server.name} menu`}
             >
               <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
-                <div className="w-7 h-7 rounded-md bg-primary-subtle border border-primary/20 flex items-center justify-center font-semibold text-xs text-primary shrink-0">
-                  {server.name ? server.name.charAt(0).toUpperCase() : 'S'}
+                <div className="w-7 h-7 rounded-md bg-primary-subtle border border-primary/20 flex items-center justify-center font-semibold text-xs text-primary shrink-0 overflow-hidden">
+                  {server.icon_url ? (
+                    <img
+                      src={server.icon_url}
+                      alt={server.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    server.name ? server.name.charAt(0).toUpperCase() : 'S'
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <h2 className="font-semibold text-body text-foreground truncate group-hover:text-primary transition-colors leading-tight">

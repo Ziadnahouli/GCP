@@ -333,7 +333,9 @@ export function MembersTab({
                       onValueChange={(val) => handleRoleChange(member, val)}
                     >
                       <SelectTrigger className="h-7 w-28 text-xs">
-                        <SelectValue />
+                        <SelectValue placeholder={currentRoleDef?.name || 'Select role'}>
+                          {currentRoleDef?.name}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {(roles.length > 0 ? roles : [

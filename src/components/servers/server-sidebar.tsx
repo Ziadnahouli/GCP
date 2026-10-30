@@ -256,7 +256,15 @@ export function ServerSidebar({
     [remoteOccupants, serverVoice, server.id, user]
   );
 
-  const canManageServer = hasServerPermission(server, user?.id, 'manage_server') || hasServerPermission(server, user?.id, 'manage_roles');
+  const canManageServer =
+    server?.owner_id === user?.id ||
+    hasServerPermission(server, user?.id, 'manage_server') ||
+    hasServerPermission(server, user?.id, 'manage_roles') ||
+    hasServerPermission(server, user?.id, 'manage_channels') ||
+    hasServerPermission(server, user?.id, 'kick_members') ||
+    hasServerPermission(server, user?.id, 'moderate_members') ||
+    hasServerPermission(server, user?.id, 'manage_reports') ||
+    hasServerPermission(server, user?.id, 'view_audit_log');
   const canManageChannels = hasServerPermission(server, user?.id, 'manage_channels');
 
   const allChannels = server.channels || [];

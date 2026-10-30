@@ -10,6 +10,9 @@ import {
   ServerBan,
   ModerationAuditLog,
   ServerInvite,
+  MutationResult,
+  hasServerPermission,
+  ALL_SERVER_PERMISSIONS,
 } from '@/lib/types/server';
 import { useAuth } from '@/features/auth/auth-provider';
 import { supabase } from '@/lib/supabase/client';
@@ -41,8 +44,9 @@ export function useServersInternal() {
         .select(`
           id, name, description, icon_url, owner_id, created_at,
           channels ( id, server_id, name, type, topic, position, created_at ),
+          server_roles ( id, server_id, name, color, position, permissions, is_system, created_at ),
           server_members (
-            id, server_id, user_id, role, joined_at, timeout_until,
+            id, server_id, user_id, role, role_id, joined_at, timeout_until,
             profile:user_id (
               id, username, display_name, avatar_url, banner_url, banner_color,
               bio, custom_status, status, game_activity, created_at, updated_at
@@ -63,6 +67,18 @@ export function useServersInternal() {
             // A5: Sort real channels directly; default channels are created in DB trigger
             const channels = (s.channels || []).sort((a: Channel, b: Channel) => a.position - b.position);
 
+            const rawRoles = (s.server_roles || []).sort((a: any, b: any) => b.position - a.position);
+            const roles: RoleDefinition[] = rawRoles.map((r: any) => ({
+              id: r.id,
+              server_id: r.server_id,
+              name: r.name,
+              color: r.color,
+              position: r.position,
+              permissions: (r.permissions || []) as ServerPermission[],
+              is_system: r.is_system,
+              is_custom: !r.is_system,
+            }));
+
             return {
               id: s.id,
               name: s.name,
@@ -71,11 +87,13 @@ export function useServersInternal() {
               owner_id: s.owner_id,
               created_at: s.created_at,
               channels,
+              roles,
               members: (s.server_members || []).map((m: any) => ({
                 id: m.id,
                 server_id: m.server_id,
                 user_id: m.user_id,
                 role: m.role,
+                role_id: m.role_id || null,
                 joined_at: m.joined_at,
                 timeout_until: m.timeout_until || null,
                 profile: (m.profile as unknown as UserProfile) || undefined,
@@ -130,6 +148,9 @@ export function useServersInternal() {
         fetchServers();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'server_members' }, () => {
+        fetchServers();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'server_roles' }, () => {
         fetchServers();
       })
       .on('broadcast', { event: 'servers_update' }, () => {
@@ -319,7 +340,8 @@ export function useServersInternal() {
     async (
       serverId: string,
       updates: { name?: string; description?: string | null; icon_url?: string | null }
-    ): Promise<Server | null> => {
+    ): Promise<MutationResult<Server>> => {
+      const rollbackServers = servers;
       let updatedServer: Server | null = null;
       const updated = servers.map((srv) => {
         if (srv.id === serverId) {
@@ -339,11 +361,12 @@ export function useServersInternal() {
         return srv;
       });
 
+      setServers(updated);
       saveServersRef.current(updated);
 
       if (user && supabase && updatedServer) {
         try {
-          await supabase
+          const { error } = await supabase
             .from('servers')
             .update({
               name: (updatedServer as Server).name,
@@ -351,27 +374,46 @@ export function useServersInternal() {
               icon_url: (updatedServer as Server).icon_url,
             })
             .eq('id', serverId);
+
+          if (error) {
+            setServers(rollbackServers);
+            saveServersRef.current(rollbackServers);
+            return { ok: false, error: error.message };
+          }
           notifyServersUpdate();
-        } catch (e) {
-          console.warn('Supabase server update failed:', e);
+          return { ok: true, data: updatedServer };
+        } catch (e: any) {
+          setServers(rollbackServers);
+          saveServersRef.current(rollbackServers);
+          return { ok: false, error: e?.message || 'Failed to update server' };
         }
       }
 
-      return updatedServer;
+      return { ok: true, data: updatedServer || undefined };
     },
     [servers, user, notifyServersUpdate]
   );
 
   const createChannel = React.useCallback(
-    async (serverId: string, name: string, type: ChannelType = 'text', topic?: string) => {
+    async (
+      serverId: string,
+      name: string,
+      type: ChannelType = 'text',
+      topic?: string
+    ): Promise<MutationResult<Channel>> => {
+      const trimmedName = name.trim();
+      if (!trimmedName || trimmedName.length > 50) {
+        return { ok: false, error: 'Channel name must be between 1 and 50 characters' };
+      }
+
       const channelId =
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
           : `00000000-0000-4000-8004-${Date.now().toString(16).padStart(12, '0')}`;
       const cleanName =
         type === 'text'
-          ? name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '')
-          : name.trim();
+          ? trimmedName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '')
+          : trimmedName;
 
       const newChannel: Channel = {
         id: channelId,
@@ -383,6 +425,7 @@ export function useServersInternal() {
         created_at: new Date().toISOString(),
       };
 
+      const rollbackServers = servers;
       const updated = servers.map((srv) => {
         if (srv.id === serverId) {
           return {
@@ -393,6 +436,7 @@ export function useServersInternal() {
         return srv;
       });
 
+      setServers(updated);
       saveServersRef.current(updated);
 
       if (user && supabase) {
@@ -405,15 +449,22 @@ export function useServersInternal() {
             topic: newChannel.topic,
             position: newChannel.position,
           });
-          if (chanErr) throw chanErr;
+          if (chanErr) {
+            setServers(rollbackServers);
+            saveServersRef.current(rollbackServers);
+            return { ok: false, error: chanErr.message };
+          }
 
           notifyServersUpdate();
-        } catch (e) {
-          console.error('Supabase channel insert failed:', e);
+          return { ok: true, data: newChannel };
+        } catch (e: any) {
+          setServers(rollbackServers);
+          saveServersRef.current(rollbackServers);
+          return { ok: false, error: e?.message || 'Supabase channel insert failed' };
         }
       }
 
-      return newChannel;
+      return { ok: true, data: newChannel };
     },
     [servers, user, notifyServersUpdate]
   );
@@ -423,7 +474,8 @@ export function useServersInternal() {
       serverId: string,
       channelId: string,
       updates: { name?: string; topic?: string | null }
-    ): Promise<Channel | null> => {
+    ): Promise<MutationResult<Channel>> => {
+      const rollbackServers = servers;
       let updatedChan: Channel | null = null;
 
       const updated = servers.map((srv) => {
@@ -453,30 +505,41 @@ export function useServersInternal() {
         return srv;
       });
 
+      setServers(updated);
       saveServersRef.current(updated);
 
       if (user && supabase && updatedChan) {
         try {
-          await supabase
+          const { error } = await supabase
             .from('channels')
             .update({
               name: (updatedChan as Channel).name,
               topic: (updatedChan as Channel).topic,
             })
             .eq('id', channelId);
+
+          if (error) {
+            setServers(rollbackServers);
+            saveServersRef.current(rollbackServers);
+            return { ok: false, error: error.message };
+          }
           notifyServersUpdate();
-        } catch (e) {
-          console.warn('Supabase channel update failed:', e);
+          return { ok: true, data: updatedChan };
+        } catch (e: any) {
+          setServers(rollbackServers);
+          saveServersRef.current(rollbackServers);
+          return { ok: false, error: e?.message || 'Supabase channel update failed' };
         }
       }
 
-      return updatedChan;
+      return { ok: true, data: updatedChan || undefined };
     },
     [servers, user, notifyServersUpdate]
   );
 
   const deleteChannel = React.useCallback(
-    async (serverId: string, channelId: string) => {
+    async (serverId: string, channelId: string): Promise<MutationResult> => {
+      const rollbackServers = servers;
       const updated = servers.map((srv) => {
         if (srv.id === serverId) {
           return {
@@ -487,35 +550,111 @@ export function useServersInternal() {
         return srv;
       });
 
+      setServers(updated);
       saveServersRef.current(updated);
 
       if (user && supabase) {
         try {
-          // Delete messages first to satisfy foreign keys
-          await supabase.from('channel_messages').delete().eq('channel_id', channelId);
-          await supabase.from('channels').delete().eq('id', channelId);
+          const { error } = await supabase.rpc('delete_channel', {
+            p_channel_id: channelId,
+          });
+
+          if (error) {
+            setServers(rollbackServers);
+            saveServersRef.current(rollbackServers);
+            return { ok: false, error: error.message };
+          }
           notifyServersUpdate();
-        } catch (e) {
-          console.warn('Supabase channel delete failed:', e);
+          return { ok: true };
+        } catch (e: any) {
+          setServers(rollbackServers);
+          saveServersRef.current(rollbackServers);
+          return { ok: false, error: e?.message || 'Supabase channel delete failed' };
         }
       }
+
+      return { ok: true };
+    },
+    [servers, user, notifyServersUpdate]
+  );
+
+  const reorderChannels = React.useCallback(
+    async (serverId: string, orderedChannelIds: string[]): Promise<MutationResult> => {
+      const rollbackServers = servers;
+      const updated = servers.map((srv) => {
+        if (srv.id === serverId) {
+          const map = new Map(srv.channels.map((c) => [c.id, c]));
+          const reordered: Channel[] = [];
+          orderedChannelIds.forEach((id, index) => {
+            const ch = map.get(id);
+            if (ch) {
+              reordered.push({ ...ch, position: index });
+              map.delete(id);
+            }
+          });
+          map.forEach((ch) => reordered.push(ch));
+          return {
+            ...srv,
+            channels: reordered,
+          };
+        }
+        return srv;
+      });
+
+      setServers(updated);
+      saveServersRef.current(updated);
+
+      if (user && supabase) {
+        try {
+          const { error } = await supabase.rpc('reorder_channels', {
+            p_server_id: serverId,
+            p_ordered_ids: orderedChannelIds,
+          });
+
+          if (error) {
+            setServers(rollbackServers);
+            saveServersRef.current(rollbackServers);
+            return { ok: false, error: error.message };
+          }
+          notifyServersUpdate();
+          return { ok: true };
+        } catch (e: any) {
+          setServers(rollbackServers);
+          saveServersRef.current(rollbackServers);
+          return { ok: false, error: e?.message || 'Supabase channel reorder failed' };
+        }
+      }
+
+      return { ok: true };
     },
     [servers, user, notifyServersUpdate]
   );
 
   const deleteServer = React.useCallback(
-    async (serverId: string) => {
+    async (serverId: string): Promise<MutationResult> => {
+      const rollbackServers = servers;
       const updated = servers.filter((s) => s.id !== serverId);
+      setServers(updated);
       saveServersRef.current(updated);
 
       if (user && supabase) {
         try {
-          await supabase.from('servers').delete().eq('id', serverId);
+          const { error } = await supabase.from('servers').delete().eq('id', serverId);
+          if (error) {
+            setServers(rollbackServers);
+            saveServersRef.current(rollbackServers);
+            return { ok: false, error: error.message };
+          }
           notifyServersUpdate();
-        } catch (e) {
-          console.warn('Supabase server delete failed:', e);
+          return { ok: true };
+        } catch (e: any) {
+          setServers(rollbackServers);
+          saveServersRef.current(rollbackServers);
+          return { ok: false, error: e?.message || 'Supabase server delete failed' };
         }
       }
+
+      return { ok: true };
     },
     [servers, user, notifyServersUpdate]
   );
@@ -685,40 +824,88 @@ export function useServersInternal() {
   );
 
   const updateMemberRole = React.useCallback(
-    async (serverId: string, userId: string, newRole: Server['members'][0]['role']): Promise<boolean> => {
-      const updated = servers.map((srv) => {
-        if (srv.id === serverId) {
-          return {
-            ...srv,
-            members: srv.members.map((m) => (m.user_id === userId ? { ...m, role: newRole } : m)),
-          };
-        }
-        return srv;
-      });
+    async (
+      serverId: string,
+      userId: string,
+      newRole: Server['members'][0]['role'],
+      roleId?: string
+    ): Promise<MutationResult> => {
+      if (!user || !supabase) {
+        return { ok: false, error: 'Authentication required' };
+      }
+      const rollbackServers = servers;
+      const server = servers.find((s) => s.id === serverId);
+      const targetRoleId = roleId || server?.roles?.find((r) => r.id === newRole || r.name.toLowerCase() === newRole.toLowerCase())?.id;
 
-      saveServersRef.current(updated);
-
-      if (user && supabase) {
+      if (targetRoleId) {
         try {
-          const { error: updateErr } = await supabase
-            .from('server_members')
-            .update({ role: newRole })
-            .eq('server_id', serverId)
-            .eq('user_id', userId);
-          if (updateErr) {
-            console.error('Failed to update member role:', updateErr);
-            saveServersRef.current(servers);
-            return false;
+          const { error } = await supabase.rpc('set_member_role', {
+            p_server_id: serverId,
+            p_user_id: userId,
+            p_role_id: targetRoleId,
+          });
+
+          if (error) {
+            return { ok: false, error: error.message };
           }
+
+          const updated = servers.map((srv) => {
+            if (srv.id === serverId) {
+              return {
+                ...srv,
+                members: srv.members.map((m) =>
+                  m.user_id === userId ? { ...m, role: newRole, role_id: targetRoleId } : m
+                ),
+              };
+            }
+            return srv;
+          });
+
+          setServers(updated);
+          saveServersRef.current(updated);
           notifyServersUpdate();
-          return true;
-        } catch (err) {
-          console.error('Error updating member role:', err);
-          saveServersRef.current(servers);
-          return false;
+          return { ok: true };
+        } catch (err: any) {
+          setServers(rollbackServers);
+          saveServersRef.current(rollbackServers);
+          return { ok: false, error: err?.message || 'Failed to update member role' };
         }
       }
-      return true;
+
+      // Legacy fallback
+      try {
+        const { error: updateErr } = await supabase
+          .from('server_members')
+          .update({ role: newRole })
+          .eq('server_id', serverId)
+          .eq('user_id', userId);
+        if (updateErr) {
+          console.error('Failed to update member role:', updateErr);
+          setServers(rollbackServers);
+          saveServersRef.current(rollbackServers);
+          return { ok: false, error: updateErr.message };
+        }
+
+        const updated = servers.map((srv) => {
+          if (srv.id === serverId) {
+            return {
+              ...srv,
+              members: srv.members.map((m) => (m.user_id === userId ? { ...m, role: newRole } : m)),
+            };
+          }
+          return srv;
+        });
+
+        setServers(updated);
+        saveServersRef.current(updated);
+        notifyServersUpdate();
+        return { ok: true };
+      } catch (err: any) {
+        console.error('Error updating member role:', err);
+        setServers(rollbackServers);
+        saveServersRef.current(rollbackServers);
+        return { ok: false, error: err?.message || 'Failed to update member role' };
+      }
     },
     [servers, user, notifyServersUpdate]
   );
@@ -1098,36 +1285,54 @@ export function useServersInternal() {
       name: string,
       color: string,
       permissions: ServerPermission[]
-    ): Promise<RoleDefinition> => {
-      const roleId =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `role-${Date.now().toString(16)}`;
+    ): Promise<MutationResult<RoleDefinition>> => {
+      if (!user || !supabase) {
+        return { ok: false, error: 'Authentication required' };
+      }
+      try {
+        const { data, error } = await supabase.rpc('create_server_role', {
+          p_server_id: serverId,
+          p_name: name,
+          p_color: color,
+          p_permissions: permissions,
+        });
 
-      const newRole: RoleDefinition = {
-        id: roleId,
-        name,
-        color,
-        permissions,
-        is_custom: true,
-      };
-
-      const updated = servers.map((srv) => {
-        if (srv.id === serverId) {
-          const existingRoles = srv.roles || [];
-          return {
-            ...srv,
-            roles: [...existingRoles, newRole],
-          };
+        if (error) {
+          return { ok: false, error: error.message };
         }
-        return srv;
-      });
 
-      saveServersRef.current(updated);
-      notifyServersUpdate();
-      return newRole;
+        const rawData = typeof data === 'string' ? JSON.parse(data) : data;
+        const newRole: RoleDefinition = {
+          id: rawData.id,
+          server_id: rawData.server_id,
+          name: rawData.name,
+          color: rawData.color,
+          position: rawData.position,
+          permissions: (rawData.permissions || []) as ServerPermission[],
+          is_system: rawData.is_system,
+          is_custom: !rawData.is_system,
+        };
+
+        const updated = servers.map((srv) => {
+          if (srv.id === serverId) {
+            const existingRoles = srv.roles || [];
+            return {
+              ...srv,
+              roles: [...existingRoles, newRole],
+            };
+          }
+          return srv;
+        });
+
+        setServers(updated);
+        saveServersRef.current(updated);
+        notifyServersUpdate();
+        return { ok: true, data: newRole };
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'Failed to create role' };
+      }
     },
-    [servers, notifyServersUpdate]
+    [servers, user, notifyServersUpdate]
   );
 
   const updateRole = React.useCallback(
@@ -1135,42 +1340,83 @@ export function useServersInternal() {
       serverId: string,
       roleId: string,
       updates: Partial<RoleDefinition>
-    ): Promise<boolean> => {
-      const updated = servers.map((srv) => {
-        if (srv.id === serverId) {
-          const roles = (srv.roles || []).map((r) =>
-            r.id === roleId ? { ...r, ...updates } : r
-          );
-          return { ...srv, roles };
-        }
-        return srv;
-      });
+    ): Promise<MutationResult> => {
+      if (!user || !supabase) {
+        return { ok: false, error: 'Authentication required' };
+      }
+      const rollbackServers = servers;
+      try {
+        const { error } = await supabase.rpc('update_server_role', {
+          p_role_id: roleId,
+          p_name: updates.name || null,
+          p_color: updates.color || null,
+          p_permissions: updates.permissions || null,
+        });
 
-      saveServersRef.current(updated);
-      notifyServersUpdate();
-      return true;
+        if (error) {
+          return { ok: false, error: error.message };
+        }
+
+        const updated = servers.map((srv) => {
+          if (srv.id === serverId) {
+            const roles = (srv.roles || []).map((r) =>
+              r.id === roleId ? { ...r, ...updates } : r
+            );
+            return { ...srv, roles };
+          }
+          return srv;
+        });
+
+        setServers(updated);
+        saveServersRef.current(updated);
+        notifyServersUpdate();
+        return { ok: true };
+      } catch (e: any) {
+        setServers(rollbackServers);
+        saveServersRef.current(rollbackServers);
+        return { ok: false, error: e?.message || 'Failed to update role' };
+      }
     },
-    [servers, notifyServersUpdate]
+    [servers, user, notifyServersUpdate]
   );
 
   const deleteRole = React.useCallback(
-    async (serverId: string, roleId: string): Promise<boolean> => {
-      const updated = servers.map((srv) => {
-        if (srv.id === serverId) {
-          const roles = (srv.roles || []).filter((r) => r.id !== roleId);
-          const members = srv.members.map((m) =>
-            m.role === roleId ? { ...m, role: 'member' } : m
-          );
-          return { ...srv, roles, members };
-        }
-        return srv;
-      });
+    async (serverId: string, roleId: string): Promise<MutationResult> => {
+      if (!user || !supabase) {
+        return { ok: false, error: 'Authentication required' };
+      }
+      const rollbackServers = servers;
+      try {
+        const { error } = await supabase.rpc('delete_server_role', {
+          p_role_id: roleId,
+        });
 
-      saveServersRef.current(updated);
-      notifyServersUpdate();
-      return true;
+        if (error) {
+          return { ok: false, error: error.message };
+        }
+
+        const updated = servers.map((srv) => {
+          if (srv.id === serverId) {
+            const roles = (srv.roles || []).filter((r) => r.id !== roleId);
+            const members = srv.members.map((m) =>
+              m.role_id === roleId || m.role === roleId ? { ...m, role: 'member', role_id: null } : m
+            );
+            return { ...srv, roles, members };
+          }
+          return srv;
+        });
+
+        setServers(updated);
+        saveServersRef.current(updated);
+        notifyServersUpdate();
+        return { ok: true };
+      } catch (e: any) {
+        setServers(rollbackServers);
+        saveServersRef.current(rollbackServers);
+        return { ok: false, error: e?.message || 'Failed to delete role' };
+      }
     },
-    [servers, notifyServersUpdate]
+    [servers, user, notifyServersUpdate]
   );
 
   const updateRolePermissions = React.useCallback(
@@ -1178,37 +1424,15 @@ export function useServersInternal() {
       serverId: string,
       roleIdOrName: string,
       permissions: ServerPermission[]
-    ): Promise<boolean> => {
-      const updated = servers.map((srv) => {
-        if (srv.id === serverId) {
-          const existingRoles = [...(srv.roles || [])];
-          const roleIdx = existingRoles.findIndex(
-            (r) => r.id === roleIdOrName || r.name.toLowerCase() === roleIdOrName.toLowerCase()
-          );
-          if (roleIdx >= 0) {
-            existingRoles[roleIdx] = {
-              ...existingRoles[roleIdx],
-              permissions,
-            };
-          } else {
-            existingRoles.push({
-              id: roleIdOrName.toLowerCase(),
-              name: roleIdOrName.charAt(0).toUpperCase() + roleIdOrName.slice(1),
-              permissions,
-              color: DEFAULT_ROLE_COLORS.defaultNewRole,
-              is_custom: false,
-            });
-          }
-          return { ...srv, roles: existingRoles };
-        }
-        return srv;
-      });
-
-      saveServersRef.current(updated);
-      notifyServersUpdate();
-      return true;
+    ): Promise<MutationResult> => {
+      const server = servers.find((s) => s.id === serverId);
+      const role = server?.roles?.find((r) => r.id === roleIdOrName || r.name.toLowerCase() === roleIdOrName.toLowerCase());
+      if (!role) {
+        return { ok: false, error: 'Role not found' };
+      }
+      return updateRole(serverId, role.id, { permissions });
     },
-    [servers, notifyServersUpdate]
+    [servers, updateRole]
   );
 
   return {
@@ -1221,6 +1445,7 @@ export function useServersInternal() {
     createChannel,
     updateChannel,
     deleteChannel,
+    reorderChannels,
     joinServer,
     leaveServer,
     transferOwnership,
@@ -1272,6 +1497,7 @@ export function useServers(): UseServersReturn {
       createChannel: async () => ({ success: false }),
       updateChannel: async () => ({ success: false }),
       deleteChannel: async () => ({ success: false }),
+      reorderChannels: async () => ({ ok: false }),
       createInvite: async () => ({ invite: null, error: null }),
       kickMember: async () => ({ success: false }),
       banMember: async () => ({ success: false }),
@@ -1289,4 +1515,44 @@ export function useServers(): UseServersReturn {
     } as unknown as UseServersReturn;
   }
   return context;
+}
+
+export function usePermissions(serverId: string | null | undefined) {
+  const { servers } = useServers();
+  const { user } = useAuth();
+
+  return React.useMemo(() => {
+    if (!serverId || !user) {
+      return {
+        isOwner: false,
+        can: () => false,
+        permissions: [] as ServerPermission[],
+      };
+    }
+
+    const server = servers.find((s) => s.id === serverId);
+    if (!server) {
+      return {
+        isOwner: false,
+        can: () => false,
+        permissions: [] as ServerPermission[],
+      };
+    }
+
+    const isOwner = server.owner_id === user.id;
+
+    const can = (permission: ServerPermission): boolean => {
+      return hasServerPermission(server, user.id, permission);
+    };
+
+    const permissions = ALL_SERVER_PERMISSIONS
+      .map((p) => p.id)
+      .filter((p) => can(p));
+
+    return {
+      isOwner,
+      can,
+      permissions,
+    };
+  }, [servers, serverId, user]);
 }

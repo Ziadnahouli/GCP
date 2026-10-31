@@ -50,8 +50,9 @@ export function useServersInternal() {
           server_roles ( id, server_id, name, color, position, permissions, is_system, created_at ),
           server_members (
             id, server_id, user_id, role, role_id, joined_at, timeout_until,
+            nickname, avatar_path, banner_path, bio, pronouns,
             profile:user_id (
-              id, username, display_name, avatar_url
+              id, username, display_name, avatar_url, avatar_path, avatar_color, status
             )
           )
         `);
@@ -155,6 +156,11 @@ export function useServersInternal() {
                 role_id: m.role_id || null,
                 joined_at: m.joined_at,
                 timeout_until: m.timeout_until || null,
+                nickname: m.nickname || null,
+                avatar_path: m.avatar_path || null,
+                banner_path: m.banner_path || null,
+                bio: m.bio || null,
+                pronouns: m.pronouns || null,
                 profile: (m.profile as unknown as UserProfile) || undefined,
               })),
             };
@@ -787,8 +793,9 @@ export function useServersInternal() {
             channels ( id, server_id, name, type, topic, position, created_at ),
             server_members (
               id, server_id, user_id, role, joined_at,
+              nickname, avatar_path, banner_path, bio, pronouns,
               profile:user_id (
-                id, username, display_name, avatar_url
+                id, username, display_name, avatar_url, avatar_path, avatar_color, status
               )
             )
           `)
@@ -815,6 +822,11 @@ export function useServersInternal() {
               user_id: m.user_id,
               role: m.role,
               joined_at: m.joined_at,
+              nickname: m.nickname || null,
+              avatar_path: m.avatar_path || null,
+              banner_path: m.banner_path || null,
+              bio: m.bio || null,
+              pronouns: m.pronouns || null,
               profile: m.profile || undefined,
             })),
           ],

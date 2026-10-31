@@ -13,6 +13,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { useCallState, useCallActions } from '@/features/calls/call-context';
 import { useServerVoiceContext } from '@/features/servers/server-voice-context';
 import { Avatar } from '@/components/ui/avatar';
+import { ProfileCardTrigger } from '@/components/profile/ProfileCardTrigger';
 import dynamic from 'next/dynamic';
 import { StatusSelector } from './status-selector';
 
@@ -130,28 +131,35 @@ export function UserBar() {
   return (
     <>
       <div className="relative h-13 bg-surface-sidebar border-t border-border px-2 py-1.5 flex items-center justify-between select-none">
-        {/* User Info & Avatar Button */}
-        <div
-          onClick={() => setShowStatusPicker((prev) => !prev)}
-          className="flex items-center gap-2 py-1 px-1.5 rounded-control hover:bg-surface-hover transition-colors cursor-pointer min-w-0 flex-1 mr-1"
-          title="Click to change status"
+        {/* User Info & Profile Card Trigger */}
+        <ProfileCardTrigger
+          userId={profile?.id}
+          side="top"
+          align="start"
+          sideOffset={12}
+          className="min-w-0 flex-1 mr-1"
         >
-          <Avatar
-            src={profile?.avatar_url || null}
-            name={profile?.display_name || 'Gamer'}
-            status={profile?.status || 'online'}
-            showStatus
-            size="32"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-foreground truncate leading-tight">
-              {profile?.display_name || 'User'}
-            </div>
-            <div className="text-xs text-muted-foreground/80 truncate leading-tight">
-              @{profile?.username || 'user'}
+          <div
+            className="flex items-center gap-2 py-1 px-1.5 rounded-control hover:bg-surface-hover transition-colors cursor-pointer min-w-0 flex-1 w-full"
+            title="View Profile Card"
+          >
+            <Avatar
+              src={profile?.avatar_url || null}
+              name={profile?.display_name || 'User'}
+              status={profile?.status || 'online'}
+              showStatus
+              size="32"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold text-foreground truncate leading-tight">
+                {profile?.display_name || 'User'}
+              </div>
+              <div className="text-xs text-muted-foreground/80 truncate leading-tight">
+                @{profile?.username || 'user'}
+              </div>
             </div>
           </div>
-        </div>
+        </ProfileCardTrigger>
 
         {/* Action Controls: Mic, Deafen, Settings, More Options */}
         <div className="flex items-center gap-0.5 shrink-0">
@@ -210,6 +218,11 @@ export function UserBar() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" className="w-52 mb-1">
+              <DropdownMenuItem onClick={() => setShowStatusPicker(true)} className="gap-2 cursor-pointer">
+                <span className="w-2 h-2 rounded-full bg-status-online shrink-0" />
+                <span>Change Online Status</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setShowSoundboard(true)} className="gap-2 cursor-pointer">
                 <Sparkles className="w-4 h-4 text-warning" />
                 <span>Gaming Soundboard</span>

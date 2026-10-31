@@ -273,7 +273,8 @@ export function MembersTab({
 
             const remainingTimeout = formatRemainingTimeout(member.timeout_until);
             const displayName =
-              member.profile?.display_name || member.profile?.username || 'Member';
+              member.nickname || member.profile?.display_name || member.profile?.username || 'Member';
+            const memberAvatar = member.avatar_path || (member.profile as any)?.avatar_path || member.profile?.avatar_url || null;
 
             // Find current role definition
             const matchedRole = member.role_id
@@ -300,7 +301,7 @@ export function MembersTab({
                 className="flex items-center justify-between p-3 rounded-xl border border-border bg-card/40 hover:bg-card/70 transition-colors gap-3"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <Avatar src={member.profile?.avatar_url} name={displayName} size={32} />
+                  <Avatar src={memberAvatar} name={displayName} size={32} />
 
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">

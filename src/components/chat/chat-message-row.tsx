@@ -103,7 +103,7 @@ function ChatMessageRowComponent({
           ) : (
             <ProfileCardTrigger userId={message.sender?.id || message.sender_id}>
               <Avatar
-                src={message.sender?.avatar_url}
+                src={(message.sender as any)?.avatar_path || message.sender?.avatar_url}
                 name={message.sender?.display_name || 'User'}
                 size="32"
                 avatarColor={message.sender?.avatar_color}

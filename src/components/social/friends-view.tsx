@@ -53,7 +53,7 @@ function FriendAvatar({
   return (
     <ProfileCardTrigger userId={friend.id}>
       <Avatar
-        src={friend.avatar_url}
+        src={(friend as any)?.avatar_path || friend.avatar_url}
         name={friend.display_name}
         status={status}
         showStatus

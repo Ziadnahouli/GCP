@@ -276,11 +276,13 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
           seenIds.add(m.user_id);
           const isCurrentUser = m.user_id === user?.id;
           const memberProfile = isCurrentUser ? (profile || m.profile) : m.profile;
+          const effectiveName = m.nickname || memberProfile?.display_name || (isCurrentUser ? (profile?.display_name || 'You') : 'Member');
+          const effectiveAvatar = m.avatar_path || memberProfile?.avatar_path || memberProfile?.avatar_url || null;
           list.push({
             id: m.user_id,
-            display_name: memberProfile?.display_name || (isCurrentUser ? (profile?.display_name || 'You') : 'Member'),
+            display_name: effectiveName,
             username: memberProfile?.username || (isCurrentUser ? (profile?.username || 'you') : 'member'),
-            avatar_url: memberProfile?.avatar_url || null,
+            avatar_url: effectiveAvatar,
             role: m.role || (m.user_id === server.owner_id ? 'owner' : 'member'),
             role_id: m.role_id || null,
             status: (memberProfile?.status as any) || (isCurrentUser ? 'online' : 'offline'),
@@ -527,6 +529,10 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 itemContent={(index, msg) => {
                   const isOwner = msg.user_id === server.owner_id;
 
+                  const msgMember = (server.members || []).find((sm) => sm.user_id === msg.user_id);
+                  const effectiveMsgName = msgMember?.nickname || msg.profile?.display_name || 'Member';
+                  const effectiveMsgAvatar = msgMember?.avatar_path || (msg.profile as any)?.avatar_path || msg.profile?.avatar_url || null;
+
                   return (
                     <div
                       key={msg.id}
@@ -534,8 +540,8 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                     >
                       <ProfileCardTrigger userId={msg.user_id} serverId={server.id}>
                         <Avatar
-                          src={msg.profile?.avatar_url}
-                          name={msg.profile?.display_name || 'Member'}
+                          src={effectiveMsgAvatar}
+                          name={effectiveMsgName}
                           size="32"
                           className="mt-0.5 shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
                         />
@@ -545,7 +551,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                         <div className="flex items-center gap-2 flex-wrap">
                           <ProfileCardTrigger userId={msg.user_id} serverId={server.id}>
                             <span className="font-semibold text-body text-foreground hover:text-primary cursor-pointer transition-colors">
-                              {msg.profile?.display_name || 'Member'}
+                              {effectiveMsgName}
                             </span>
                           </ProfileCardTrigger>
 

@@ -102,7 +102,7 @@ export function useConversationsInternal() {
         .select(`
           id, conversation_id, user_id, role, last_read_at, joined_at,
           profile:user_id (
-            id, username, display_name, avatar_url
+            id, username, display_name, avatar_url, avatar_path
           )
         `)
         .in('conversation_id', convIds);

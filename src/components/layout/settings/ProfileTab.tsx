@@ -19,7 +19,7 @@ import { ImageCropDialog } from '@/components/profile/ImageCropDialog';
 import { LinksEditor } from '@/components/profile/LinksEditor';
 import { ServerProfileEditor } from '@/components/profile/ServerProfileEditor';
 import { useServers } from '@/hooks/use-servers';
-import { ProcessedImageResult, getAccessibleTextColor } from '@/lib/images/profile-images';
+import { ProcessedImageResult, getAccessibleTextColor, resolveProfileImageUrl } from '@/lib/images/profile-images';
 import {
   Upload,
   Trash2,
@@ -270,6 +270,9 @@ export function ProfileTab() {
       }
 
       // 3. Save profile attributes
+      const publicAvatarUrl = avatarPath ? resolveProfileImageUrl('avatars', avatarPath) : null;
+      const publicBannerUrl = bannerPath ? resolveProfileImageUrl('avatars', bannerPath) : null;
+
       const { error: profileErr } = await updateProfile({
         display_name: normalizedDisplayName,
         username: username.trim().toLowerCase(),
@@ -281,7 +284,9 @@ export function ProfileTab() {
         banner_color: bannerColor,
         accent_color: accentColor.trim() || null,
         avatar_path: avatarPath,
+        avatar_url: publicAvatarUrl,
         banner_path: bannerPath,
+        banner_url: publicBannerUrl,
         avatar_color: avatarColor,
         timezone: timezone || null,
         favorite_games: favoriteGames,

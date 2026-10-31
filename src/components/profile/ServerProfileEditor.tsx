@@ -25,7 +25,7 @@ export const ServerProfileEditor: React.FC<ServerProfileEditorProps> = ({
 }) => {
   const { user, profile } = useAuth();
   const { toast } = useToast();
-  const { servers: hookServers } = useServers();
+  const { servers: hookServers, refetch: refetchServers } = useServers();
   const [dbServers, setDbServers] = React.useState<Array<{ id: string; name: string }>>([]);
 
   // Fallback: Query server_members directly if props & hook are empty
@@ -152,6 +152,11 @@ export const ServerProfileEditor: React.FC<ServerProfileEditorProps> = ({
         } else {
           throw error;
         }
+      }
+
+      // Immediately refresh server caches so member lists and chat update
+      if (refetchServers) {
+        await refetchServers();
       }
 
       toast({

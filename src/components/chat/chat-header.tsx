@@ -88,7 +88,7 @@ export function ChatHeader({
           ) : (
             <ProfileCardTrigger userId={otherMember?.id}>
               <Avatar
-                src={otherMember?.avatar_url}
+                src={(otherMember as any)?.avatar_path || otherMember?.avatar_url}
                 name={title}
                 status={liveStatus}
                 showStatus

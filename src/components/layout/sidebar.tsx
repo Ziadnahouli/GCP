@@ -237,7 +237,7 @@ export function Sidebar({
                       <ConversationItemAvatar
                         otherMemberId={otherMemberId}
                         title={title}
-                        avatarUrl={otherMember?.avatar_url}
+                        avatarUrl={(otherMember as any)?.avatar_path || otherMember?.avatar_url}
                         isGroup={isGroup}
                       />
                     </div>

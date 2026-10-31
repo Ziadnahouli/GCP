@@ -40,8 +40,8 @@ export function resolveProfileImageUrl(
     return pathOrUrl;
   }
 
-  // Local assets (e.g., /decorations/...)
-  if (pathOrUrl.startsWith('/')) {
+  // Local assets (e.g., /decorations/...) but NOT Supabase storage paths
+  if (pathOrUrl.startsWith('/decorations/') || pathOrUrl.startsWith('/icons/') || pathOrUrl.startsWith('/images/')) {
     return pathOrUrl;
   }
 
@@ -68,22 +68,17 @@ export function resolveProfileImageUrl(
       return null;
     }
   } else {
-    // Relative path like "<userId>/banner_123.webp" - stored in the 'avatars' bucket
+    // Strip any leading slash if relative
+    if (objectPath.startsWith('/')) {
+      objectPath = objectPath.slice(1);
+    }
+    // Relative path like "<userId>/avatar_123.webp" - stored in the 'avatars' bucket
     targetBucket = 'avatars';
   }
 
-  const baseUrl = SUPABASE_URL || '';
+  const baseUrl = SUPABASE_URL.replace(/\/+$/, '') || '';
 
-  if (transforms && (transforms.width || transforms.height)) {
-    const params = new URLSearchParams();
-    if (transforms.width) params.set('width', String(transforms.width));
-    if (transforms.height) params.set('height', String(transforms.height));
-    params.set('resize', transforms.resize || 'cover');
-    params.set('format', transforms.format || 'webp');
-    if (transforms.quality) params.set('quality', String(transforms.quality));
-    return `${baseUrl}/storage/v1/render/image/public/${targetBucket}/${objectPath}?${params.toString()}`;
-  }
-
+  // Return standard object URL for 100% reliability across all Supabase plan tiers
   return `${baseUrl}/storage/v1/object/public/${targetBucket}/${objectPath}`;
 }
 

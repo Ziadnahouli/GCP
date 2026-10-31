@@ -250,6 +250,11 @@ export interface ServerMember {
   role_id?: string | null;
   joined_at: string;
   timeout_until?: string | null;
+  nickname?: string | null;
+  avatar_path?: string | null;
+  banner_path?: string | null;
+  bio?: string | null;
+  pronouns?: string | null;
   profile?: Profile;
 }
 

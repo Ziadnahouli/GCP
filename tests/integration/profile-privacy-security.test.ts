@@ -479,5 +479,25 @@ describe('Profile Customization: Privacy (P3) and Validation (P4) Behavioral Gat
       `);
       expect(res.rows[0].custom_status).toBeNull();
     });
+
+    it('automatically synchronizes avatar_url and banner_url when avatar_path or banner_path is updated', async () => {
+      await asUser(ALICE_ID);
+
+      await db.query(`
+        UPDATE public.profiles
+        SET avatar_path = '${ALICE_ID}/custom_avatar_123.webp',
+            banner_path = '${ALICE_ID}/custom_banner_456.webp',
+            avatar_url = NULL,
+            banner_url = NULL
+        WHERE id = '${ALICE_ID}'
+      `);
+
+      const res = await db.query<{ avatar_url: string; banner_url: string }>(`
+        SELECT avatar_url, banner_url FROM public.profiles WHERE id = '${ALICE_ID}'
+      `);
+
+      expect(res.rows[0].avatar_url).toBe(`/storage/v1/object/public/avatars/${ALICE_ID}/custom_avatar_123.webp`);
+      expect(res.rows[0].banner_url).toBe(`/storage/v1/object/public/avatars/${ALICE_ID}/custom_banner_456.webp`);
+    });
   });
 });

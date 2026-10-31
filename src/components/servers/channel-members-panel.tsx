@@ -122,6 +122,8 @@ export function ChannelMembersPanel({
               {group.items.map((m) => {
                 const isMe = m.id === currentUserId;
                 const memberRecord = (server.members || []).find((sm) => sm.user_id === m.id);
+                const effectiveName = memberRecord?.nickname || m.display_name;
+                const effectiveAvatar = memberRecord?.avatar_path || m.avatar_url || null;
                 const memberRole = memberRecord?.role_id
                   ? (server.roles || []).find((r) => r.id === memberRecord.role_id)
                   : (server.roles || []).find((r) => r.name.toLowerCase() === (m.role || '').toLowerCase());
@@ -131,20 +133,20 @@ export function ChannelMembersPanel({
                 return (
                   <div
                     key={m.id}
-                    onClick={() => !isMe && onStartDirectChat(m.id, m.display_name)}
+                    onClick={() => !isMe && onStartDirectChat(m.id, effectiveName)}
                     className={cn(
                       'h-8 px-1.5 rounded-control flex items-center justify-between transition-colors group cursor-pointer',
                       isMe
                         ? 'opacity-80 hover:bg-surface-hover cursor-default'
                         : 'hover:bg-surface-hover'
                     )}
-                    title={isMe ? 'You' : `Click to message ${m.display_name}`}
+                    title={isMe ? 'You' : `Click to message ${effectiveName}`}
                   >
                     <ProfileCardTrigger userId={m.id} serverId={server.id} className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <Avatar
-                          src={m.avatar_url || null}
-                          name={m.display_name}
+                          src={effectiveAvatar}
+                          name={effectiveName}
                           status={m.status}
                           showStatus
                           size="24"
@@ -152,7 +154,7 @@ export function ChannelMembersPanel({
 
                         <div className="min-w-0 flex-1 flex items-center gap-1.5">
                           <span className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                            {m.display_name}
+                            {effectiveName}
                           </span>
 
                           {memberRole && memberRole.is_custom && (

@@ -53,10 +53,10 @@ export function useSocial() {
           friend_id,
           created_at,
           friend:friend_id (
-            id, username, display_name, avatar_url, custom_status, status
+            id, username, display_name, avatar_url, avatar_path, custom_status, status
           ),
           sender_profile:user_id (
-            id, username, display_name, avatar_url, custom_status, status
+            id, username, display_name, avatar_url, avatar_path, custom_status, status
           )
         `)
         .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
@@ -99,7 +99,7 @@ export function useSocial() {
         .select(`
           id, sender_id, receiver_id, status, created_at,
           sender:sender_id (
-            id, username, display_name, avatar_url
+            id, username, display_name, avatar_url, avatar_path
           )
         `)
         .eq('receiver_id', user.id)
@@ -121,7 +121,7 @@ export function useSocial() {
         .select(`
           id, sender_id, receiver_id, status, created_at,
           receiver:receiver_id (
-            id, username, display_name, avatar_url
+            id, username, display_name, avatar_url, avatar_path
           )
         `)
         .eq('sender_id', user.id)
@@ -143,7 +143,7 @@ export function useSocial() {
         .select(`
           id, blocked_id, created_at,
           blocked_user:blocked_id (
-            id, username, display_name, avatar_url
+            id, username, display_name, avatar_url, avatar_path
           )
         `)
         .eq('blocker_id', user.id);

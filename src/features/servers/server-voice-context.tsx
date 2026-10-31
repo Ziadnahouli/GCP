@@ -548,16 +548,18 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           await pc.setLocalDescription(answer);
 
           if (realtimeChannelRef.current) {
-            realtimeChannelRef.current.send({
-              type: 'broadcast',
-              event: 'voice_rtc_signal',
-              payload: {
-                from: u.id,
-                to: fromPeerId,
-                type: 'answer',
-                sdp: answer,
-              },
-            });
+            const ch = realtimeChannelRef.current;
+            const signalPayload = {
+              from: u.id,
+              to: fromPeerId,
+              type: 'answer',
+              sdp: answer,
+            };
+            if (typeof (ch as any).httpSend === 'function' && (ch as any).state !== 'joined') {
+              (ch as any).httpSend({ type: 'broadcast', event: 'voice_rtc_signal', payload: signalPayload });
+            } else {
+              ch.send({ type: 'broadcast', event: 'voice_rtc_signal', payload: signalPayload });
+            }
           }
         } else if (payload.type === 'answer' && payload.sdp) {
           const pc = peerConnectionsRef.current.get(fromPeerId);
@@ -1317,14 +1319,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
                 }
               }
 
-              await lkRoom.localParticipant.publishTrack(localAudioTrack, {
-                source: Track.Source.Microphone,
-              });
-              if (isMicMutedRef.current) {
-                try {
-                  await localAudioTrack.mute();
-                } catch {}
-              }
               console.log('[LiveKit Voice] Local audio track published to LiveKit Cloud SFU!');
             } catch (pubErr) {
               console.warn('[LiveKit Voice] Local audio track publish notice:', pubErr);
@@ -1345,7 +1339,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
           const cleanServerId = serverId.toLowerCase().trim();
           const serverPresenceChannel = realtimeHub.acquire(`server_voice_${cleanServerId}`, {
             config: {
-              private: true,
               broadcast: { self: false },
               presence: { key: currentUser.id },
             },
@@ -1354,7 +1347,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
           const doTrack = () => {
             const normalizedChanId = (channelId || '').toLowerCase().trim();
-            serverPresenceChannel.track({
+            Promise.resolve(serverPresenceChannel.track({
               channel_id: normalizedChanId,
               user_id: currentUser.id,
               display_name: profileRef.current?.display_name || currentUser.email?.split('@')[0] || 'Squadmate',
@@ -1362,7 +1355,7 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
               is_speaking: false,
               is_muted: isMicMutedRef.current,
               is_deafened: isDeafenedRef.current,
-            }).catch(() => {});
+            })).catch(() => {});
           };
 
           if (serverPresenceChannel.state === 'joined') {
@@ -1384,7 +1377,6 @@ export function ServerVoiceProvider({ children }: { children: React.ReactNode })
 
       const roomChannel = supabase ? realtimeHub.acquire(topic, {
         config: {
-          private: true,
           broadcast: { self: false },
           presence: { key: currentUser.id },
         },

@@ -63,7 +63,6 @@ export class RealtimeHub {
       ? {
           ...options,
           config: {
-            private: true,
             ...options?.config,
           },
         }
@@ -194,7 +193,11 @@ export class RealtimeHub {
     const channel = this.acquire(topic, options);
     try {
       if ((channel as any).state !== 'joined' && typeof (channel as any).httpSend === 'function') {
-        return await (channel as any).httpSend(event, payload);
+        return await (channel as any).httpSend({
+          type: 'broadcast',
+          event,
+          payload,
+        });
       }
       return await channel.send({
         type: 'broadcast',

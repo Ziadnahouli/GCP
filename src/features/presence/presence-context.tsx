@@ -263,7 +263,6 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
       'nexus-global-presence',
       {
         config: {
-          private: true,
           broadcast: { self: true },
           presence: { key: userId },
         },

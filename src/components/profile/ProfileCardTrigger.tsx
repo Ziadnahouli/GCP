@@ -55,7 +55,7 @@ export const ProfileCardTrigger: React.FC<ProfileCardTriggerProps> = ({
         <SheetTrigger asChild>
           <button
             type="button"
-            className={cn('w-full inline-flex text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md select-none', className)}
+            className={cn('inline-flex text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md select-none', className)}
             aria-haspopup="dialog"
             aria-expanded={isOpen}
           >
@@ -81,7 +81,7 @@ export const ProfileCardTrigger: React.FC<ProfileCardTriggerProps> = ({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={cn('w-full inline-flex text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md select-none', className)}
+          className={cn('inline-flex text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md select-none', className)}
           aria-haspopup="dialog"
           aria-expanded={isOpen}
         >

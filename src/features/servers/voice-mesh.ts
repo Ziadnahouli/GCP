@@ -84,16 +84,17 @@ export function createMeshPeerConnection(options: MeshPeerOptions): RTCPeerConne
     const cleaned = cleanIceCandidate(event.candidate?.toJSON());
     if (cleaned && channel) {
       try {
-        channel.send({
-          type: 'broadcast',
-          event: 'voice_rtc_signal',
-          payload: {
-            from: currentUserId,
-            to: remoteUserId,
-            type: 'ice-candidate',
-            candidate: cleaned,
-          },
-        });
+        const payload = {
+          from: currentUserId,
+          to: remoteUserId,
+          type: 'ice-candidate',
+          candidate: cleaned,
+        };
+        if (typeof (channel as any).httpSend === 'function' && (channel as any).state !== 'joined') {
+          (channel as any).httpSend({ type: 'broadcast', event: 'voice_rtc_signal', payload });
+        } else {
+          channel.send({ type: 'broadcast', event: 'voice_rtc_signal', payload });
+        }
       } catch {}
     }
   };
@@ -122,16 +123,17 @@ export function createMeshPeerConnection(options: MeshPeerOptions): RTCPeerConne
       .then((offer) => pc.setLocalDescription(offer))
       .then(() => {
         if (channel) {
-          channel.send({
-            type: 'broadcast',
-            event: 'voice_rtc_signal',
-            payload: {
-              from: currentUserId,
-              to: remoteUserId,
-              type: 'offer',
-              sdp: pc.localDescription,
-            },
-          });
+          const payload = {
+            from: currentUserId,
+            to: remoteUserId,
+            type: 'offer',
+            sdp: pc.localDescription,
+          };
+          if (typeof (channel as any).httpSend === 'function' && (channel as any).state !== 'joined') {
+            (channel as any).httpSend({ type: 'broadcast', event: 'voice_rtc_signal', payload });
+          } else {
+            channel.send({ type: 'broadcast', event: 'voice_rtc_signal', payload });
+          }
         }
       })
       .catch((err) => {

@@ -538,14 +538,16 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                       key={msg.id}
                       className="flex items-start gap-3 group rounded-control hover:bg-surface-hover p-2 -mx-2 transition-colors mb-2"
                     >
-                      <ProfileCardTrigger userId={msg.user_id} serverId={server.id}>
-                        <Avatar
-                          src={effectiveMsgAvatar}
-                          name={effectiveMsgName}
-                          size="32"
-                          className="mt-0.5 shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
-                        />
-                      </ProfileCardTrigger>
+                      <div className="w-8 shrink-0 flex items-start justify-center pt-0.5 select-none">
+                        <ProfileCardTrigger userId={msg.user_id} serverId={server.id}>
+                          <Avatar
+                            src={effectiveMsgAvatar}
+                            name={effectiveMsgName}
+                            size="32"
+                            className="cursor-pointer hover:opacity-90 transition-opacity"
+                          />
+                        </ProfileCardTrigger>
+                      </div>
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">

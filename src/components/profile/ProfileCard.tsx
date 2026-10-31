@@ -14,6 +14,9 @@ import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
+import { useRouter } from 'next/navigation';
+import { useSocial } from '@/hooks/use-social';
+import { useConversations } from '@/hooks/use-conversations';
 import {
   MessageSquare,
   UserPlus,
@@ -48,10 +51,19 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
   className,
 }) => {
   const { toast } = useToast();
+  const router = useRouter();
+  const { friends, incomingRequests, outgoingRequests, sendFriendRequest, acceptRequest } = useSocial();
+  const { getOrCreateDirectConversation } = useConversations();
   const [data, setData] = React.useState<ProfileCardData | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [copiedField, setCopiedField] = React.useState<string | null>(null);
+  const [isSendingFriend, setIsSendingFriend] = React.useState(false);
+  const [isOpeningChat, setIsOpeningChat] = React.useState(false);
+
+  const isFriend = Boolean(data?.is_friend || friends.some((f) => f.friend.id === userId));
+  const isOutgoingPending = outgoingRequests.some((r) => r.receiver_id === userId || (r.receiver && r.receiver.id === userId));
+  const incomingReq = incomingRequests.find((r) => r.sender_id === userId || (r.sender && r.sender.id === userId));
 
   const loadData = React.useCallback(async () => {
     setIsLoading(true);
@@ -232,13 +244,24 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
                 <Button
                   size="sm"
                   variant="primary"
-                  onClick={() => {
-                    toast({
-                      title: 'Direct Message',
-                      description: `Opening chat with @${data.username}`,
-                      type: 'info',
-                    });
-                    if (onClose) onClose();
+                  disabled={isOpeningChat}
+                  onClick={async () => {
+                    setIsOpeningChat(true);
+                    try {
+                      const { conversationId, error } = await getOrCreateDirectConversation(userId);
+                      if (error) {
+                        toast({ title: 'Error', description: error, type: 'error' });
+                      } else if (conversationId) {
+                        if (onClose) onClose();
+                        if (onOpenDirectMessage) {
+                          onOpenDirectMessage(conversationId);
+                        } else {
+                          router.push(`/?c=${conversationId}`);
+                        }
+                      }
+                    } finally {
+                      setIsOpeningChat(false);
+                    }
                   }}
                   className="gap-1.5 text-xs h-8 rounded-xl font-medium"
                 >
@@ -248,18 +271,63 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    toast({
-                      title: 'Friend Request',
-                      description: `Friend request sent to @${data.username}`,
-                      type: 'success',
-                    });
+                  disabled={isSendingFriend}
+                  onClick={async () => {
+                    if (isFriend) {
+                      toast({
+                        title: 'Already Friends',
+                        description: `You are friends with @${data.username}`,
+                        type: 'info',
+                      });
+                      return;
+                    }
+                    if (incomingReq) {
+                      setIsSendingFriend(true);
+                      try {
+                        await acceptRequest(incomingReq.id);
+                        toast({
+                          title: 'Friend Added',
+                          description: `Accepted friend request from @${data.username}!`,
+                          type: 'success',
+                        });
+                      } finally {
+                        setIsSendingFriend(false);
+                      }
+                      return;
+                    }
+                    if (isOutgoingPending) {
+                      toast({
+                        title: 'Request Pending',
+                        description: `Friend request already sent to @${data.username}`,
+                        type: 'info',
+                      });
+                      return;
+                    }
+
+                    setIsSendingFriend(true);
+                    try {
+                      await sendFriendRequest(userId);
+                    } finally {
+                      setIsSendingFriend(false);
+                    }
                   }}
                   className="text-xs h-8 rounded-xl font-medium px-2.5"
-                  title={data.is_friend ? 'Friends' : 'Add Friend'}
+                  title={
+                    isFriend
+                      ? 'Friends'
+                      : incomingReq
+                      ? 'Accept Friend Request'
+                      : isOutgoingPending
+                      ? 'Friend Request Pending'
+                      : 'Add Friend'
+                  }
                 >
-                  {data.is_friend ? (
+                  {isFriend ? (
                     <UserCheck className="w-3.5 h-3.5 text-success" />
+                  ) : isOutgoingPending ? (
+                    <Clock className="w-3.5 h-3.5 text-warning" />
+                  ) : incomingReq ? (
+                    <UserPlus className="w-3.5 h-3.5 text-primary" />
                   ) : (
                     <UserPlus className="w-3.5 h-3.5" />
                   )}

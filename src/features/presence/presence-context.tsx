@@ -243,6 +243,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
   const pingsRef = React.useRef<Map<string, number>>(new Map());
   const pingsStatusRef = React.useRef<Map<string, UserStatus>>(new Map());
+  const explicitStatusRef = React.useRef<Map<string, { status: UserStatus; timestamp: number }>>(new Map());
   const debounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // 1. Core Realtime Presence Channel (lifecycle tied strictly to user?.id, never torn down on status changes)
@@ -312,9 +313,30 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
       // Resolve each user to a single, stable presence status
       userPresences.forEach((entries, uid) => {
+        const explicit = explicitStatusRef.current.get(uid);
+        if (explicit && now - explicit.timestamp < 45000) {
+          if (explicit.status !== 'offline') {
+            currentMap.set(uid, explicit.status);
+          }
+          return;
+        }
+
         const resolved = resolveMultiSourcePresence(entries);
         if (resolved !== 'offline') {
           currentMap.set(uid, resolved);
+        }
+      });
+
+      // Include explicit active statuses that haven't synced into presenceState yet
+      explicitStatusRef.current.forEach((explicit, uid) => {
+        if (now - explicit.timestamp < 45000) {
+          if (explicit.status !== 'offline') {
+            currentMap.set(uid, explicit.status);
+          } else {
+            currentMap.delete(uid);
+          }
+        } else {
+          explicitStatusRef.current.delete(uid);
         }
       });
 
@@ -385,6 +407,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         if (!payload?.userId) return;
         const st = (payload.status as UserStatus) || 'offline';
         const now = Date.now();
+        explicitStatusRef.current.set(payload.userId, { status: st, timestamp: now });
         if (payload.userId !== userId) {
           if (st === 'offline') {
             pingsRef.current.delete(payload.userId);
@@ -394,17 +417,33 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
             setBoundedMap(pingsStatusRef.current, payload.userId, st, MAX_PRESENCE_ENTRIES);
           }
         }
-        // Immediate synchronous status update in store
+        // Immediate synchronous status update in store and React state
         globalPresenceStore.setStatus(payload.userId, st);
+        setOnlineUsers((prev) => {
+          const next = new Map(prev);
+          if (st === 'offline') {
+            next.delete(payload.userId);
+          } else {
+            next.set(payload.userId, st);
+          }
+          return next;
+        });
         updatePresenceState();
       })
       .on('broadcast', { event: 'presence_leave' }, ({ payload }) => {
         if (!payload?.userId) return;
+        const now = Date.now();
+        explicitStatusRef.current.set(payload.userId, { status: 'offline', timestamp: now });
         if (payload.userId !== userId) {
           pingsRef.current.delete(payload.userId);
           pingsStatusRef.current.delete(payload.userId);
         }
         globalPresenceStore.setStatus(payload.userId, 'offline');
+        setOnlineUsers((prev) => {
+          const next = new Map(prev);
+          next.delete(payload.userId);
+          return next;
+        });
         updatePresenceState();
       })
       .on('broadcast', { event: 'request_presence_sync' }, () => {
@@ -477,14 +516,17 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     const handleBeforeUnload = () => {
       try {
         channel.untrack();
+        channel.send({
+          type: 'broadcast',
+          event: 'presence_leave',
+          payload: { userId },
+        }).catch(() => {});
         if (typeof (channel as any).httpSend === 'function') {
-          (channel as any).httpSend('presence_leave', { userId });
-        } else {
-          channel.send({
+          (channel as any).httpSend({
             type: 'broadcast',
             event: 'presence_leave',
             payload: { userId },
-          }).catch(() => {});
+          });
         }
       } catch {}
     };
@@ -493,6 +535,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
       window.addEventListener('focus', handleWindowFocus);
       document.addEventListener('visibilitychange', handleWindowFocus);
       window.addEventListener('beforeunload', handleBeforeUnload);
+      window.addEventListener('pagehide', handleBeforeUnload);
     }
 
     return () => {
@@ -502,6 +545,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         window.removeEventListener('focus', handleWindowFocus);
         document.removeEventListener('visibilitychange', handleWindowFocus);
         window.removeEventListener('beforeunload', handleBeforeUnload);
+        window.removeEventListener('pagehide', handleBeforeUnload);
       }
       try {
         channel.untrack();
@@ -516,6 +560,14 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
   // 2. Synchronize presence status without destroying/recreating the channel
   React.useEffect(() => {
     if (!user?.id || !profile?.status) return;
+    globalPresenceStore.setStatus(user.id, profile.status);
+    setOnlineUsers((prev) => {
+      const next = new Map(prev);
+      if (profile.status === 'offline') next.delete(user.id);
+      else next.set(user.id, profile.status);
+      return next;
+    });
+
     const channel = channelRef.current;
     if (channel) {
       if (profile.status === 'offline') {

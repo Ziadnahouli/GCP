@@ -247,32 +247,53 @@ export function useSocial() {
     };
   }, [fetchSocialData, isConfigured, user?.id, supabase]);
 
-  // Send a friend request by username
-  const sendFriendRequest = async (targetUsername: string) => {
-    const cleanUsername = targetUsername.trim().toLowerCase().replace(/^@/, '');
-    if (!cleanUsername) {
+  // Send a friend request by username or user ID
+  const sendFriendRequest = async (targetUsernameOrId: string) => {
+    const rawInput = (targetUsernameOrId || '').trim();
+    if (!rawInput) {
       toast({ title: 'Error', description: 'Please enter a username', type: 'error' });
       return { error: 'Please enter a username' };
     }
 
+    const cleanUsername = rawInput.toLowerCase().replace(/^@/, '');
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawInput);
+
     if (!isConfigured || !user) {
       toast({
         title: 'Friend Request Sent',
-        description: `Request sent to @${cleanUsername} (Simulated).`,
+        description: `Request sent to ${rawInput} (Simulated).`,
         type: 'success',
       });
       return { error: null };
     }
 
     try {
-      // 1. Look up target profile
-      const { data: targetProfile, error: profileErr } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .ilike('username', cleanUsername)
-        .single();
+      // 1. Look up target profile by ID or username
+      let targetProfile: { id: string; username: string } | null = null;
 
-      if (profileErr || !targetProfile) {
+      if (isUuid) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .eq('id', rawInput)
+          .maybeSingle();
+        if (!error && data) {
+          targetProfile = data;
+        }
+      }
+
+      if (!targetProfile) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .ilike('username', cleanUsername)
+          .maybeSingle();
+        if (!error && data) {
+          targetProfile = data;
+        }
+      }
+
+      if (!targetProfile) {
         const msg = `User @${cleanUsername} does not exist. Check spelling!`;
         toast({ title: 'User Not Found', description: msg, type: 'error' });
         return { error: msg };
@@ -288,14 +309,32 @@ export function useSocial() {
       const { data: existingFriend } = await supabase
         .from('friendships')
         .select('id')
-        .eq('user_id', user.id)
-        .eq('friend_id', targetProfile.id)
+        .or(`and(user_id.eq.${user.id},friend_id.eq.${targetProfile.id}),and(user_id.eq.${targetProfile.id},friend_id.eq.${user.id})`)
         .maybeSingle();
 
       if (existingFriend) {
-        const msg = `You are already friends with @${cleanUsername}.`;
+        const msg = `You are already friends with @${targetProfile.username}.`;
         toast({ title: 'Already Friends', description: msg, type: 'info' });
         return { error: msg };
+      }
+
+      // Check if reverse request is pending (they already sent you a request)
+      const { data: reverseReq } = await supabase
+        .from('friend_requests')
+        .select('id')
+        .eq('sender_id', targetProfile.id)
+        .eq('receiver_id', user.id)
+        .eq('status', 'pending')
+        .maybeSingle();
+
+      if (reverseReq) {
+        await acceptRequest(reverseReq.id);
+        toast({
+          title: 'Friend Added',
+          description: `@${targetProfile.username} already sent you a request. You are now friends!`,
+          type: 'success',
+        });
+        return { error: null };
       }
 
       // 3. Insert friend request
@@ -306,7 +345,7 @@ export function useSocial() {
       });
 
       if (insertErr) {
-        const msg = insertErr.message.includes('unique_pending_request')
+        const msg = insertErr.message.includes('unique_pending_request') || insertErr.message.includes('duplicate')
           ? 'A friend request is already pending between you.'
           : insertErr.message;
         toast({ title: 'Request Error', description: msg, type: 'error' });
@@ -315,20 +354,21 @@ export function useSocial() {
 
       toast({
         title: 'Friend Request Sent',
-        description: `Friend request sent to @${cleanUsername}!`,
+        description: `Friend request sent to @${targetProfile.username}!`,
         type: 'success',
       });
-      if (socialChannelRef.current) {
-        if (socialChannelRef.current.state === 'joined') {
-          socialChannelRef.current
-            .send({ type: 'broadcast', event: 'social_update', payload: {} })
-            .catch(() => {});
-        } else if (typeof (socialChannelRef.current as any).httpSend === 'function') {
-          (socialChannelRef.current as any)
-            .httpSend({ type: 'broadcast', event: 'social_update', payload: {} })
-            .catch(() => {});
-        }
-      }
+
+      // Broadcast update across social and direct user channels
+      realtimeHub.send('nexus-social-db', 'social_update', {
+        type: 'friend_request',
+        senderId: user.id,
+        receiverId: targetProfile.id,
+      }).catch(() => {});
+
+      realtimeHub.send(`user_notifications_${targetProfile.id}`, 'notification_ping', {
+        type: 'friend_request',
+      }).catch(() => {});
+
       await fetchSocialData();
       return { error: null };
     } catch (err: unknown) {

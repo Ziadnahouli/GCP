@@ -288,10 +288,19 @@ export function useNotifications() {
       }
     );
 
+    const unsubPing = realtimeHub.on(
+      topic,
+      'notification_ping',
+      () => {
+        loadNotifications();
+      }
+    );
+
     return () => {
       unsubInsert();
       unsubUpdate();
       unsubDelete();
+      unsubPing();
     };
   }, [user, isConfigured, isCategoryEnabled, playNotificationChime, displayDesktopNotification]);
 

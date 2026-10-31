@@ -126,7 +126,33 @@ export const ServerProfileEditor: React.FC<ServerProfileEditorProps> = ({
         p_pronouns: pronouns.trim() || null,
       });
 
-      if (error) throw error;
+      if (error) {
+        // Fallback: If RPC is missing from PostgREST schema cache, attempt direct update
+        const isCacheOrFunctionErr =
+          error.message?.includes('schema cache') ||
+          error.message?.includes('update_my_server_profile') ||
+          (error as any).code === 'PGRST202';
+
+        if (isCacheOrFunctionErr) {
+          const { error: directErr } = await supabase
+            .from('server_members')
+            .update({
+              nickname: nickname.trim() || null,
+              avatar_path: avatarPath || null,
+              banner_path: bannerPath || null,
+              bio: bio.trim() || null,
+              pronouns: pronouns.trim() || null,
+            })
+            .eq('server_id', activeServerId)
+            .eq('user_id', user.id);
+
+          if (directErr) {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
+      }
 
       toast({
         title: 'Server Profile Saved',

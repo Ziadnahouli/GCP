@@ -258,13 +258,67 @@ export async function fetchProfileCard(
       .order('position', { ascending: true }),
   ]);
 
-  if (cardRes.error) {
-    console.warn('[ProfileStore] Error fetching profile card:', cardRes.error);
-    return null;
-  }
+  let rawRow = Array.isArray(cardRes.data) ? cardRes.data[0] : cardRes.data;
 
-  const rawRow = Array.isArray(cardRes.data) ? cardRes.data[0] : cardRes.data;
-  if (!rawRow) return null;
+  if (!rawRow || cardRes.error) {
+    console.warn('[ProfileStore] RPC get_profile_card issue; falling back to direct profiles query:', cardRes?.error);
+    const { data: directProfile } = await supabase
+      .from('profiles')
+      .select(`
+        id, username, display_name, avatar_url, avatar_path, avatar_color,
+        banner_url, banner_path, banner_color, accent_color, bio, pronouns,
+        custom_status, custom_status_emoji, created_at
+      `)
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!directProfile) return null;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const isSelf = sessionData?.session?.user?.id === userId;
+
+    rawRow = {
+      id: directProfile.id,
+      user_id: directProfile.id,
+      username: directProfile.username,
+      display_name: directProfile.display_name,
+      effective_display_name: directProfile.display_name,
+      avatar_url: directProfile.avatar_url,
+      avatar_path: directProfile.avatar_path,
+      effective_avatar_path: directProfile.avatar_path,
+      avatar_color: directProfile.avatar_color,
+      banner_url: directProfile.banner_url,
+      banner_path: directProfile.banner_path,
+      effective_banner_path: directProfile.banner_path,
+      banner_color: directProfile.banner_color,
+      accent_color: directProfile.accent_color,
+      profile_theme: null,
+      decoration_id: null,
+      bio: directProfile.bio,
+      effective_bio: directProfile.bio,
+      pronouns: directProfile.pronouns,
+      effective_pronouns: directProfile.pronouns,
+      custom_status: directProfile.custom_status,
+      custom_status_emoji: directProfile.custom_status_emoji,
+      timezone: null,
+      status: 'online',
+      activity_text: null,
+      favorite_games: [],
+      created_at: directProfile.created_at,
+      server_nickname: null,
+      server_avatar_path: null,
+      server_banner_path: null,
+      server_bio: null,
+      server_pronouns: null,
+      server_role: null,
+      server_joined_at: null,
+      is_self: isSelf,
+      is_friend: false,
+      is_blocked: false,
+      mutual_servers_count: 0,
+      mutual_friends_count: 0,
+    };
+  }
 
   const badges: UserBadgeItem[] = (badgesRes.data || [])
     .filter((b: any) => b.badge)

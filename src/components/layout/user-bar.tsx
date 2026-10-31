@@ -33,7 +33,7 @@ import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
 import { debugLogger } from '@/lib/logger/debug-logger';
 
 export function UserBar() {
-  const { profile, updateProfile, signOut } = useAuth();
+  const { user, profile, updateProfile, signOut } = useAuth();
   const { toast } = useToast();
   const callState = useCallState();
   const callActions = useCallActions();
@@ -128,12 +128,31 @@ export function UserBar() {
     }
   };
 
+  const effectiveUserId = profile?.id || user?.id;
+  const effectiveDisplayName =
+    profile?.display_name ||
+    user?.user_metadata?.display_name ||
+    user?.user_metadata?.username ||
+    user?.email?.split('@')[0] ||
+    'User';
+  const effectiveUsername =
+    profile?.username ||
+    user?.user_metadata?.username ||
+    user?.email?.split('@')[0] ||
+    'user';
+  const effectiveAvatar =
+    (profile as any)?.avatar_path ||
+    profile?.avatar_url ||
+    user?.user_metadata?.avatar_url ||
+    null;
+  const effectiveStatus = profile?.status || 'online';
+
   return (
     <>
       <div className="relative h-13 bg-surface-sidebar border-t border-border px-2 py-1.5 flex items-center justify-between select-none">
         {/* User Info & Profile Card Trigger */}
         <ProfileCardTrigger
-          userId={profile?.id}
+          userId={effectiveUserId}
           side="top"
           align="start"
           sideOffset={12}
@@ -144,18 +163,18 @@ export function UserBar() {
             title="View Profile Card"
           >
             <Avatar
-              src={(profile as any)?.avatar_path || profile?.avatar_url || null}
-              name={profile?.display_name || 'User'}
-              status={profile?.status || 'online'}
+              src={effectiveAvatar}
+              name={effectiveDisplayName}
+              status={effectiveStatus}
               showStatus
               size="32"
             />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold text-foreground truncate leading-tight">
-                {profile?.display_name || 'User'}
+                {effectiveDisplayName}
               </div>
               <div className="text-xs text-muted-foreground/80 truncate leading-tight">
-                @{profile?.username || 'user'}
+                @{effectiveUsername}
               </div>
             </div>
           </div>

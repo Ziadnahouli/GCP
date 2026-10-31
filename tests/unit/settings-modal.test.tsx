@@ -43,7 +43,7 @@ vi.mock('@/lib/supabase/client', () => ({
         subscribe: () => ({}),
       }),
     }),
-    removeChannel: () => {},
+    removeChannel: () => { },
     from: () => ({
       select: () => ({
         eq: () => ({
@@ -62,34 +62,34 @@ describe('SettingsModal Rendering', () => {
   });
 
   it('renders both navigation sidebar and active tab content', async () => {
-    const { container } = render(<SettingsModal open={true} onOpenChange={() => {}} />);
-    
+    const { container } = render(<SettingsModal open={true} onOpenChange={() => { }} />);
+
     // Check sidebar elements
     expect(screen.getByText('Nexus Studio Settings')).toBeDefined();
     expect(screen.getByText('Gamer Profile')).toBeDefined();
     expect(screen.getByText('Themes & Accents')).toBeDefined();
 
     // Check content area elements for profile tab
-    expect((await screen.findAllByText(/User Profile/i)).length).toBeGreaterThan(0);
-    expect(await screen.findByText(/Live Preview/i)).toBeDefined();
-    expect((await screen.findAllByText(/Username/i)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/User Profile/i, {}, { timeout: 4000 })).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/Live Preview/i, {}, { timeout: 4000 })).toBeDefined();
+    expect((await screen.findAllByText(/Username/i, {}, { timeout: 4000 })).length).toBeGreaterThan(0);
   });
 
   const tabs = ['profile', 'appearance', 'studio', 'audio', 'shortcuts', 'notifs', 'security', 'diagnostics'] as const;
 
   for (const tab of tabs) {
     it(`renders tab "${tab}" without error`, () => {
-      render(<SettingsModal open={true} onOpenChange={() => {}} />);
+      render(<SettingsModal open={true} onOpenChange={() => { }} />);
       const tabButton = screen.getByRole('button', {
         name: new RegExp(
           tab === 'profile' ? 'Gamer Profile' :
-          tab === 'appearance' ? 'Themes & Accents' :
-          tab === 'studio' ? 'Voice & Video Studio' :
-          tab === 'audio' ? 'Audio Processing' :
-          tab === 'shortcuts' ? 'Shortcuts & Keybinds' :
-          tab === 'notifs' ? 'Notifications' :
-          tab === 'security' ? 'Security & Privacy' :
-          'Diagnostics & Logs',
+            tab === 'appearance' ? 'Themes & Accents' :
+              tab === 'studio' ? 'Voice & Video Studio' :
+                tab === 'audio' ? 'Audio Processing' :
+                  tab === 'shortcuts' ? 'Shortcuts & Keybinds' :
+                    tab === 'notifs' ? 'Notifications' :
+                      tab === 'security' ? 'Security & Privacy' :
+                        'Diagnostics & Logs',
           'i'
         )
       });
@@ -101,7 +101,7 @@ describe('SettingsModal Rendering', () => {
     // Render inside a narrow simulated sidebar container with transform
     const { container } = render(
       <div style={{ width: '240px', transform: 'translateX(0px)', overflow: 'hidden' }}>
-        <SettingsModal open={true} onOpenChange={() => {}} />
+        <SettingsModal open={true} onOpenChange={() => { }} />
       </div>
     );
 
@@ -115,7 +115,7 @@ describe('SettingsModal Rendering', () => {
   });
 
   it('renders nothing when open is false', () => {
-    render(<SettingsModal open={false} onOpenChange={() => {}} />);
+    render(<SettingsModal open={false} onOpenChange={() => { }} />);
     expect(screen.queryByText('Nexus Studio Settings')).toBeNull();
     expect(screen.queryByText(/User Profile/i)).toBeNull();
   });

@@ -129,9 +129,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               id, username, display_name, avatar_url, avatar_path, avatar_color,
               banner_url, banner_path, banner_color, accent_color, profile_theme,
               decoration_id, bio, pronouns, custom_status, custom_status_emoji,
-              custom_status_expires_at, timezone, status, status_preference,
+              custom_status_expires_at, timezone, status,
               game_activity, favorite_games, activity_text, activity_expires_at,
-              presence_visibility, friend_request_rule, direct_message_rule,
               created_at, updated_at
             `)
             .eq('id', userId)
@@ -140,6 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .from('user_settings')
             .select(`
               id, user_id, theme, theme_mode, accent_color, density, text_scale,
+              presence_visibility, friend_request_rule, direct_message_rule,
               notifications_enabled, sound_enabled, sound_effects_enabled,
               push_to_talk_enabled, push_to_talk_key, mic_volume, speaker_volume,
               input_device, output_device, keybinds, created_at, updated_at
@@ -149,8 +149,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ]);
 
         if (profileRes.error) {
-          // A1: If transient read error occurred, DO NOT assume profile is missing and DO NOT clobber!
-          console.error('[AuthProvider] Transient error fetching profile; skipping overwrite:', profileRes.error);
+          console.warn('[AuthProvider] Full profile select notice; falling back to core columns:', profileRes.error.message);
+          const { data: coreData } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, banner_url, banner_color, bio, custom_status, status, created_at, updated_at')
+            .eq('id', userId)
+            .maybeSingle();
+
+          if (coreData) {
+            setProfile(coreData as unknown as UserProfile);
+          } else if (currentUser) {
+            const meta = currentUser.user_metadata || {};
+            setProfile({
+              id: userId,
+              username: meta.username || currentUser.email?.split('@')[0] || `gamer_${userId.slice(0, 6)}`,
+              display_name: meta.display_name || meta.username || currentUser.email?.split('@')[0] || 'User',
+              avatar_url: meta.avatar_url || null,
+              status: 'online',
+              bio: null,
+              custom_status: null,
+            } as unknown as UserProfile);
+          }
         } else if (profileRes.data) {
           setProfile(profileRes.data as UserProfile);
         } else {
@@ -192,7 +211,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (settingsRes.error) {
-          console.warn('[AuthProvider] Notice fetching user_settings:', settingsRes.error);
+          console.warn('[AuthProvider] Full user_settings select notice; falling back to core columns:', settingsRes.error.message);
+          const { data: coreSettings } = await supabase
+            .from('user_settings')
+            .select('id, user_id, theme, notifications_enabled, sound_enabled')
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (coreSettings) {
+            setSettings({
+              ...DEFAULT_SETTINGS,
+              ...(coreSettings as any),
+              user_id: userId,
+            });
+          }
         } else if (settingsRes.data) {
           const s = settingsRes.data as unknown as UserSettings;
           const localThemeMode = typeof window !== 'undefined' ? (localStorage.getItem('nexus_theme_mode') as 'system' | 'light' | 'dark' | null) : null;

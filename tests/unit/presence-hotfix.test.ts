@@ -98,5 +98,34 @@ describe('Presence Hotfix: Resolver, Store & Fallback Elimination', () => {
       expect(globalPresenceStore.hasUser('user-1')).toBe(false);
       expect(globalPresenceStore.getStatus('user-1')).toBe('unknown');
     });
+
+    it('batches and caches get_presence RPC calls with TTL', async () => {
+      const mockRpc = vi.fn().mockResolvedValue({
+        data: [
+          { user_id: 'user-batch-1', status: 'online' },
+          { user_id: 'user-batch-2', status: 'idle' },
+        ],
+        error: null,
+      });
+      const mockSupabase = { rpc: mockRpc };
+
+      globalPresenceStore.queueFetch('user-batch-1', mockSupabase);
+      globalPresenceStore.queueFetch('user-batch-2', mockSupabase);
+
+      // Trigger flush
+      await globalPresenceStore.flushQueue(mockSupabase);
+
+      expect(mockRpc).toHaveBeenCalledWith('get_presence', {
+        p_user_ids: expect.arrayContaining(['user-batch-1', 'user-batch-2']),
+      });
+      expect(globalPresenceStore.getStatus('user-batch-1')).toBe('online');
+      expect(globalPresenceStore.getStatus('user-batch-2')).toBe('idle');
+
+      // Immediate second call should be served from cache without calling RPC again
+      mockRpc.mockClear();
+      globalPresenceStore.queueFetch('user-batch-1', mockSupabase);
+      await globalPresenceStore.flushQueue(mockSupabase);
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
   });
 });

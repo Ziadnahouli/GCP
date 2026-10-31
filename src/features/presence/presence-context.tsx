@@ -15,9 +15,13 @@ type PresenceListener = () => void;
 
 class PresenceStore {
   private statusMap: Map<string, UserStatus> = new Map();
+  private cacheExpiry: Map<string, number> = new Map();
+  private pendingFetches: Set<string> = new Set();
   private listeners: Set<PresenceListener> = new Set();
   private userListeners: Map<string, Set<() => void>> = new Map();
   private hasSynced: boolean = false;
+  private queuedIds: Set<string> = new Set();
+  private batchTimeout: NodeJS.Timeout | null = null;
 
   getStatus(userId: string | null | undefined): UserStatus {
     if (!userId) return 'offline';
@@ -37,9 +41,65 @@ class PresenceStore {
 
   clear() {
     this.statusMap.clear();
+    this.cacheExpiry.clear();
+    this.pendingFetches.clear();
+    this.queuedIds.clear();
+    if (this.batchTimeout) clearTimeout(this.batchTimeout);
+    this.batchTimeout = null;
     this.hasSynced = false;
     this.userListeners.forEach((subs) => subs.forEach((cb) => cb()));
     this.listeners.forEach((cb) => cb());
+  }
+
+  queueFetch(userId: string, supabase: any) {
+    if (!userId) return;
+    const now = Date.now();
+    const expiry = this.cacheExpiry.get(userId) || 0;
+    if (now < expiry || this.pendingFetches.has(userId)) return;
+
+    this.queuedIds.add(userId);
+    if (!this.batchTimeout) {
+      this.batchTimeout = setTimeout(() => {
+        this.flushQueue(supabase);
+      }, 50);
+    }
+  }
+
+  async flushQueue(supabase: any) {
+    if (this.batchTimeout) {
+      clearTimeout(this.batchTimeout);
+      this.batchTimeout = null;
+    }
+    const ids = Array.from(this.queuedIds);
+    this.queuedIds.clear();
+    if (ids.length === 0 || !supabase) return;
+
+    ids.forEach((id) => this.pendingFetches.add(id));
+    const now = Date.now();
+
+    try {
+      const { data, error } = await supabase.rpc('get_presence', {
+        p_user_ids: ids.slice(0, 100),
+      });
+
+      if (!error && Array.isArray(data)) {
+        data.forEach((row: any) => {
+          const st = (row.status as UserStatus) || 'offline';
+          this.statusMap.set(row.user_id, st);
+          this.cacheExpiry.set(row.user_id, now + 25000);
+          this.pendingFetches.delete(row.user_id);
+          const subs = this.userListeners.get(row.user_id);
+          if (subs) subs.forEach((cb) => cb());
+        });
+      }
+      this.hasSynced = true;
+      this.listeners.forEach((cb) => cb());
+    } catch {
+      ids.forEach((id) => {
+        this.cacheExpiry.set(id, now + 10000);
+        this.pendingFetches.delete(id);
+      });
+    }
   }
 
   setStatus(userId: string, status: UserStatus) {
@@ -507,6 +567,58 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user?.id, isConfigured, profile?.status]);
 
+  // 4. Server-Side Authoritative Presence Heartbeat (Section 2.3)
+  React.useEffect(() => {
+    if (!user?.id || !isConfigured) return;
+
+    let sessionId: string;
+    try {
+      sessionId = sessionStorage.getItem('nexus_presence_session_id') || '';
+      if (!sessionId) {
+        sessionId = crypto.randomUUID();
+        sessionStorage.setItem('nexus_presence_session_id', sessionId);
+      }
+    } catch {
+      sessionId = crypto.randomUUID();
+    }
+
+    const rawStatus = (profile as any)?.status_preference || profile?.status || 'online';
+    const effectiveStatus = (rawStatus === 'invisible' || rawStatus === 'offline') ? 'offline' : (rawStatus === 'dnd' ? 'online' : rawStatus);
+
+    const sendHeartbeat = async (st: string) => {
+      try {
+        await supabase.rpc('heartbeat_presence', {
+          p_session_id: sessionId,
+          p_status: st === 'idle' ? 'idle' : 'online',
+          p_device: 'web',
+        });
+      } catch {}
+    };
+
+    if (effectiveStatus !== 'offline') {
+      sendHeartbeat(effectiveStatus);
+    }
+
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && effectiveStatus !== 'offline') {
+        sendHeartbeat(profileStatusRef.current === 'idle' ? 'idle' : 'online');
+      }
+    }, 35000);
+
+    const handlePageHide = () => {
+      try {
+        Promise.resolve(supabase.rpc('end_presence_session', { p_session_id: sessionId })).catch(() => {});
+      } catch {}
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [user?.id, isConfigured, profile?.status, supabase]);
+
   const getUserStatus = React.useCallback(
     (userId: string | null | undefined): UserStatus => {
       if (!userId) return 'offline';
@@ -542,7 +654,36 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
 export function useUserPresence(userId: string | null | undefined): UserStatus {
   const { user, profile } = useAuth();
+  const supabase = React.useMemo(() => getBrowserClient(), []);
   const isMe = Boolean(user && userId === user.id);
+
+  React.useEffect(() => {
+    if (!userId || isMe) return;
+
+    globalPresenceStore.queueFetch(userId, supabase);
+
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        globalPresenceStore.queueFetch(userId, supabase);
+      }
+    }, 25000);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        globalPresenceStore.queueFetch(userId, supabase);
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+    };
+  }, [userId, isMe, supabase]);
 
   const subscribe = React.useCallback(
     (callback: () => void) => {

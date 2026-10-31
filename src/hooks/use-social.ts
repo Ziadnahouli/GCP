@@ -189,11 +189,6 @@ export function useSocial() {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'profiles' },
-        () => fetchSocialData()
-      )
-      .on(
-        'postgres_changes',
         { event: '*', schema: 'public', table: 'blocks' },
         () => fetchSocialData()
       )

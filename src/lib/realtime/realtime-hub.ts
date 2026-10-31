@@ -193,6 +193,9 @@ export class RealtimeHub {
   async send(topic: string, event: string, payload: any, options?: any): Promise<any> {
     const channel = this.acquire(topic, options);
     try {
+      if ((channel as any).state !== 'joined' && typeof (channel as any).httpSend === 'function') {
+        return await (channel as any).httpSend(event, payload);
+      }
       return await channel.send({
         type: 'broadcast',
         event,

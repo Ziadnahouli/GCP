@@ -22,6 +22,7 @@ class PresenceStore {
   private hasSynced: boolean = false;
   private queuedIds: Set<string> = new Set();
   private batchTimeout: NodeJS.Timeout | null = null;
+  private rpcPresenceDisabled: boolean = false;
 
   getStatus(userId: string | null | undefined): UserStatus {
     if (!userId) return 'offline';
@@ -78,20 +79,52 @@ class PresenceStore {
     const now = Date.now();
 
     try {
-      const { data, error } = await supabase.rpc('get_presence', {
-        p_user_ids: ids.slice(0, 100),
-      });
+      let populated = false;
 
-      if (!error && Array.isArray(data)) {
-        data.forEach((row: any) => {
-          const st = (row.status as UserStatus) || 'offline';
-          this.statusMap.set(row.user_id, st);
-          this.cacheExpiry.set(row.user_id, now + 25000);
-          this.pendingFetches.delete(row.user_id);
-          const subs = this.userListeners.get(row.user_id);
-          if (subs) subs.forEach((cb) => cb());
+      if (!this.rpcPresenceDisabled) {
+        const { data, error } = await supabase.rpc('get_presence', {
+          p_user_ids: ids.slice(0, 100),
         });
+
+        if (!error && Array.isArray(data)) {
+          data.forEach((row: any) => {
+            const st = (row.status as UserStatus) || 'offline';
+            this.statusMap.set(row.user_id, st);
+            this.cacheExpiry.set(row.user_id, now + 25000);
+            this.pendingFetches.delete(row.user_id);
+            const subs = this.userListeners.get(row.user_id);
+            if (subs) subs.forEach((cb) => cb());
+          });
+          populated = true;
+        } else if (error && (error.code === 'PGRST202' || error.message?.includes('schema cache'))) {
+          // get_presence RPC not yet deployed in remote database; fallback to profiles
+          this.rpcPresenceDisabled = true;
+        }
       }
+
+      if (!populated) {
+        // Fallback: Query profiles table directly
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, status')
+          .in('id', ids.slice(0, 100));
+
+        if (Array.isArray(profs)) {
+          profs.forEach((row: any) => {
+            const st = (row.status as UserStatus) || 'offline';
+            this.statusMap.set(row.id, st);
+            this.cacheExpiry.set(row.id, now + 25000);
+            this.pendingFetches.delete(row.id);
+            const subs = this.userListeners.get(row.id);
+            if (subs) subs.forEach((cb) => cb());
+          });
+        }
+      }
+
+      ids.forEach((id) => {
+        this.cacheExpiry.set(id, now + 20000);
+        this.pendingFetches.delete(id);
+      });
       this.hasSynced = true;
       this.listeners.forEach((cb) => cb());
     } catch {
@@ -585,14 +618,21 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     const rawStatus = (profile as any)?.status_preference || profile?.status || 'online';
     const effectiveStatus = (rawStatus === 'invisible' || rawStatus === 'offline') ? 'offline' : (rawStatus === 'dnd' ? 'online' : rawStatus);
 
+    let heartbeatDisabled = false;
     const sendHeartbeat = async (st: string) => {
+      if (heartbeatDisabled) return;
       try {
-        await supabase.rpc('heartbeat_presence', {
+        const { error } = await supabase.rpc('heartbeat_presence', {
           p_session_id: sessionId,
           p_status: st === 'idle' ? 'idle' : 'online',
           p_device: 'web',
         });
-      } catch {}
+        if (error && (error.code === 'PGRST202' || error.message?.includes('schema cache'))) {
+          heartbeatDisabled = true;
+        }
+      } catch {
+        heartbeatDisabled = true;
+      }
     };
 
     if (effectiveStatus !== 'offline') {
@@ -600,12 +640,13 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     }
 
     const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && effectiveStatus !== 'offline') {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && effectiveStatus !== 'offline' && !heartbeatDisabled) {
         sendHeartbeat(profileStatusRef.current === 'idle' ? 'idle' : 'online');
       }
     }, 35000);
 
     const handlePageHide = () => {
+      if (heartbeatDisabled) return;
       try {
         Promise.resolve(supabase.rpc('end_presence_session', { p_session_id: sessionId })).catch(() => {});
       } catch {}

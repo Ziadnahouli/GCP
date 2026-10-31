@@ -163,7 +163,13 @@ export function MixerAdapterBridge() {
       }
     };
 
-    const interval = window.setInterval(checkDesktopDsp, 2500);
+    const interval = window.setInterval(async () => {
+      if (consecutiveFailures >= 2) {
+        window.clearInterval(interval);
+        return;
+      }
+      await checkDesktopDsp();
+    }, 2500);
     checkDesktopDsp();
 
     return () => {

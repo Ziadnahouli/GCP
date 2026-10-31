@@ -139,10 +139,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .from('user_settings')
             .select(`
               id, user_id, theme, theme_mode, accent_color, density, text_scale,
-              presence_visibility, friend_request_rule, direct_message_rule,
-              notifications_enabled, sound_enabled, sound_effects_enabled,
-              push_to_talk_enabled, push_to_talk_key, mic_volume, speaker_volume,
-              input_device, output_device, keybinds, created_at, updated_at
+              presence_visibility, profile_visibility, allow_friend_requests,
+              allow_direct_messages, sound_effects_enabled, push_to_talk_enabled,
+              push_to_talk_key, input_volume, output_volume, email_notifications,
+              desktop_notifications, notif_dms, notif_mentions, notif_friend_requests,
+              notif_invites, notif_missed_calls, updated_at
             `)
             .eq('user_id', userId)
             .maybeSingle(),
@@ -214,13 +215,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.warn('[AuthProvider] Full user_settings select notice; falling back to core columns:', settingsRes.error.message);
           const { data: coreSettings } = await supabase
             .from('user_settings')
-            .select('id, user_id, theme, notifications_enabled, sound_enabled')
+            .select('id, user_id, theme, accent_color, sound_effects_enabled, allow_direct_messages, allow_friend_requests, updated_at')
             .eq('user_id', userId)
             .maybeSingle();
           if (coreSettings) {
             setSettings({
               ...DEFAULT_SETTINGS,
               ...(coreSettings as any),
+              user_id: userId,
+            });
+          } else {
+            setSettings({
+              ...DEFAULT_SETTINGS,
               user_id: userId,
             });
           }

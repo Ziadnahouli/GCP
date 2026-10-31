@@ -170,13 +170,23 @@ export function useNotifications() {
     try {
       const { data, error } = await supabase
         .from('notifications')
-        .select('id, user_id, type, title, body, metadata, is_read, created_at')
+        .select('id, user_id, type, title, message, data, is_read, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
 
       if (error) {
-        console.warn('[Notifications] Fetch notice:', error.message);
+        console.warn('[Notifications] Fetch notice; falling back to core columns:', error.message);
+        const { data: fallbackData } = await supabase
+          .from('notifications')
+          .select('id, user_id, type, title, is_read, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (fallbackData) {
+          setNotifications(fallbackData as unknown as NotificationItem[]);
+          fallbackData.forEach((n: any) => addBoundedSet(seenIdsRef.current, n.id, MAX_SEEN_NOTIFICATIONS));
+        }
       } else if (data) {
         setNotifications(data as unknown as NotificationItem[]);
         data.forEach((n: any) => addBoundedSet(seenIdsRef.current, n.id, MAX_SEEN_NOTIFICATIONS));

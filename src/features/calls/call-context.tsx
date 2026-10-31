@@ -4185,7 +4185,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const updatePayload = {
-          conversation_id: convId,
           status: 'ended',
           ended_at: new Date().toISOString(),
         };
@@ -4193,7 +4192,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           .from('call_sessions')
           .update(updatePayload)
           .eq('conversation_id', convId)
-          .in('status', ['ringing', 'active', 'in_call'])
+          .in('status', ['ringing', 'active'])
           .then(() => {}, () => {});
 
         if (dbCallSessionIdRef.current) {

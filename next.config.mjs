@@ -81,7 +81,7 @@ const nextConfig = {
               "img-src 'self' data: blob: https:",
               "media-src 'self' blob: data: https:",
               "connect-src 'self' https: wss: http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*",
-              "font-src 'self' data:",
+              "font-src 'self' data: https:",
               "frame-ancestors 'none'",
             ].join('; '),
           },

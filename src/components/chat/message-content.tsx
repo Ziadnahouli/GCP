@@ -70,7 +70,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
           .from('call_sessions')
           .select('id, status')
           .eq('conversation_id', squadCallConvId)
-          .in('status', ['active', 'ringing', 'in_call'])
+          .in('status', ['active', 'ringing'])
           .limit(1)
           .maybeSingle();
 

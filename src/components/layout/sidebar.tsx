@@ -18,6 +18,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { CreateGroupModal } from '@/components/chat/create-group-modal';
 import { cn } from '@/lib/utils';
+import { stripMarkdown } from '@/lib/richtext/tokenizer';
 
 function formatConversationTime(dateStr?: string | null): string {
   if (!dateStr) return '';
@@ -270,7 +271,7 @@ export function Sidebar({
                             hasUnread ? 'text-foreground font-medium' : 'text-muted-foreground'
                           )}
                         >
-                          {conv.last_message.content}
+                          {stripMarkdown(conv.last_message.content)}
                         </div>
                       )}
                     </div>

@@ -12,6 +12,8 @@ import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { Server } from '@/lib/types/server';
 import { LinkPreviewCard } from '@/components/chat/link-preview';
 import { MentionTrigger } from '@/components/profile/MentionTrigger';
+import { RichTextRenderer } from '@/lib/richtext/RichTextRenderer';
+import { isEmojiOnlyMessage } from '@/lib/emoji/emoji-data';
 
 interface MessageContentProps {
   content?: string | null;
@@ -249,7 +251,7 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
     }
   };
 
-  // Render text with clickable links and @mentions
+  // Render text with full markdown formatting, links, mentions, and emoji enlargement
   const renderTextWithLinks = (text: string) => {
     let cleanText = text;
     if (inviteMatch && inviteMatch[0]) {
@@ -266,68 +268,17 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
 
     if (!cleanText) return null;
 
-    const parts = cleanText.split(GENERAL_URL_REGEX);
+    // Check if message is 1-3 emojis only for enlarged display
+    const emojiOnly = isEmojiOnlyMessage(cleanText);
+    if (emojiOnly.isEmojiOnly) {
+      return (
+        <span className="text-3xl sm:text-4xl py-1 inline-block select-text leading-tight">
+          {cleanText}
+        </span>
+      );
+    }
 
-    return (
-      <span className="leading-relaxed">
-        {parts.map((part, index) => {
-          if (part.match(GENERAL_URL_REGEX)) {
-            const rawHref = part.startsWith('www.') ? `https://${part}` : part;
-            let isSafeUrl = false;
-            try {
-              const u = new URL(rawHref);
-              isSafeUrl = u.protocol === 'http:' || u.protocol === 'https:';
-            } catch {}
-
-            if (isSafeUrl) {
-              return (
-                <a
-                  key={index}
-                  href={rawHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className={cn(
-                    'inline-flex items-center gap-0.5 underline underline-offset-2 break-all font-medium transition-colors',
-                    isMe
-                      ? 'text-primary-foreground underline hover:text-primary-foreground/90'
-                      : 'text-primary underline hover:text-primary-hover'
-                  )}
-                >
-                  <span>{part}</span>
-                  <ExternalLink className="w-3 h-3 inline shrink-0 opacity-80" />
-                </a>
-              );
-            }
-          }
-
-          // Parse @mentions within non-URL text
-          const subParts = part.split(MENTION_TOKEN_REGEX);
-          return (
-            <React.Fragment key={index}>
-              {subParts.map((sub, subIdx) => {
-                if (sub.match(/^@[a-zA-Z0-9_.-]+$/)) {
-                  const tagLower = sub.toLowerCase();
-                  const isSpecial = tagLower === '@everyone' || tagLower === '@all' || tagLower === '@here';
-                  if (isSpecial) {
-                    return (
-                      <span
-                        key={subIdx}
-                        className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs font-semibold mx-0.5 select-none bg-warning/20 text-warning border border-warning/30 font-bold hover:bg-warning/30"
-                      >
-                        {sub}
-                      </span>
-                    );
-                  }
-                  return <MentionTrigger key={subIdx} username={sub} />;
-                }
-                return <span key={subIdx}>{sub}</span>;
-              })}
-            </React.Fragment>
-          );
-        })}
-      </span>
-    );
+    return <RichTextRenderer content={cleanText} isMe={isMe} />;
   };
 
   return (

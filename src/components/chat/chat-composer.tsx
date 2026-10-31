@@ -17,6 +17,9 @@ import { Avatar } from '@/components/ui/avatar';
 import { Message, MessageAttachment } from '@/lib/types/messaging';
 import { formatFileSize, validateFile } from '@/lib/storage/upload';
 import { cn } from '@/lib/utils';
+import { EmojiPicker } from '@/components/ui/emoji-picker/EmojiPicker';
+import { findShortcodeMatches, EmojiItem } from '@/lib/emoji/emoji-data';
+import { stripMarkdown } from '@/lib/richtext/tokenizer';
 
 const MAX_CHAR_LIMIT = 4000;
 const CHAR_WARNING_THRESHOLD = 3600;
@@ -59,6 +62,9 @@ export function ChatComposer({
   const [cursorPos, setCursorPos] = React.useState(0);
   const [mentionDismissed, setMentionDismissed] = React.useState(false);
   const [isFocused, setIsFocused] = React.useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = React.useState(false);
+  const [shortcodeIndex, setShortcodeIndex] = React.useState(0);
+  const [shortcodeDismissed, setShortcodeDismissed] = React.useState(false);
 
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -163,6 +169,93 @@ export function ChatComposer({
     [content, cursorPos, onSelectMention]
   );
 
+  // Active emoji shortcode matching (e.g. ":smi" -> smile emojis)
+  const activeShortcodeMatch = React.useMemo(() => {
+    if (shortcodeDismissed || !isFocused) return null;
+    const textBeforeCursor = content.slice(0, cursorPos);
+    const match = textBeforeCursor.match(/(?:^|\s):([a-zA-Z0-9_]{2,})$/);
+    if (!match) return null;
+    return match[1].toLowerCase();
+  }, [content, cursorPos, shortcodeDismissed, isFocused]);
+
+  const shortcodeCandidates = React.useMemo(() => {
+    if (!activeShortcodeMatch) return [];
+    return findShortcodeMatches(activeShortcodeMatch, 6);
+  }, [activeShortcodeMatch]);
+
+  const showShortcodes = isFocused && !shortcodeDismissed && shortcodeCandidates.length > 0 && !showMentions;
+
+  React.useEffect(() => {
+    setShortcodeIndex(0);
+  }, [activeShortcodeMatch]);
+
+  const handleSelectShortcodeCandidate = React.useCallback(
+    (emojiChar: string) => {
+      const textBeforeCursor = content.slice(0, cursorPos);
+      const textAfterCursor = content.slice(cursorPos);
+      const replacedBefore = textBeforeCursor.replace(/(?:^|\s):([a-zA-Z0-9_]{2,})$/, (m) => {
+        const leading = m.startsWith(' ') ? ' ' : '';
+        return `${leading}${emojiChar} `;
+      });
+      const newContent = replacedBefore + textAfterCursor;
+      setContent(newContent);
+      setShortcodeDismissed(true);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const newPos = replacedBefore.length;
+          textareaRef.current.setSelectionRange(newPos, newPos);
+          setCursorPos(newPos);
+        }
+      }, 0);
+    },
+    [content, cursorPos]
+  );
+
+  const handleInsertEmoji = React.useCallback(
+    (emoji: string) => {
+      const el = textareaRef.current;
+      if (!el) {
+        setContent((prev) => prev + emoji);
+        return;
+      }
+      const start = el.selectionStart ?? content.length;
+      const end = el.selectionEnd ?? content.length;
+      const before = content.slice(0, start);
+      const after = content.slice(end);
+      const newContent = before + emoji + after;
+      setContent(newContent);
+      const nextPos = start + emoji.length;
+      setTimeout(() => {
+        el.focus();
+        el.setSelectionRange(nextPos, nextPos);
+        setCursorPos(nextPos);
+      }, 0);
+    },
+    [content]
+  );
+
+  const wrapSelection = React.useCallback(
+    (beforeStr: string, afterStr: string = beforeStr, defaultText: string = '') => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const start = el.selectionStart ?? 0;
+      const end = el.selectionEnd ?? 0;
+      const selected = content.slice(start, end) || defaultText;
+      const replacement = `${beforeStr}${selected}${afterStr}`;
+      const newContent = content.slice(0, start) + replacement + content.slice(end);
+      setContent(newContent);
+      const cursorStart = start + beforeStr.length;
+      const cursorEnd = cursorStart + selected.length;
+      setTimeout(() => {
+        el.focus();
+        el.setSelectionRange(cursorStart, cursorEnd);
+        setCursorPos(cursorEnd);
+      }, 0);
+    },
+    [content]
+  );
+
   const handleAddFiles = (filesList: FileList | null) => {
     if (!filesList || filesList.length === 0) return;
     const newFiles: File[] = [];
@@ -236,6 +329,56 @@ export function ChatComposer({
       }
     }
 
+    if (showShortcodes) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setShortcodeIndex((prev) => (prev + 1) % shortcodeCandidates.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setShortcodeIndex((prev) => (prev - 1 + shortcodeCandidates.length) % shortcodeCandidates.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const cand = shortcodeCandidates[shortcodeIndex];
+        if (cand) {
+          handleSelectShortcodeCandidate(cand.char);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShortcodeDismissed(true);
+        return;
+      }
+    }
+
+    // Markdown keyboard shortcuts (Ctrl+B, Ctrl+I, Ctrl+E, Ctrl+K)
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault();
+        wrapSelection('**', '**', 'bold');
+        return;
+      }
+      if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault();
+        wrapSelection('*', '*', 'italic');
+        return;
+      }
+      if (e.key === 'e' || e.key === 'E') {
+        e.preventDefault();
+        wrapSelection('`', '`', 'code');
+        return;
+      }
+      if (e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        wrapSelection('[', '](https://)', 'link text');
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -292,7 +435,7 @@ export function ChatComposer({
               @{replyingTo.sender?.username || 'user'}
             </span>
             <span className="text-muted-foreground truncate max-w-xs italic">
-              &ldquo;{replyingTo.content}&rdquo;
+              &ldquo;{stripMarkdown(replyingTo.content)}&rdquo;
             </span>
           </div>
           <button
@@ -346,6 +489,34 @@ export function ChatComposer({
                     )}
                     <span className="font-medium text-foreground truncate">{m.display_name}</span>
                     <span className="text-muted-foreground truncate">@{m.username}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Emoji Shortcode Autocomplete */}
+          {showShortcodes && (
+            <div className="absolute bottom-full left-0 mb-2 w-64 max-h-52 overflow-y-auto rounded-card bg-popover border border-border shadow-popover p-1 z-dropdown">
+              <div className="px-2 py-1 text-meta font-medium text-muted-foreground border-b border-border mb-1">
+                Emoji suggestions
+              </div>
+              <div className="space-y-0.5">
+                {shortcodeCandidates.map((item, idx) => (
+                  <button
+                    type="button"
+                    key={item.shortcode}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectShortcodeCandidate(item.char);
+                    }}
+                    className={cn(
+                      'w-full flex items-center gap-2.5 px-2 py-1.5 rounded-control text-meta text-left transition-colors',
+                      idx === shortcodeIndex ? 'bg-surface-hover text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <span className="text-lg leading-none">{item.char}</span>
+                    <span className="font-mono text-xs text-foreground">{item.shortcode}</span>
                   </button>
                 ))}
               </div>
@@ -415,15 +586,56 @@ export function ChatComposer({
                 <Sparkles className="w-4 h-4" />
               </button>
 
+              <EmojiPicker
+                onSelectEmoji={handleInsertEmoji}
+                open={emojiPickerOpen}
+                onOpenChange={setEmojiPickerOpen}
+                trigger={
+                  <button
+                    type="button"
+                    disabled={Boolean(disabledReason)}
+                    className="p-1.5 rounded-control text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
+                    title="Add emoji"
+                    aria-label="Add emoji"
+                  >
+                    <Smile className="w-4 h-4" />
+                  </button>
+                }
+              />
+
+              <div className="w-px h-3.5 bg-border/60 mx-0.5" />
+
               <button
                 type="button"
-                onClick={() => setContent((prev) => prev + ' 👍')}
+                onClick={() => wrapSelection('**', '**', 'bold')}
                 disabled={Boolean(disabledReason)}
-                className="p-1.5 rounded-control text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
-                title="Add emoji"
-                aria-label="Add emoji"
+                className="px-1.5 py-0.5 rounded-control text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
+                title="Bold (Ctrl+B)"
+                aria-label="Bold text"
               >
-                <Smile className="w-4 h-4" />
+                B
+              </button>
+
+              <button
+                type="button"
+                onClick={() => wrapSelection('*', '*', 'italic')}
+                disabled={Boolean(disabledReason)}
+                className="px-1.5 py-0.5 rounded-control text-[11px] italic font-serif text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
+                title="Italic (Ctrl+I)"
+                aria-label="Italic text"
+              >
+                I
+              </button>
+
+              <button
+                type="button"
+                onClick={() => wrapSelection('`', '`', 'code')}
+                disabled={Boolean(disabledReason)}
+                className="px-1.5 py-0.5 rounded-control text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
+                title="Inline Code (Ctrl+E)"
+                aria-label="Inline code"
+              >
+                code
               </button>
             </div>
 

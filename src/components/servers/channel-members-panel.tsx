@@ -77,8 +77,9 @@ function ChannelMemberRow({
   onBlockUser,
 }: ChannelMemberRowProps) {
   const { toast } = useToast();
-  const liveStatus = useUserPresence(member.id);
+  const livePresence = useUserPresence(member.id);
   const isMe = member.id === currentUserId;
+  const liveStatus = isMe ? livePresence : (livePresence !== 'offline' ? livePresence : (member.status || 'offline'));
   const memberRecord = (server.members || []).find((sm) => sm.user_id === member.id);
   const effectiveName = memberRecord?.nickname || member.display_name;
   const effectiveAvatar = memberRecord?.avatar_path || member.avatar_url || null;
@@ -318,7 +319,8 @@ export function ChannelMembersPanel({
 
     members.forEach((m) => {
       const isMe = m.id === currentUserId;
-      const liveStatus = isMe ? (profile?.status || 'online') : getUserStatus(m.id);
+      const livePresence = getUserStatus(m.id);
+      const liveStatus = isMe ? (profile?.status || 'online') : (livePresence !== 'offline' ? livePresence : (m.status || 'offline'));
       const isOwner = m.id === server.owner_id || m.role === 'owner';
       const isAdmin = m.role === 'admin';
       const isOnline = liveStatus !== 'offline';

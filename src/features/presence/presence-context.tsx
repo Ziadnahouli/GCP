@@ -118,11 +118,12 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
     const userId = user.id;
 
-    // C1: Acquire shared channel from RealtimeHub
+    // C1: Acquire shared channel from RealtimeHub with explicit private: false so presence is never rejected by RLS
     const channel = realtimeHub.acquire(
       'nexus-global-presence',
       {
         config: {
+          private: false,
           broadcast: { self: false },
           presence: { key: userId },
         },
@@ -277,27 +278,30 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           }
         }
       )
-      .subscribe(async (status) => {
+      .subscribe(async (status, err) => {
+        if (typeof window !== 'undefined') {
+          console.log(`[Presence] 'nexus-global-presence' channel status: ${status}`, err || '');
+        }
         if (status === 'SUBSCRIBED') {
           if (profileStatusRef.current !== 'offline') {
             await channel.track({
               user_id: userId,
               status: profileStatusRef.current,
               online_at: new Date().toISOString(),
-            }).catch(() => {});
+            }).catch((e) => console.warn('[Presence] track error:', e));
           }
 
           channel.send({
             type: 'broadcast',
             event: 'presence_ping',
             payload: { userId, status: profileStatusRef.current },
-          }).catch(() => {});
+          }).catch((e) => console.warn('[Presence] ping error:', e));
 
           channel.send({
             type: 'broadcast',
             event: 'request_presence_sync',
             payload: { requesterId: userId },
-          }).catch(() => {});
+          }).catch((e) => console.warn('[Presence] sync request error:', e));
         }
       });
 
@@ -372,7 +376,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!user?.id || !profile?.status) return;
     const channel = channelRef.current;
-    if (channel && channel.state === 'joined') {
+    if (channel) {
       if (profile.status === 'offline') {
         channel.untrack().catch(() => {});
       } else {

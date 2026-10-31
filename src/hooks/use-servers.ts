@@ -21,6 +21,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { supabase } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types/profile';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { globalPresenceStore } from '@/features/presence/presence-context';
 import { DEFAULT_ROLE_COLORS } from '@/lib/design/colors';
 
 const STORAGE_KEY = 'nexus_gaming_servers_store';
@@ -223,6 +224,26 @@ export function useServersInternal() {
       })
       .on('broadcast', { event: 'servers_update' }, () => {
         fetchServers();
+      })
+      .on('broadcast', { event: 'presence_status_change' }, ({ payload }: any) => {
+        if (payload?.userId && payload?.status) {
+          globalPresenceStore.setStatus(payload.userId, payload.status);
+          setServers((prev) =>
+            prev.map((s) => ({
+              ...s,
+              members: (s.members || []).map((m) =>
+                m.user_id === payload.userId
+                  ? {
+                      ...m,
+                      profile: m.profile
+                        ? { ...m.profile, status: payload.status }
+                        : ({ id: m.user_id, status: payload.status } as any),
+                    }
+                  : m
+              ),
+            }))
+          );
+        }
       });
     channel.subscribe();
 

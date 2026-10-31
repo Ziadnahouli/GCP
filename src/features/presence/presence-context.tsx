@@ -24,6 +24,27 @@ class PresenceStore {
     return this.statusMap.get(userId) || 'offline';
   }
 
+  hasUser(userId: string | null | undefined): boolean {
+    if (!userId) return false;
+    return this.statusMap.has(userId);
+  }
+
+  setStatus(userId: string, status: UserStatus) {
+    if (!userId) return;
+    const current = this.statusMap.get(userId);
+    if (current === status) return;
+    if (status === 'offline') {
+      this.statusMap.delete(userId);
+    } else {
+      this.statusMap.set(userId, status);
+    }
+    const userSubs = this.userListeners.get(userId);
+    if (userSubs) {
+      userSubs.forEach((cb) => cb());
+    }
+    this.listeners.forEach((cb) => cb());
+  }
+
   isOnline(userId: string | null | undefined): boolean {
     const s = this.getStatus(userId);
     return s === 'online' || s === 'idle' || s === 'dnd';
@@ -133,13 +154,13 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
     const userId = user.id;
 
-    // C1: Acquire shared channel from RealtimeHub with explicit private: false so presence is never rejected by RLS
+    // C1: Acquire shared channel from RealtimeHub
     const channel = realtimeHub.acquire(
       'nexus-global-presence',
       {
         config: {
-          private: false,
-          broadcast: { self: false },
+          private: true,
+          broadcast: { self: true },
           presence: { key: userId },
         },
       },
@@ -236,34 +257,45 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         performUpdate();
       })
       .on('broadcast', { event: 'presence_ping' }, ({ payload }) => {
-        if (!payload?.userId || payload.userId === userId) return;
+        if (!payload?.userId) return;
         const st = (payload.status as UserStatus) || 'online';
-        if (st === 'offline') {
-          pingsRef.current.delete(payload.userId);
-          pingsStatusRef.current.delete(payload.userId);
-        } else {
-          setBoundedMap(pingsRef.current, payload.userId, Date.now(), MAX_PRESENCE_ENTRIES);
-          setBoundedMap(pingsStatusRef.current, payload.userId, st, MAX_PRESENCE_ENTRIES);
+        if (payload.userId !== userId) {
+          if (st === 'offline') {
+            pingsRef.current.delete(payload.userId);
+            pingsStatusRef.current.delete(payload.userId);
+          } else {
+            setBoundedMap(pingsRef.current, payload.userId, Date.now(), MAX_PRESENCE_ENTRIES);
+            setBoundedMap(pingsStatusRef.current, payload.userId, st, MAX_PRESENCE_ENTRIES);
+          }
         }
-        performUpdate();
+        globalPresenceStore.setStatus(payload.userId, st);
+        updatePresenceState();
       })
       .on('broadcast', { event: 'presence_status_change' }, ({ payload }) => {
-        if (!payload?.userId || payload.userId === userId) return;
+        if (!payload?.userId) return;
         const st = (payload.status as UserStatus) || 'offline';
-        if (st === 'offline') {
-          pingsRef.current.delete(payload.userId);
-          pingsStatusRef.current.delete(payload.userId);
-        } else {
-          setBoundedMap(pingsRef.current, payload.userId, Date.now(), MAX_PRESENCE_ENTRIES);
-          setBoundedMap(pingsStatusRef.current, payload.userId, st, MAX_PRESENCE_ENTRIES);
+        const now = Date.now();
+        if (payload.userId !== userId) {
+          if (st === 'offline') {
+            pingsRef.current.delete(payload.userId);
+            pingsStatusRef.current.delete(payload.userId);
+          } else {
+            setBoundedMap(pingsRef.current, payload.userId, now, MAX_PRESENCE_ENTRIES);
+            setBoundedMap(pingsStatusRef.current, payload.userId, st, MAX_PRESENCE_ENTRIES);
+          }
         }
-        performUpdate();
+        // Immediate synchronous status update in store
+        globalPresenceStore.setStatus(payload.userId, st);
+        updatePresenceState();
       })
       .on('broadcast', { event: 'presence_leave' }, ({ payload }) => {
-        if (!payload?.userId || payload.userId === userId) return;
-        pingsRef.current.delete(payload.userId);
-        pingsStatusRef.current.delete(payload.userId);
-        performUpdate();
+        if (!payload?.userId) return;
+        if (payload.userId !== userId) {
+          pingsRef.current.delete(payload.userId);
+          pingsStatusRef.current.delete(payload.userId);
+        }
+        globalPresenceStore.setStatus(payload.userId, 'offline');
+        updatePresenceState();
       })
       .on('broadcast', { event: 'request_presence_sync' }, () => {
         if (channel) {
@@ -277,24 +309,6 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           }).catch(() => {});
         }
       })
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        (payload: any) => {
-          const updatedProfile = payload?.new;
-          if (updatedProfile?.id && updatedProfile.id !== userId) {
-            const newStatus = (updatedProfile.status as UserStatus) || 'offline';
-            if (newStatus === 'offline') {
-              pingsRef.current.delete(updatedProfile.id);
-              pingsStatusRef.current.delete(updatedProfile.id);
-            } else {
-              pingsRef.current.set(updatedProfile.id, Date.now());
-              pingsStatusRef.current.set(updatedProfile.id, newStatus);
-            }
-            performUpdate();
-          }
-        }
-      )
       .subscribe(async (status, err) => {
         if (typeof window !== 'undefined') {
           console.log(`[Presence] 'nexus-global-presence' channel status: ${status}`, err || '');
@@ -422,13 +436,15 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
       if (user && userId === user.id) {
         return profile?.status || 'online';
       }
-      const live = globalPresenceStore.getStatus(userId);
-      if (!hasSynced && fallbackStatus) {
-        return live !== 'offline' ? live : fallbackStatus;
+      if (globalPresenceStore.hasUser(userId)) {
+        return globalPresenceStore.getStatus(userId);
       }
-      return live;
+      if (fallbackStatus) {
+        return fallbackStatus;
+      }
+      return 'offline';
     },
-    [user?.id, profile?.status, hasSynced]
+    [user, profile?.status]
   );
 
   const isUserOnline = React.useCallback(
@@ -467,11 +483,14 @@ export function useUserPresence(userId: string | null | undefined, fallbackStatu
 
   const getSnapshot = React.useCallback(() => {
     if (isMe) return profile?.status || 'online';
-    const live = globalPresenceStore.getStatus(userId);
-    if (!globalPresenceStore.isSynced() && fallbackStatus) {
-      return live !== 'offline' ? live : fallbackStatus;
+    if (!userId) return 'offline';
+    if (globalPresenceStore.hasUser(userId)) {
+      return globalPresenceStore.getStatus(userId);
     }
-    return live;
+    if (fallbackStatus) {
+      return fallbackStatus;
+    }
+    return 'offline';
   }, [userId, isMe, profile?.status, fallbackStatus]);
 
   return React.useSyncExternalStore(subscribe, getSnapshot, () => 'offline');

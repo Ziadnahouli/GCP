@@ -78,6 +78,16 @@ export function resolveProfileImageUrl(
 
   const baseUrl = SUPABASE_URL.replace(/\/+$/, '') || '';
 
+  if (transforms && (transforms.width || transforms.height || transforms.format || transforms.quality)) {
+    const params = new URLSearchParams();
+    if (transforms.width) params.set('width', String(transforms.width));
+    if (transforms.height) params.set('height', String(transforms.height));
+    if (transforms.resize) params.set('resize', transforms.resize);
+    if (transforms.format) params.set('format', transforms.format);
+    if (transforms.quality) params.set('quality', String(transforms.quality));
+    return `${baseUrl}/storage/v1/render/image/public/${targetBucket}/${objectPath}?${params.toString()}`;
+  }
+
   // Return standard object URL for 100% reliability across all Supabase plan tiers
   return `${baseUrl}/storage/v1/object/public/${targetBucket}/${objectPath}`;
 }

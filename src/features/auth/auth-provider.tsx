@@ -8,6 +8,7 @@ import { getSupabaseConfig } from '@/lib/supabase/config';
 import { AuthContextType } from '@/lib/types/auth';
 import { UserProfile, UserSettings, UserStatus } from '@/lib/types/profile';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { globalPresenceStore } from '@/features/presence/presence-context';
 import { audioSessionCoordinator } from '@/lib/webrtc/audio-session-coordinator';
 import { DEFAULT_BANNER_COLOR } from '@/lib/design/colors';
 
@@ -550,19 +551,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setProfile(updatedProfile as UserProfile);
         }
 
-        // Broadcast to nexus-global-presence so all peers see status/presence change instantly
+        // Broadcast presence/status change instantly across all active realtime channels
         if (updates.status) {
-          realtimeHub
-            .send('nexus-global-presence', 'presence_status_change', {
-              userId: user.id,
-              status: updates.status,
-            })
-            .catch(() => {});
+          globalPresenceStore.setStatus(user.id, updates.status);
+          const presencePayload = { userId: user.id, status: updates.status };
+
+          realtimeHub.send('nexus-global-presence', 'presence_status_change', presencePayload).catch(() => {});
+          realtimeHub.send('servers-realtime', 'presence_status_change', presencePayload).catch(() => {});
+          realtimeHub.send('nexus-social-db', 'presence_status_change', presencePayload).catch(() => {});
+          realtimeHub.send('conversations-realtime', 'presence_status_change', presencePayload).catch(() => {});
         }
 
-        // Broadcast to social-realtime so all peers see status/presence change instantly
+        // Broadcast to social and servers channels so all peers see profile changes instantly
         realtimeHub
-          .send('social-realtime', 'social_update', { userId: user.id, updates })
+          .send('nexus-social-db', 'social_update', { userId: user.id, updates })
+          .catch(() => {});
+        realtimeHub
+          .send('servers-realtime', 'servers_update', { userId: user.id, updates })
           .catch(() => {});
 
         return { error: null };

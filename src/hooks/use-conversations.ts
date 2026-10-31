@@ -6,6 +6,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { Conversation } from '@/lib/types/messaging';
 import { UserProfile } from '@/lib/types/profile';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { globalPresenceStore } from '@/features/presence/presence-context';
 
 const getCachedConversations = (uId?: string): Conversation[] => {
   if (!uId || typeof window === 'undefined') return [];
@@ -202,6 +203,26 @@ export function useConversationsInternal() {
       )
       .on('broadcast', { event: 'conv_update' }, () => {
         debouncedFetch();
+      })
+      .on('broadcast', { event: 'presence_status_change' }, ({ payload }: any) => {
+        if (payload?.userId && payload?.status) {
+          globalPresenceStore.setStatus(payload.userId, payload.status);
+          setConversations((prev) =>
+            prev.map((c) => ({
+              ...c,
+              members: (c.members || []).map((m) =>
+                m.user_id === payload.userId
+                  ? {
+                      ...m,
+                      profile: m.profile
+                        ? { ...m.profile, status: payload.status }
+                        : ({ id: m.user_id, status: payload.status } as any),
+                    }
+                  : m
+              ),
+            }))
+          );
+        }
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {

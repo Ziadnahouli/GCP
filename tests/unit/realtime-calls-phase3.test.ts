@@ -215,7 +215,16 @@ describe('Phase 3: Realtime, Calls, Voice Architecture', () => {
       expect(resolved).toBe('dnd');
     });
 
-    it('prefers active presence over offline/idle when multiple devices exist', () => {
+    it('allows a newer deliberate status change from dnd to online or idle to take effect', () => {
+      const entries = [
+        { status: 'dnd' as UserStatus, timestamp: 1000 },
+        { status: 'idle' as UserStatus, timestamp: 2000 },
+      ];
+      const resolved = resolveMultiSourcePresence(entries);
+      expect(resolved).toBe('idle');
+    });
+
+    it('prefers active presence over offline when multiple devices exist', () => {
       const entries = [
         { status: 'offline' as UserStatus, timestamp: 3000 },
         { status: 'online' as UserStatus, timestamp: 1000 },

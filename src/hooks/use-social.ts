@@ -7,6 +7,7 @@ import { FriendItem, FriendRequestItem, BlockedUserItem } from '@/lib/types/soci
 import { UserProfile } from '@/lib/types/profile';
 import { useToast } from '@/components/ui/toast';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
+import { globalPresenceStore } from '@/features/presence/presence-context';
 
 export function useSocial() {
   const { user, profile, isConfigured } = useAuth();
@@ -198,6 +199,18 @@ export function useSocial() {
       )
       .on('broadcast', { event: 'social_update' }, () => {
         fetchSocialData();
+      })
+      .on('broadcast', { event: 'presence_status_change' }, ({ payload }: any) => {
+        if (payload?.userId && payload?.status) {
+          globalPresenceStore.setStatus(payload.userId, payload.status);
+          setFriends((prev) =>
+            prev.map((f) =>
+              f.friend.id === payload.userId
+                ? { ...f, friend: { ...f.friend, status: payload.status } }
+                : f
+            )
+          );
+        }
       })
       .subscribe();
 

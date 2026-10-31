@@ -12,6 +12,7 @@ import {
   Download,
   AlertCircle,
   RotateCcw,
+  Plus,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { ProfileCardTrigger } from '@/components/profile/ProfileCardTrigger';
@@ -19,6 +20,7 @@ import { Message, MessageAttachment } from '@/lib/types/messaging';
 import { MessageContent } from '@/components/chat/message-content';
 import { formatFileSize } from '@/lib/storage/upload';
 import { cn } from '@/lib/utils';
+import { EmojiPicker } from '@/components/ui/emoji-picker/EmojiPicker';
 
 const COMMON_EMOJIS = ['🔥', '👍', '❤️', '😂', '🎯', '🚀'];
 
@@ -299,7 +301,7 @@ function ChatMessageRowComponent({
         {!isFailed && !isSending && (
           <div className="absolute right-4 -top-3 hidden group-hover/row:flex items-center gap-0.5 rounded-control bg-card border border-border shadow-dialog p-0.5 z-20">
             {/* Quick Reactions */}
-            {COMMON_EMOJIS.slice(0, 3).map((emoji) => (
+            {COMMON_EMOJIS.map((emoji) => (
               <button
                 key={emoji}
                 type="button"
@@ -310,6 +312,23 @@ function ChatMessageRowComponent({
                 {emoji}
               </button>
             ))}
+
+            {/* Custom Emoji Reaction Picker */}
+            <EmojiPicker
+              onSelectEmoji={(emoji) => onReactionAdd(message.id, emoji)}
+              side="top"
+              align="end"
+              trigger={
+                <button
+                  type="button"
+                  className="p-1 rounded-control hover:bg-surface-hover text-muted-foreground hover:text-foreground transition-colors"
+                  title="Add custom reaction"
+                  aria-label="Add custom reaction"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              }
+            />
 
             <div className="w-px h-3.5 bg-border mx-0.5" />
 

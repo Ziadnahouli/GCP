@@ -20,6 +20,7 @@ import { LinksEditor } from '@/components/profile/LinksEditor';
 import { ServerProfileEditor } from '@/components/profile/ServerProfileEditor';
 import { useServers } from '@/hooks/use-servers';
 import { ProcessedImageResult, getAccessibleTextColor, resolveProfileImageUrl } from '@/lib/images/profile-images';
+import { EmojiPicker } from '@/components/ui/emoji-picker/EmojiPicker';
 import {
   Upload,
   Trash2,
@@ -616,14 +617,32 @@ export function ProfileTab() {
                 {/* Custom Status */}
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-foreground">Custom Status</label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={customStatusEmoji}
-                      onChange={(e) => setCustomStatusEmoji(e.target.value)}
-                      placeholder="Emoji"
-                      maxLength={4}
-                      className="text-xs w-20 text-center"
+                  <div className="flex items-center gap-2">
+                    <EmojiPicker
+                      onSelectEmoji={(emoji) => setCustomStatusEmoji(emoji)}
+                      align="start"
+                      side="bottom"
+                      trigger={
+                        <button
+                          type="button"
+                          className="h-9 w-12 flex items-center justify-center rounded-control border border-input bg-surface hover:bg-surface-hover text-base transition-colors shrink-0"
+                          title="Choose status emoji"
+                          aria-label="Choose status emoji"
+                        >
+                          {customStatusEmoji || <Smile className="w-4 h-4 text-muted-foreground" />}
+                        </button>
+                      }
                     />
+                    {customStatusEmoji && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomStatusEmoji('')}
+                        className="text-[11px] text-muted-foreground hover:text-foreground px-1"
+                        title="Clear emoji"
+                      >
+                        Clear
+                      </button>
+                    )}
                     <Input
                       value={customStatus}
                       onChange={(e) => setCustomStatus(e.target.value)}

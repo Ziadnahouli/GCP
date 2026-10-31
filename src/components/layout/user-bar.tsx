@@ -144,7 +144,7 @@ export function UserBar() {
             title="View Profile Card"
           >
             <Avatar
-              src={profile?.avatar_url || null}
+              src={(profile as any)?.avatar_path || profile?.avatar_url || null}
               name={profile?.display_name || 'User'}
               status={profile?.status || 'online'}
               showStatus

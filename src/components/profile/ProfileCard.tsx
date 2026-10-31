@@ -2,7 +2,8 @@
 
 import * as React from 'react';
 import { cn } from '@/lib/utils';
-import { ProfileCardData } from '@/lib/types/profile';
+import { ProfileCardData, UserStatus } from '@/lib/types/profile';
+import { useUserPresence } from '@/features/presence/presence-context';
 import { fetchProfileCard } from '@/lib/profiles/profile-store';
 import { ProfileBanner } from './ProfileBanner';
 import { UserName } from './UserName';
@@ -127,6 +128,8 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
     }
   }, [data?.server_joined_at]);
 
+  const livePresence = useUserPresence(data?.id);
+
   if (isLoading) {
     return (
       <div className={cn('w-80 sm:w-96 rounded-2xl bg-card border border-border overflow-hidden shadow-2xl p-0', className)}>
@@ -165,6 +168,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
     );
   }
 
+  const effectiveStatus = livePresence !== 'offline' ? livePresence : data.status;
   const effectiveAvatar = data.effective_avatar_path || data.avatar_path || data.avatar_url;
   const isPrivate = !data.is_self && !data.effective_bio && !data.effective_banner_path && !data.banner_color;
 
@@ -195,7 +199,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
             <Avatar
               src={effectiveAvatar}
               name={data.effective_display_name || data.display_name}
-              status={data.status}
+              status={effectiveStatus}
               showStatus
               size={80}
               avatarColor={data.avatar_color}

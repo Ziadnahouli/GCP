@@ -123,8 +123,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (userId: string, currentUser?: User) => {
       try {
         const [profileRes, settingsRes] = await Promise.all([
-          supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-          supabase.from('user_settings').select('*').eq('user_id', userId).maybeSingle(),
+          supabase
+            .from('profiles')
+            .select(`
+              id, username, display_name, avatar_url, avatar_path, avatar_color,
+              banner_url, banner_path, banner_color, accent_color, profile_theme,
+              decoration_id, bio, pronouns, custom_status, custom_status_emoji,
+              custom_status_expires_at, timezone, status, status_preference,
+              game_activity, favorite_games, activity_text, activity_expires_at,
+              presence_visibility, friend_request_rule, direct_message_rule,
+              created_at, updated_at
+            `)
+            .eq('id', userId)
+            .maybeSingle(),
+          supabase
+            .from('user_settings')
+            .select(`
+              id, user_id, theme, theme_mode, accent_color, density, text_scale,
+              notifications_enabled, sound_enabled, sound_effects_enabled,
+              push_to_talk_enabled, push_to_talk_key, mic_volume, speaker_volume,
+              input_device, output_device, keybinds, created_at, updated_at
+            `)
+            .eq('user_id', userId)
+            .maybeSingle(),
         ]);
 
         if (profileRes.error) {
@@ -173,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (settingsRes.error) {
           console.warn('[AuthProvider] Notice fetching user_settings:', settingsRes.error);
         } else if (settingsRes.data) {
-          const s = settingsRes.data as UserSettings;
+          const s = settingsRes.data as unknown as UserSettings;
           const localThemeMode = typeof window !== 'undefined' ? (localStorage.getItem('nexus_theme_mode') as 'system' | 'light' | 'dark' | null) : null;
           const localDensity = typeof window !== 'undefined' ? (localStorage.getItem('nexus_density') as 'comfortable' | 'compact' | null) : null;
           const localTextScale = typeof window !== 'undefined' ? (localStorage.getItem('nexus_text_scale') as '90' | '100' | '112' | '125' | null) : null;
@@ -334,12 +355,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ensureValidSession();
       }, 180000);
 
-      // Keepalive HTTP REST connection every 25 seconds to prevent proxy socket timeout
-      const restKeepaliveTimer = setInterval(() => {
-        if (typeof document !== 'undefined' && document.hidden) return;
-        supabase.from('profiles').select('id').limit(1).then(() => {}, () => {});
-      }, 25000);
-
       // Revalidate/refresh immediately when tab becomes active or focused
       const handleResume = () => {
         if (typeof document !== 'undefined' && !document.hidden) {
@@ -355,7 +370,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return () => {
         subscription.unsubscribe();
         clearInterval(keepaliveTimer);
-        clearInterval(restKeepaliveTimer);
         if (typeof window !== 'undefined') {
           window.removeEventListener('focus', handleResume);
           document.removeEventListener('visibilitychange', handleResume);

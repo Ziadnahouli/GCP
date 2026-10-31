@@ -91,7 +91,7 @@ export const Avatar: React.FC<AvatarProps> = ({
       className={cn(
         'relative inline-flex shrink-0 select-none items-center justify-center rounded-full',
         sizeConfig.container,
-        isSpeaking && 'ring-2 ring-primary ring-offset-2 ring-offset-background transition-all',
+        isSpeaking && 'ring-2 ring-primary ring-offset-2 ring-offset-background transition-[box-shadow]',
         className
       )}
       {...props}

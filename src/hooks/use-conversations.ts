@@ -111,7 +111,7 @@ export function useConversationsInternal() {
       // Fetch last messages for each conversation
       const { data: lastMsgs } = await supabase
         .from('messages')
-        .select('*')
+        .select('id, conversation_id, sender_id, content, created_at, updated_at, is_pinned, is_edited, reply_to_id')
         .in('conversation_id', convIds)
         .order('created_at', { ascending: false });
 
@@ -224,17 +224,22 @@ export function useConversationsInternal() {
           );
         }
       })
-      .subscribe((status) => {
+      let isSubscribed = false;
+      channel.subscribe((status) => {
         if (status === 'SUBSCRIBED') {
+          isSubscribed = true;
           fetchConversations(true);
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          isSubscribed = false;
         }
       });
 
-    // Fallback sync poll (25s when visible)
+    // Fallback sync poll: only active when realtime channel is NOT subscribed (S4)
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
+      if (isSubscribed) return; // Healthy realtime connection: skip redundant polling
       fetchConversations(true);
-    }, 25000);
+    }, 30000);
 
     // Immediate sync on tab focus or visibility resume
     const handleFocus = () => {

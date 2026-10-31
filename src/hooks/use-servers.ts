@@ -245,14 +245,23 @@ export function useServersInternal() {
           );
         }
       });
-    channel.subscribe();
+    let isSubscribed = false;
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        isSubscribed = true;
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        isSubscribed = false;
+      }
+    });
 
     serversChannelRef.current = channel;
 
+    // Fallback sync poll: only active when realtime channel is NOT subscribed (S4)
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
+      if (isSubscribed) return; // Healthy realtime connection: skip redundant polling
       fetchServers();
-    }, 30000);
+    }, 35000);
 
     const handleLocalServersUpdate = (e: any) => {
       if (Array.isArray(e.detail)) {
@@ -1343,7 +1352,7 @@ export function useServersInternal() {
         // Resilient fallback query if FK join alias resolution encounters PostgREST issues
         const { data: rawLogs } = await supabase
           .from('moderation_audit_logs')
-          .select('*')
+          .select('id, server_id, actor_id, target_id, action, reason, metadata, created_at')
           .eq('server_id', serverId)
           .order('created_at', { ascending: false })
           .limit(50);
@@ -1394,7 +1403,7 @@ export function useServersInternal() {
         // Resilient fallback query
         const { data: rawBans } = await supabase
           .from('server_bans')
-          .select('*')
+          .select('id, server_id, user_id, banned_by, reason, created_at')
           .eq('server_id', serverId)
           .order('created_at', { ascending: false });
 
@@ -1429,7 +1438,7 @@ export function useServersInternal() {
       try {
         const { data } = await supabase
           .from('server_invites')
-          .select('*')
+          .select('id, server_id, inviter_id, code, max_uses, uses, expires_at, created_at')
           .eq('server_id', serverId)
           .order('created_at', { ascending: false });
         return (data as unknown as ServerInvite[]) || [];
@@ -1459,7 +1468,7 @@ export function useServersInternal() {
         // Fallback
         const { data: rawReports } = await supabase
           .from('reports')
-          .select('*')
+          .select('id, reporter_id, reported_user_id, server_id, message_id, reason, description, status, action_taken, created_at')
           .eq('server_id', serverId)
           .order('created_at', { ascending: false });
 

@@ -265,7 +265,7 @@ export function useMessages(conversationId: string | null) {
         const [attachmentsRes, reactionsRes] = await Promise.all([
           supabase
             .from('message_attachments')
-            .select('*')
+            .select('id, message_id, file_name, file_type, file_size, storage_path, conversation_id, created_at')
             .eq('conversation_id', conversationId),
           supabase
             .from('message_reactions')
@@ -419,7 +419,7 @@ export function useMessages(conversationId: string | null) {
         const [attachmentsRes, reactionsRes] = await Promise.all([
           supabase
             .from('message_attachments')
-            .select('*')
+            .select('id, message_id, file_name, file_type, file_size, storage_path, conversation_id, created_at')
             .in('message_id', msgIds),
           supabase
             .from('message_reactions')
@@ -939,7 +939,7 @@ export function useMessages(conversationId: string | null) {
                   file_size: file.size,
                   storage_path: uploadRes.storagePath,
                 })
-                .select('*')
+                .select('id, message_id, file_name, file_type, file_size, storage_path, conversation_id, created_at')
                 .single();
 
               if (attData) {

@@ -620,7 +620,7 @@ export function ServerSidebar({
                                     name={occ.display_name}
                                     size="20"
                                     className={cn(
-                                      'transition-all',
+                                      'transition-[box-shadow]',
                                       occ.is_speaking && 'ring-2 ring-status-online'
                                     )}
                                   />

@@ -165,7 +165,7 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
     try {
       const { data } = await supabase
         .from('user_devices')
-        .select('*')
+        .select('id, user_id, device_name, device_type, os_name, browser_name, ip_address, is_current, last_active_at, created_at')
         .eq('user_id', user.id)
         .order('last_active_at', { ascending: false });
       setActiveDevices(data || []);

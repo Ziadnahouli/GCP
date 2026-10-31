@@ -101,7 +101,7 @@ export function ServerRail({
                       onMouseEnter={() => setHoveredId(server.id)}
                       onMouseLeave={() => setHoveredId(null)}
                       className={cn(
-                        'w-9 h-9 rounded-[10px] flex items-center justify-center font-semibold text-xs tracking-wide transition-all duration-150 border touch-target-44 overflow-hidden',
+                        'w-9 h-9 rounded-[10px] flex items-center justify-center font-semibold text-xs tracking-wide transition-colors duration-150 border touch-target-44 overflow-hidden',
                         isActive
                           ? 'bg-card text-foreground border-primary shadow-subtle'
                           : 'bg-surface-hover border-transparent text-muted-foreground hover:bg-surface-active hover:text-foreground'
@@ -133,7 +133,7 @@ export function ServerRail({
               <TooltipTrigger asChild>
                 <button
                   onClick={onOpenCreateServer}
-                  className="w-9 h-9 rounded-[10px] bg-surface-hover border border-dashed border-border text-muted-foreground hover:text-primary hover:border-primary/50 hover:bg-primary-subtle flex items-center justify-center transition-all duration-150 touch-target-44"
+                  className="w-9 h-9 rounded-[10px] bg-surface-hover border border-dashed border-border text-muted-foreground hover:text-primary hover:border-primary/50 hover:bg-primary-subtle flex items-center justify-center transition-colors duration-150 touch-target-44"
                   aria-label="Create a server"
                 >
                   <Plus className="w-4 h-4" />

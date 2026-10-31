@@ -207,15 +207,23 @@ export function useSocial() {
           );
         }
       })
-      .subscribe();
+    let isSubscribed = false;
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        isSubscribed = true;
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        isSubscribed = false;
+      }
+    });
 
     socialChannelRef.current = channel;
 
-    // Background auto-sync polling every 30s as safety fallback
+    // Background auto-sync polling: fallback only when realtime channel is NOT subscribed (S4)
     const autoSyncTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
+      if (isSubscribed) return; // Healthy realtime connection: skip redundant polling
       fetchSocialData();
-    }, 30000);
+    }, 35000);
 
     const handleResume = () => {
       if (typeof document !== 'undefined' && !document.hidden) {

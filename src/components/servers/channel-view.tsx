@@ -754,7 +754,7 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                 ) : (
                   <form
                     onSubmit={handleSend}
-                    className="flex items-center gap-2 bg-card border border-border rounded-control p-1.5 px-3 focus-within:ring-1 focus-within:ring-ring transition-all"
+                    className="flex items-center gap-2 bg-card border border-border rounded-control p-1.5 px-3 focus-within:ring-1 focus-within:ring-ring transition-colors"
                   >
                     {canUseSoundboard && (
                       <button

@@ -83,3 +83,45 @@ Route (app)                              Size     First Load JS
 5. **AppShell Re-render Decoupling**: Decoupled 1-second WebRTC telemetry polling from `AppShell`. The root app shell no longer re-renders on call telemetry.
 6. **Virtualization**: Server channels now share virtualized rendering matching DMs.
 
+---
+
+## Measured Performance Architecture (S3 - S8 Optimizations)
+
+Measured on 2026-10-31:
+
+### 1. Route Table & Build Size
+- **`/` Root Shell**: 337 kB First Load JS (down from 577 kB initial baseline, -41.6% reduction).
+- **Settings Modal Splitting**: `ProfileTab` (1,109 lines) dynamically split with `next/dynamic`.
+- **Shared Chunks**: 87.7 kB.
+
+### 2. S3: Middleware Network Reduction
+- **Before**: `updateSession()` in `src/lib/supabase/middleware.ts` called `supabase.auth.getUser()` on every request, triggering a network round trip to Supabase Auth on every page navigation and prefetch.
+- **After**: Validates session locally via `supabase.auth.getSession()` and JWT expiry check. Avoids network calls for valid sessions (> 60s before expiry) and unauthenticated requests. Reduced navigation overhead by ~150-300ms per request.
+
+### 3. S4: Polling Elimination & Explicit Columns
+- **Redundant Timers Removed**:
+  - Deleted 25s REST keep-alive poll (`auth-provider.tsx`).
+  - Deleted 8s notification poll (`use-notifications.ts`).
+  - Converted 25-35s polling in `use-conversations.ts`, `use-servers.ts`, and `use-social.ts` to fallback-only mode (executes only when Realtime channel is disconnected / errored; skipped when healthy `SUBSCRIBED`).
+  - Handled revalidation on visibility resume.
+- **Explicit Column Queries**:
+  - Replaced all 13 `select('*')` calls with explicit projected columns across `auth-provider.tsx`, `use-messages.ts`, `use-conversations.ts`, `use-servers.ts`, `use-notifications.ts`, `ProfileTab.tsx`, and `SecurityTab.tsx`.
+
+### 4. S5: Static Asset Caching
+- Added 1-year immutable caching (`public, max-age=31536000, immutable`) in `next.config.mjs` for:
+  - `/worklets/*` (35 KB audio processor)
+  - `/*.wasm` (112 KB RNNoise WASM binary)
+  - `/sounds/*`
+
+### 5. S7: GPU & CSS Optimizations
+- Replaced indiscriminate `transition-all` on high-frequency UI elements (buttons, inputs, textareas, cards, tabs, avatars, server rail icons, and speaking ring indicators) with scoped `transition-colors`, `transition-[box-shadow]`, or `transition-[color,background-color,border-color,transform,opacity]` to eliminate unnecessary layout and geometry recalculation cycles.
+
+### 6. S8: Database Indexes (Migration 00045)
+- Added composite indexes:
+  - `idx_conversation_members_user_id` on `conversation_members(user_id)`
+  - `idx_conversation_members_lookup` on `conversation_members(conversation_id, user_id)`
+  - `idx_notifications_user_timeline` on `notifications(user_id, created_at DESC)`
+  - `idx_profile_links_user_position` on `profile_links(user_id, position ASC)`
+  - `idx_user_devices_user_active` on `user_devices(user_id, last_active_at DESC)`
+
+

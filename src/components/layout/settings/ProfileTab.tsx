@@ -140,10 +140,21 @@ export function ProfileTab() {
       const supabase = getBrowserClient();
       const { data } = await supabase
         .from('profile_links')
-        .select('*')
+        .select('id, user_id, title, url, position, created_at')
         .eq('user_id', profile.id)
         .order('position', { ascending: true });
-      if (data) setLinks(data);
+      if (data) {
+        setLinks(
+          data.map((l: any) => ({
+            id: l.id,
+            user_id: l.user_id,
+            label: l.title || l.label || '',
+            url: l.url,
+            position: l.position,
+            created_at: l.created_at,
+          }))
+        );
+      }
     };
     loadLinks();
   }, [profile?.id]);

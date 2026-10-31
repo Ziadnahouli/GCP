@@ -61,7 +61,7 @@ describe('SettingsModal Rendering', () => {
     cleanup();
   });
 
-  it('renders both navigation sidebar and active tab content', () => {
+  it('renders both navigation sidebar and active tab content', async () => {
     const { container } = render(<SettingsModal open={true} onOpenChange={() => {}} />);
     
     // Check sidebar elements
@@ -70,9 +70,9 @@ describe('SettingsModal Rendering', () => {
     expect(screen.getByText('Themes & Accents')).toBeDefined();
 
     // Check content area elements for profile tab
-    expect(screen.getAllByText(/User Profile/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Live Preview/i)).toBeDefined();
-    expect(screen.getAllByText(/Username/i).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/User Profile/i)).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/Live Preview/i)).toBeDefined();
+    expect((await screen.findAllByText(/Username/i)).length).toBeGreaterThan(0);
   });
 
   const tabs = ['profile', 'appearance', 'studio', 'audio', 'shortcuts', 'notifs', 'security', 'diagnostics'] as const;
@@ -97,7 +97,7 @@ describe('SettingsModal Rendering', () => {
     });
   }
 
-  it('escapes narrow/transformed parent and teleports directly to document.body via portal', () => {
+  it('escapes narrow/transformed parent and teleports directly to document.body via portal', async () => {
     // Render inside a narrow simulated sidebar container with transform
     const { container } = render(
       <div style={{ width: '240px', transform: 'translateX(0px)', overflow: 'hidden' }}>
@@ -111,7 +111,7 @@ describe('SettingsModal Rendering', () => {
     // The dialog should be rendered directly under document.body
     const dialogInBody = document.body.querySelector('.max-w-5xl');
     expect(dialogInBody).not.toBeNull();
-    expect(screen.getAllByText(/User Profile/i).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/User Profile/i)).length).toBeGreaterThan(0);
   });
 
   it('renders nothing when open is false', () => {

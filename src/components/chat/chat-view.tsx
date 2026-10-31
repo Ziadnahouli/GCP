@@ -403,7 +403,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: 'end', behavior: 'smooth' });
               setIsScrolledUp(false);
             }}
-            className="absolute bottom-4 right-4 z-20 px-3 py-1.5 rounded-full bg-primary text-primary-foreground font-semibold text-xs shadow-dialog flex items-center gap-1.5 hover:brightness-110 transition-all duration-fast"
+            className="absolute bottom-4 right-4 z-20 px-3 py-1.5 rounded-full bg-primary text-primary-foreground font-semibold text-xs shadow-dialog flex items-center gap-1.5 hover:brightness-110 transition-colors duration-fast"
             aria-label="Jump to latest message"
           >
             <ArrowDown className="w-3.5 h-3.5" />

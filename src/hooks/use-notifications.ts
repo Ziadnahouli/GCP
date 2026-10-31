@@ -170,7 +170,7 @@ export function useNotifications() {
     try {
       const { data, error } = await supabase
         .from('notifications')
-        .select('*')
+        .select('id, user_id, type, title, body, metadata, is_read, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -178,7 +178,7 @@ export function useNotifications() {
       if (error) {
         console.warn('[Notifications] Fetch notice:', error.message);
       } else if (data) {
-        setNotifications(data as NotificationItem[]);
+        setNotifications(data as unknown as NotificationItem[]);
         data.forEach((n: any) => addBoundedSet(seenIdsRef.current, n.id, MAX_SEEN_NOTIFICATIONS));
       }
     } catch (err) {
@@ -196,14 +196,22 @@ export function useNotifications() {
     loadNotifications();
   }, [user?.id, loadNotifications]);
 
-  // Periodic background sync every 8 seconds
+  // Fallback sync on visibility resume (replaces redundant 8s polling interval)
   React.useEffect(() => {
     if (!user || !isConfigured) return;
-    const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      loadNotifications();
-    }, 8000);
-    return () => clearInterval(interval);
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadNotifications();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+    };
   }, [user, isConfigured, loadNotifications]);
 
   // Realtime subscription for incoming notifications

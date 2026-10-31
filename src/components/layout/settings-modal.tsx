@@ -23,8 +23,11 @@ import { triggerOpenLogsWindow } from '@/hooks/use-diagnostics-logs';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import dynamic from 'next/dynamic';
-import { ProfileTab } from './settings/ProfileTab';
 
+const ProfileTab = dynamic(() => import('./settings/ProfileTab').then((m) => m.ProfileTab), {
+  loading: () => <div className="p-8 text-xs text-muted-foreground animate-pulse">Loading Profile...</div>,
+  ssr: false,
+});
 const VoiceAudioTab = dynamic(() => import('./settings/VoiceAudioTab').then((m) => m.VoiceAudioTab), {
   loading: () => <div className="p-8 text-xs text-muted-foreground animate-pulse">Loading Voice & Audio...</div>,
   ssr: false,

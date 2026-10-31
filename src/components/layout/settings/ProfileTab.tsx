@@ -18,6 +18,7 @@ import { AboutMeFormatted } from '@/components/profile/AboutMeFormatted';
 import { ImageCropDialog } from '@/components/profile/ImageCropDialog';
 import { LinksEditor } from '@/components/profile/LinksEditor';
 import { ServerProfileEditor } from '@/components/profile/ServerProfileEditor';
+import { useServers } from '@/hooks/use-servers';
 import { ProcessedImageResult, getAccessibleTextColor } from '@/lib/images/profile-images';
 import {
   Upload,
@@ -67,6 +68,7 @@ const STATUS_EXPIRY_OPTIONS = [
 export function ProfileTab() {
   const { profile, settings, updateProfile, updateSettings } = useAuth();
   const { toast } = useToast();
+  const { servers } = useServers();
 
   const [activeSection, setActiveSection] = React.useState<'user' | 'server' | 'privacy'>('user');
 
@@ -731,7 +733,7 @@ export function ProfileTab() {
           )}
 
           {activeSection === 'server' && (
-            <ServerProfileEditor />
+            <ServerProfileEditor servers={servers} />
           )}
 
           {activeSection === 'privacy' && (
@@ -894,10 +896,16 @@ export function ProfileTab() {
           </div>
 
           {/* Render Preview Context */}
-          <div className={previewTheme === 'light' ? 'light' : ''}>
-            <div className="p-4 rounded-3xl bg-background border border-border shadow-xl flex justify-center">
+          <div className={previewTheme === 'light' ? 'light' : ''} data-theme={previewTheme}>
+            <div className={cn(
+              "p-4 rounded-3xl border shadow-xl flex justify-center transition-colors duration-200",
+              previewTheme === 'light' ? "bg-slate-100 border-slate-300 text-slate-900" : "bg-background border-border text-foreground"
+            )}>
               {previewMode === 'card' && (
-                <div className="w-full max-w-sm rounded-2xl bg-card border border-border overflow-hidden shadow-lg">
+                <div className={cn(
+                  "w-full max-w-sm rounded-2xl border overflow-hidden shadow-lg transition-colors duration-200",
+                  previewTheme === 'light' ? "bg-white border-slate-200 text-slate-900" : "bg-card border-border text-foreground"
+                )}>
                   {/* Banner */}
                   <ProfileBanner
                     bannerPath={previewIsRestricted ? null : bannerPath}
@@ -914,7 +922,10 @@ export function ProfileTab() {
                       showStatus
                       size={80}
                       avatarColor={avatarColor}
-                      className="border-4 border-card shadow-lg bg-card"
+                      className={cn(
+                        "border-4 shadow-lg",
+                        previewTheme === 'light' ? "border-white bg-white" : "border-card bg-card"
+                      )}
                     />
 
                     <div>
@@ -938,7 +949,10 @@ export function ProfileTab() {
               )}
 
               {previewMode === 'message' && (
-                <div className="w-full max-w-sm p-3 rounded-2xl bg-card border border-border flex gap-3 items-start">
+                <div className={cn(
+                  "w-full max-w-sm p-3 rounded-2xl border flex gap-3 items-start transition-colors duration-200",
+                  previewTheme === 'light' ? "bg-white border-slate-200 text-slate-900" : "bg-card border-border"
+                )}>
                   <Avatar
                     src={avatarPath || profile?.avatar_url}
                     name={displayName || 'User'}
@@ -950,7 +964,7 @@ export function ProfileTab() {
                       <UserName displayName={displayName || 'User'} size="sm" />
                       <span className="text-[10px] text-muted-foreground">Today at 12:45 PM</span>
                     </div>
-                    <p className="text-xs text-foreground/90 mt-1">
+                    <p className={cn("text-xs mt-1", previewTheme === 'light' ? "text-slate-800" : "text-foreground/90")}>
                       Ready for the upcoming tournament match! Let&apos;s party up.
                     </p>
                   </div>
@@ -958,7 +972,10 @@ export function ProfileTab() {
               )}
 
               {previewMode === 'member' && (
-                <div className="w-full max-w-sm p-2 rounded-2xl bg-card border border-border flex items-center justify-between">
+                <div className={cn(
+                  "w-full max-w-sm p-2 rounded-2xl border flex items-center justify-between transition-colors duration-200",
+                  previewTheme === 'light' ? "bg-white border-slate-200 text-slate-900" : "bg-card border-border"
+                )}>
                   <div className="flex items-center gap-2.5 min-w-0">
                     <Avatar
                       src={avatarPath || profile?.avatar_url}
@@ -1029,7 +1046,7 @@ export function ProfileTab() {
             const supabase = getBrowserClient();
             if (!profile?.id) return;
 
-            const bucket = cropType === 'avatar' ? 'avatars' : 'banners';
+            const bucket = 'avatars';
             const objectPath = `${profile.id}/${cropType}_${Date.now()}.webp`;
 
             const { error: uploadErr } = await supabase.storage

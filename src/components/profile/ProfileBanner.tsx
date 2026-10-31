@@ -25,7 +25,7 @@ export const ProfileBanner: React.FC<ProfileBannerProps> = ({
 
   const rawPath = bannerPath || bannerUrl;
   const resolvedUrl = React.useMemo(() => {
-    return resolveProfileImageUrl('banners', rawPath, {
+    return resolveProfileImageUrl('avatars', rawPath, {
       width: 900,
       height: 300,
       resize: 'cover',

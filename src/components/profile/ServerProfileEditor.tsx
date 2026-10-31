@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/auth-provider';
+import { useServers } from '@/hooks/use-servers';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
@@ -24,10 +25,52 @@ export const ServerProfileEditor: React.FC<ServerProfileEditorProps> = ({
 }) => {
   const { user, profile } = useAuth();
   const { toast } = useToast();
+  const { servers: hookServers } = useServers();
+  const [dbServers, setDbServers] = React.useState<Array<{ id: string; name: string }>>([]);
+
+  // Fallback: Query server_members directly if props & hook are empty
+  React.useEffect(() => {
+    if (servers.length === 0 && hookServers.length === 0 && user?.id) {
+      const fetchMyServers = async () => {
+        const supabase = getBrowserClient();
+        const { data } = await supabase
+          .from('server_members')
+          .select('server_id, servers(id, name)')
+          .eq('user_id', user.id);
+        if (data) {
+          const srvs = data
+            .filter((row: any) => row.servers)
+            .map((row: any) => ({
+              id: row.servers.id,
+              name: row.servers.name,
+            }));
+          setDbServers(srvs);
+        }
+      };
+      fetchMyServers();
+    }
+  }, [servers.length, hookServers.length, user?.id]);
+
+  const effectiveServers = React.useMemo(() => {
+    if (servers.length > 0) return servers;
+    if (hookServers.length > 0) return hookServers;
+    return dbServers;
+  }, [servers, hookServers, dbServers]);
 
   const [activeServerId, setActiveServerId] = React.useState<string>(
-    selectedServerId || (servers[0]?.id || '')
+    selectedServerId || (effectiveServers[0]?.id || '')
   );
+
+  React.useEffect(() => {
+    if (effectiveServers.length > 0) {
+      const exists = effectiveServers.some((s) => s.id === activeServerId);
+      if (!activeServerId || !exists) {
+        const nextId = effectiveServers[0].id;
+        setActiveServerId(nextId);
+        onServerSelect?.(nextId);
+      }
+    }
+  }, [effectiveServers, activeServerId, onServerSelect]);
   const [nickname, setNickname] = React.useState('');
   const [bio, setBio] = React.useState('');
   const [pronouns, setPronouns] = React.useState('');
@@ -101,7 +144,7 @@ export const ServerProfileEditor: React.FC<ServerProfileEditorProps> = ({
     }
   };
 
-  if (servers.length === 0) {
+  if (effectiveServers.length === 0) {
     return (
       <div className="p-8 text-center text-muted-foreground bg-muted/20 border border-border rounded-2xl">
         <Server className="w-8 h-8 mx-auto mb-2 text-muted-foreground/60" />
@@ -117,7 +160,7 @@ export const ServerProfileEditor: React.FC<ServerProfileEditorProps> = ({
       <div className="space-y-2">
         <label className="text-xs font-semibold text-foreground">Select Server</label>
         <div className="flex flex-wrap gap-2">
-          {servers.map((srv) => (
+          {effectiveServers.map((srv) => (
             <button
               key={srv.id}
               type="button"
@@ -291,7 +334,7 @@ export const ServerProfileEditor: React.FC<ServerProfileEditorProps> = ({
           type={cropType}
           onCropComplete={async (result) => {
             const supabase = getBrowserClient();
-            const bucket = cropType === 'avatar' ? 'avatars' : 'banners';
+            const bucket = 'avatars';
             const objectPath = `${user?.id}/${cropType}_server_${activeServerId}_${Date.now()}.webp`;
 
             const { error: uploadErr } = await supabase.storage

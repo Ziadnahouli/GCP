@@ -33,6 +33,7 @@ export const ImageCropDialog: React.FC<ImageCropDialogProps> = ({
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const imgRef = React.useRef<HTMLImageElement | null>(null);
+  const maskRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     if (initialFile) {
@@ -98,11 +99,36 @@ export const ImageCropDialog: React.FC<ImageCropDialogProps> = ({
 
     try {
       const isAvatar = type === 'avatar';
+      const img = imgRef.current;
+      const mask = maskRef.current;
+
+      let cropRect: { x: number; y: number; width: number; height: number } | undefined = undefined;
+
+      if (img && mask) {
+        const imgBounds = img.getBoundingClientRect();
+        const maskBounds = mask.getBoundingClientRect();
+
+        if (imgBounds.width > 0 && imgBounds.height > 0) {
+          const scaleX = img.naturalWidth / imgBounds.width;
+          const scaleY = img.naturalHeight / imgBounds.height;
+
+          const x = Math.max(0, (maskBounds.left - imgBounds.left) * scaleX);
+          const y = Math.max(0, (maskBounds.top - imgBounds.top) * scaleY);
+          const width = Math.min(img.naturalWidth - x, maskBounds.width * scaleX);
+          const height = Math.min(img.naturalHeight - y, maskBounds.height * scaleY);
+
+          if (width > 0 && height > 0) {
+            cropRect = { x, y, width, height };
+          }
+        }
+      }
+
       const result = await processImageToWebp(file, {
         maxWidth: isAvatar ? 512 : 1200,
         maxHeight: isAvatar ? 512 : 400,
         aspectRatio: isAvatar ? 1 : 3,
         maxSizeBytes: isAvatar ? 2 * 1024 * 1024 : 3 * 1024 * 1024,
+        cropRect,
       });
 
       onCropComplete(result);
@@ -181,9 +207,15 @@ export const ImageCropDialog: React.FC<ImageCropDialogProps> = ({
                 {/* Mask Overlay */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                   {type === 'avatar' ? (
-                    <div className="w-44 h-44 rounded-full border-2 border-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]" />
+                    <div
+                      ref={maskRef}
+                      className="w-44 h-44 rounded-full border-2 border-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]"
+                    />
                   ) : (
-                    <div className="w-full h-32 border-2 border-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]" />
+                    <div
+                      ref={maskRef}
+                      className="w-[90%] max-w-[420px] h-28 border-2 border-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]"
+                    />
                   )}
                 </div>
               </div>

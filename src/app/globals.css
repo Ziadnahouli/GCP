@@ -55,6 +55,32 @@
     color-scheme: light;
   }
 
+  .light, [data-theme="light"] {
+    /* SCOPED LIGHT MODE OVERRIDE */
+    --background: 0 0% 100%;
+    --surface-sidebar: 220 20% 98%;
+    --surface-rail: 225 18% 95%;
+    --surface-hover: 224 19% 93%;
+    --surface-active: 224 19% 90%;
+    --surface-default: 0 0% 100%;
+    --surface-header: 220 20% 98%;
+    --surface-panel: 0 0% 100%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 10% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 10% 12%;
+
+    --border: 222 16% 90%;
+    --border-strong: 223 13% 84%;
+    --foreground: 220 10% 12%;
+    --muted: 224 19% 93%;
+    --muted-foreground: 220 8% 39%;
+    --accent: 224 19% 93%;
+    --accent-foreground: 220 10% 12%;
+    color-scheme: light;
+  }
+
   .dark {
     /* DARK MODE */
     --background: 220 10% 6%;

@@ -342,7 +342,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
         )}
 
         {/* Custom Profile Links */}
-        {data.links && data.links.length > 0 && (
+        {!isPrivate && !data.is_blocked && data.links && data.links.length > 0 && (
           <div className="space-y-1.5">
             <h5 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground select-none">
               Links

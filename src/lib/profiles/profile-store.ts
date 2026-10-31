@@ -277,13 +277,21 @@ export async function fetchProfileCard(
       granted_at: b.granted_at,
     }));
 
-  const links: ProfileLinkItem[] = (linksRes.data || []).map((l: any) => ({
-    id: l.id,
-    user_id: l.user_id,
-    label: l.label,
-    url: l.url,
-    position: l.position,
-  }));
+  // Privacy & block guard for links: if the viewer is blocked or profile details are restricted, hide links
+  const isDetailsRestricted = !rawRow.is_self && (
+    rawRow.is_blocked ||
+    (rawRow.bio === null && rawRow.effective_bio === null && rawRow.pronouns === null)
+  );
+
+  const links: ProfileLinkItem[] = isDetailsRestricted
+    ? []
+    : (linksRes.data || []).map((l: any) => ({
+        id: l.id,
+        user_id: l.user_id,
+        label: l.label,
+        url: l.url,
+        position: l.position,
+      }));
 
   const cardData: ProfileCardData = {
     ...rawRow,

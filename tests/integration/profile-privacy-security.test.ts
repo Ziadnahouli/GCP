@@ -236,6 +236,37 @@ describe('Profile Customization: Privacy (P3) and Validation (P4) Behavioral Gat
       `);
       expect(eveView.rows[0]?.bio ?? null).toBeNull();
     });
+
+    it('restricts blocked users and strangers from querying public.profile_links when profile_visibility = friends', async () => {
+      // Alice adds a custom link
+      await asUser(ALICE_ID);
+      await db.query(`
+        INSERT INTO public.profile_links (user_id, label, url, position)
+        VALUES ('${ALICE_ID}', 'GitHub', 'https://github.com/alice', 0)
+      `);
+
+      // Bob is a friend -> can view Alice's link
+      await asUser(BOB_ID);
+      const bobLinks = await db.query<{ label: string }>(`
+        SELECT label FROM public.profile_links WHERE user_id = '${ALICE_ID}'
+      `);
+      expect(bobLinks.rows.length).toBe(1);
+      expect(bobLinks.rows[0]?.label).toBe('GitHub');
+
+      // David is a stranger -> Alice's visibility is 'friends', so David CANNOT view link
+      await asUser(DAVID_ID);
+      const davidLinks = await db.query(`
+        SELECT label FROM public.profile_links WHERE user_id = '${ALICE_ID}'
+      `);
+      expect(davidLinks.rows.length).toBe(0);
+
+      // Eve is blocked by Alice -> Eve CANNOT view link
+      await asUser(EVE_ID);
+      const eveLinks = await db.query(`
+        SELECT label FROM public.profile_links WHERE user_id = '${ALICE_ID}'
+      `);
+      expect(eveLinks.rows.length).toBe(0);
+    });
   });
 
   describe('P4: Database Integrity & Validation Gate', () => {

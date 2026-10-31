@@ -45,17 +45,31 @@ export function resolveProfileImageUrl(
     return pathOrUrl;
   }
 
-  // Extract relative storage object path
   let objectPath = pathOrUrl;
-  if (pathOrUrl.includes(`/storage/v1/object/public/${bucket}/`)) {
-    objectPath = pathOrUrl.split(`/storage/v1/object/public/${bucket}/`)[1];
-  } else if (pathOrUrl.includes(`/storage/v1/render/image/public/${bucket}/`)) {
-    objectPath = pathOrUrl.split(`/storage/v1/render/image/public/${bucket}/`)[1]?.split('?')[0];
+  let targetBucket = bucket || 'avatars';
+
+  if (pathOrUrl.includes('/storage/v1/object/public/')) {
+    const segment = pathOrUrl.split('/storage/v1/object/public/')[1];
+    const slashIdx = segment?.indexOf('/');
+    if (slashIdx !== -1 && slashIdx !== undefined) {
+      targetBucket = segment.substring(0, slashIdx) as any;
+      objectPath = segment.substring(slashIdx + 1);
+    }
+  } else if (pathOrUrl.includes('/storage/v1/render/image/public/')) {
+    const segment = pathOrUrl.split('/storage/v1/render/image/public/')[1]?.split('?')[0];
+    const slashIdx = segment?.indexOf('/');
+    if (slashIdx !== -1 && slashIdx !== undefined) {
+      targetBucket = segment.substring(0, slashIdx) as any;
+      objectPath = segment.substring(slashIdx + 1);
+    }
   } else if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
     // Arbitrary external URL - reject for privacy safety if not our storage
     if (!SUPABASE_URL || !pathOrUrl.startsWith(SUPABASE_URL)) {
       return null;
     }
+  } else {
+    // Relative path like "<userId>/banner_123.webp" - stored in the 'avatars' bucket
+    targetBucket = 'avatars';
   }
 
   const baseUrl = SUPABASE_URL || '';
@@ -67,10 +81,10 @@ export function resolveProfileImageUrl(
     params.set('resize', transforms.resize || 'cover');
     params.set('format', transforms.format || 'webp');
     if (transforms.quality) params.set('quality', String(transforms.quality));
-    return `${baseUrl}/storage/v1/render/image/public/${bucket}/${objectPath}?${params.toString()}`;
+    return `${baseUrl}/storage/v1/render/image/public/${targetBucket}/${objectPath}?${params.toString()}`;
   }
 
-  return `${baseUrl}/storage/v1/object/public/${bucket}/${objectPath}`;
+  return `${baseUrl}/storage/v1/object/public/${targetBucket}/${objectPath}`;
 }
 
 export interface ProcessedImageResult {
@@ -92,6 +106,7 @@ export async function processImageToWebp(
     aspectRatio?: number;
     maxSizeBytes: number;
     quality?: number;
+    cropRect?: { x: number; y: number; width: number; height: number };
   }
 ): Promise<ProcessedImageResult> {
   return new Promise((resolve, reject) => {
@@ -106,8 +121,14 @@ export async function processImageToWebp(
       let srcWidth = img.naturalWidth;
       let srcHeight = img.naturalHeight;
 
-      // Crop to target aspect ratio if specified (centered)
-      if (options.aspectRatio) {
+      // Use explicit crop rectangle if provided from crop dialog
+      if (options.cropRect && options.cropRect.width > 0 && options.cropRect.height > 0) {
+        srcX = Math.max(0, options.cropRect.x);
+        srcY = Math.max(0, options.cropRect.y);
+        srcWidth = Math.min(img.naturalWidth - srcX, options.cropRect.width);
+        srcHeight = Math.min(img.naturalHeight - srcY, options.cropRect.height);
+      } else if (options.aspectRatio) {
+        // Fallback: Crop to target aspect ratio centered
         const currentRatio = srcWidth / srcHeight;
         if (currentRatio > options.aspectRatio) {
           // Image is wider than desired ratio

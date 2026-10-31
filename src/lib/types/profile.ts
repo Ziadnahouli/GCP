@@ -1,4 +1,4 @@
-export type UserStatus = 'online' | 'idle' | 'dnd' | 'offline';
+export type UserStatus = 'online' | 'idle' | 'dnd' | 'offline' | 'unknown';
 
 export type AccentTheme = 'violet' | 'cyan' | 'emerald' | 'crimson' | 'amber';
 

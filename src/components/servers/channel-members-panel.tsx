@@ -27,6 +27,7 @@ import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { usePresence, useUserPresence } from '@/features/presence/presence-context';
 import { useAuth } from '@/features/auth/auth-provider';
+import { UserStatus } from '@/lib/types/profile';
 
 export interface ChannelMemberItem {
   id: string;
@@ -35,7 +36,7 @@ export interface ChannelMemberItem {
   avatar_url?: string | null;
   role: string;
   role_id?: string | null;
-  status: 'online' | 'idle' | 'dnd' | 'offline';
+  status: UserStatus;
   game_activity?: string | null;
 }
 
@@ -77,7 +78,7 @@ function ChannelMemberRow({
   onBlockUser,
 }: ChannelMemberRowProps) {
   const { toast } = useToast();
-  const liveStatus = useUserPresence(member.id, member.status);
+  const liveStatus = useUserPresence(member.id);
   const isMe = member.id === currentUserId;
   const memberRecord = (server.members || []).find((sm) => sm.user_id === member.id);
   const effectiveName = memberRecord?.nickname || member.display_name;
@@ -319,10 +320,10 @@ export function ChannelMembersPanel({
 
     members.forEach((m) => {
       const isMe = m.id === currentUserId;
-      const liveStatus = isMe ? (profile?.status || 'online') : getUserStatus(m.id, m.status);
+      const liveStatus = isMe ? (profile?.status || 'online') : getUserStatus(m.id);
       const isOwner = m.id === server.owner_id || m.role === 'owner';
       const isAdmin = m.role === 'admin';
-      const isOnline = liveStatus !== 'offline';
+      const isOnline = liveStatus !== 'offline' && liveStatus !== 'unknown';
 
       const enriched = { ...m, status: liveStatus };
 

@@ -144,7 +144,8 @@ export const Avatar: React.FC<AvatarProps> = ({
             status === 'online' && 'bg-status-online',
             status === 'idle' && 'bg-status-idle',
             status === 'dnd' && 'bg-status-dnd',
-            status === 'offline' && 'bg-background border border-status-offline'
+            status === 'offline' && 'bg-background border border-status-offline',
+            status === 'unknown' && 'bg-muted/40 border border-muted-foreground/30'
           )}
           title={`Status: ${status}`}
           aria-label={`Status: ${status}`}

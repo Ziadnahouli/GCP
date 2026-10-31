@@ -21,12 +21,25 @@ class PresenceStore {
 
   getStatus(userId: string | null | undefined): UserStatus {
     if (!userId) return 'offline';
-    return this.statusMap.get(userId) || 'offline';
+    if (this.statusMap.has(userId)) {
+      return this.statusMap.get(userId)!;
+    }
+    if (!this.hasSynced) {
+      return 'unknown';
+    }
+    return 'offline';
   }
 
   hasUser(userId: string | null | undefined): boolean {
     if (!userId) return false;
     return this.statusMap.has(userId);
+  }
+
+  clear() {
+    this.statusMap.clear();
+    this.hasSynced = false;
+    this.userListeners.forEach((subs) => subs.forEach((cb) => cb()));
+    this.listeners.forEach((cb) => cb());
   }
 
   setStatus(userId: string, status: UserStatus) {
@@ -146,7 +159,9 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
   // 1. Core Realtime Presence Channel (lifecycle tied strictly to user?.id, never torn down on status changes)
   React.useEffect(() => {
     if (!user?.id || !isConfigured) {
+      globalPresenceStore.clear();
       setOnlineUsers(new Map());
+      setHasSynced(false);
       pingsRef.current.clear();
       pingsStatusRef.current.clear();
       return;
@@ -366,11 +381,6 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
     const handleBeforeUnload = () => {
       try {
-        channel.send({
-          type: 'broadcast',
-          event: 'presence_leave',
-          payload: { userId },
-        }).catch(() => {});
         channel.untrack();
       } catch {}
     };
@@ -390,14 +400,10 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         window.removeEventListener('beforeunload', handleBeforeUnload);
       }
       try {
-        channel.send({
-          type: 'broadcast',
-          event: 'presence_leave',
-          payload: { userId },
-        }).catch(() => {});
         channel.untrack();
       } catch {}
       channelRef.current = null;
+      globalPresenceStore.clear();
       // C1: Release channel with grace period
       realtimeHub.release('nexus-global-presence', 1500);
     };
@@ -430,19 +436,84 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [profile?.status, user?.id]);
 
+  // 3. Auto-idle after 5 minutes without activity or when tab is hidden (Section 2.2 #5)
+  React.useEffect(() => {
+    if (!user?.id || !isConfigured) return;
+
+    // Respect explicit DND or offline preference
+    const preferredStatus = profile?.status || 'online';
+    if (preferredStatus === 'dnd' || preferredStatus === 'offline') {
+      return;
+    }
+
+    let isAutoIdled = false;
+    let lastActivityTime = Date.now();
+    const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+    const sendStatus = (status: UserStatus) => {
+      const channel = channelRef.current;
+      if (!channel || !user?.id) return;
+      profileStatusRef.current = status;
+      if (status === 'offline') {
+        channel.untrack().catch(() => {});
+      } else {
+        channel.track({
+          user_id: user.id,
+          status,
+          online_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
+      channel.send({
+        type: 'broadcast',
+        event: 'presence_status_change',
+        payload: { userId: user.id, status },
+      }).catch(() => {});
+    };
+
+    const checkIdle = () => {
+      const now = Date.now();
+      const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      const timeSinceActivity = now - lastActivityTime;
+
+      if ((timeSinceActivity >= IDLE_TIMEOUT_MS || isHidden) && !isAutoIdled) {
+        isAutoIdled = true;
+        sendStatus('idle');
+      }
+    };
+
+    const idleInterval = setInterval(checkIdle, 15000);
+
+    let lastThrottledWakeup = 0;
+    const handleActivity = () => {
+      lastActivityTime = Date.now();
+      if (isAutoIdled) {
+        const now = Date.now();
+        if (now - lastThrottledWakeup > 5000) {
+          lastThrottledWakeup = now;
+          isAutoIdled = false;
+          sendStatus('online');
+        }
+      }
+    };
+
+    const events = ['mousemove', 'keydown', 'pointerdown', 'touchstart', 'focus'];
+    events.forEach((evt) => window.addEventListener(evt, handleActivity, { passive: true }));
+    document.addEventListener('visibilitychange', checkIdle);
+
+    return () => {
+      clearInterval(idleInterval);
+      events.forEach((evt) => window.removeEventListener(evt, handleActivity));
+      document.removeEventListener('visibilitychange', checkIdle);
+    };
+  }, [user?.id, isConfigured, profile?.status]);
+
   const getUserStatus = React.useCallback(
-    (userId: string | null | undefined, fallbackStatus?: UserStatus): UserStatus => {
+    (userId: string | null | undefined): UserStatus => {
       if (!userId) return 'offline';
       if (user && userId === user.id) {
         return profile?.status || 'online';
       }
-      if (globalPresenceStore.hasUser(userId)) {
-        return globalPresenceStore.getStatus(userId);
-      }
-      if (fallbackStatus) {
-        return fallbackStatus;
-      }
-      return 'offline';
+      return globalPresenceStore.getStatus(userId);
     },
     [user, profile?.status]
   );
@@ -469,7 +540,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useUserPresence(userId: string | null | undefined, fallbackStatus?: UserStatus): UserStatus {
+export function useUserPresence(userId: string | null | undefined): UserStatus {
   const { user, profile } = useAuth();
   const isMe = Boolean(user && userId === user.id);
 
@@ -481,19 +552,13 @@ export function useUserPresence(userId: string | null | undefined, fallbackStatu
     [userId, isMe]
   );
 
-  const getSnapshot = React.useCallback(() => {
+  const getSnapshot = React.useCallback((): UserStatus => {
     if (isMe) return profile?.status || 'online';
     if (!userId) return 'offline';
-    if (globalPresenceStore.hasUser(userId)) {
-      return globalPresenceStore.getStatus(userId);
-    }
-    if (fallbackStatus) {
-      return fallbackStatus;
-    }
-    return 'offline';
-  }, [userId, isMe, profile?.status, fallbackStatus]);
+    return globalPresenceStore.getStatus(userId);
+  }, [userId, isMe, profile?.status]);
 
-  return React.useSyncExternalStore(subscribe, getSnapshot, () => 'offline');
+  return React.useSyncExternalStore(subscribe, getSnapshot, () => 'unknown');
 }
 
 export function usePresence(): PresenceContextType;

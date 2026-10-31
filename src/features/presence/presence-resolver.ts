@@ -1,62 +1,48 @@
-export type UserStatus = 'online' | 'idle' | 'dnd' | 'offline';
-
-const STATUS_PRIORITY: Record<UserStatus, number> = {
-  dnd: 4,
-  online: 3,
-  idle: 2,
-  offline: 1,
-};
+export type UserStatus = 'online' | 'idle' | 'dnd' | 'offline' | 'unknown';
 
 export interface PresenceEntry {
   status: UserStatus;
   timestamp?: number;
+  device?: string;
 }
 
 /**
- * Resolves multiple presence entries for the same user (e.g. multiple tabs,
- * desktop + mobile, or rapid reconnects) into a stable, single status.
+ * Resolves multiple presence entries for the same user across sessions/devices.
  *
- * Conflict resolution priority:
- * 1. Active sessions override offline.
- * 2. Recent deliberate status changes (newer timestamp by > 500ms) win over stale sessions.
- * 3. Ties or concurrent sessions (within 500ms) are broken by status priority (dnd > online > idle).
- * 4. If all sessions are offline (or list is empty), status resolves to 'offline'.
+ * Deterministic resolution rules (Section 2.2):
+ * 1. An explicit 'dnd' (Do Not Disturb) preference wins across all sessions.
+ * 2. 'online' beats 'idle' across sessions (an active phone or active tab keeps the user online).
+ * 3. Resolves to 'idle' only when all active sessions are idle.
+ * 4. Resolves to 'offline' if there are no active sessions (or all are offline/empty).
  */
 export function resolveMultiSourcePresence(entries: PresenceEntry[]): UserStatus {
   if (!entries || entries.length === 0) {
     return 'offline';
   }
 
-  // Filter out invalid/empty statuses
-  const validEntries = entries.filter((e) => e && e.status);
-  if (validEntries.length === 0) {
-    return 'offline';
-  }
+  // Filter out invalid/empty/unknown statuses and offline entries
+  const activeEntries = entries.filter(
+    (e) => e && e.status && e.status !== 'offline' && e.status !== 'unknown'
+  );
 
-  // Check if all are offline
-  const activeEntries = validEntries.filter((e) => e.status !== 'offline');
   if (activeEntries.length === 0) {
     return 'offline';
   }
 
-  // If only one active entry exists, return it
-  if (activeEntries.length === 1) {
-    return activeEntries[0].status;
+  // 1. Explicit DND preference wins over everything
+  if (activeEntries.some((e) => e.status === 'dnd')) {
+    return 'dnd';
   }
 
-  // Sort by timestamp descending if there is a distinct time difference (> 500ms)
-  // otherwise fallback to status priority (dnd > online > idle)
-  activeEntries.sort((a, b) => {
-    const timeA = a.timestamp || 0;
-    const timeB = b.timestamp || 0;
-    const timeDiff = timeB - timeA;
-    if (Math.abs(timeDiff) > 500) {
-      return timeDiff;
-    }
-    const priorityDiff = (STATUS_PRIORITY[b.status] || 0) - (STATUS_PRIORITY[a.status] || 0);
-    if (priorityDiff !== 0) return priorityDiff;
-    return timeDiff;
-  });
+  // 2. Online beats idle across sessions
+  if (activeEntries.some((e) => e.status === 'online')) {
+    return 'online';
+  }
 
-  return activeEntries[0].status;
+  // 3. If all active sessions are idle
+  if (activeEntries.every((e) => e.status === 'idle')) {
+    return 'idle';
+  }
+
+  return 'offline';
 }

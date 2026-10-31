@@ -103,22 +103,16 @@ class PresenceStore {
       }
 
       if (!populated) {
-        // Fallback: Query profiles table directly
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id, status')
-          .in('id', ids.slice(0, 100));
-
-        if (Array.isArray(profs)) {
-          profs.forEach((row: any) => {
-            const st = (row.status as UserStatus) || 'offline';
-            this.statusMap.set(row.id, st);
-            this.cacheExpiry.set(row.id, now + 25000);
-            this.pendingFetches.delete(row.id);
-            const subs = this.userListeners.get(row.id);
-            if (subs) subs.forEach((cb) => cb());
-          });
-        }
+        // If RPC presence is not available, presence is purely driven by Realtime presenceState
+        // DO NOT read profiles.status because that table column defaults to 'online' and is never reset on disconnect!
+        ids.forEach((id) => {
+          const liveSt = this.statusMap.get(id);
+          if (!liveSt) {
+            this.statusMap.set(id, 'offline');
+          }
+          const subs = this.userListeners.get(id);
+          if (subs) subs.forEach((cb) => cb());
+        });
       }
 
       ids.forEach((id) => {
@@ -139,11 +133,7 @@ class PresenceStore {
     if (!userId) return;
     const current = this.statusMap.get(userId);
     if (current === status) return;
-    if (status === 'offline') {
-      this.statusMap.delete(userId);
-    } else {
-      this.statusMap.set(userId, status);
-    }
+    this.statusMap.set(userId, status);
     const userSubs = this.userListeners.get(userId);
     if (userSubs) {
       userSubs.forEach((cb) => cb());
@@ -207,6 +197,12 @@ class PresenceStore {
 
     if (changedUserIds.size === 0) return;
 
+    // Users absent from newMap are marked offline
+    this.statusMap.forEach((_, uid) => {
+      if (!newMap.has(uid)) {
+        newMap.set(uid, 'offline');
+      }
+    });
     this.statusMap = newMap;
 
     changedUserIds.forEach((uid) => {
@@ -288,6 +284,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           presences.forEach((p: any) => {
             const uid = p?.user_id || key;
             const st = (p?.status as UserStatus) || 'online';
+            if (st === 'offline' || (st as string) === 'invisible') return;
             if (!userPresences.has(uid)) {
               userPresences.set(uid, []);
             }
@@ -349,9 +346,11 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         performUpdate();
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }: any) => {
+        const uidsToLeave = new Set<string>();
         if (key) {
           pingsRef.current.delete(key);
           pingsStatusRef.current.delete(key);
+          uidsToLeave.add(key);
         }
         if (Array.isArray(leftPresences)) {
           leftPresences.forEach((lp: any) => {
@@ -359,9 +358,13 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
             if (uid) {
               pingsRef.current.delete(uid);
               pingsStatusRef.current.delete(uid);
+              uidsToLeave.add(uid);
             }
           });
         }
+        uidsToLeave.forEach((uid) => {
+          globalPresenceStore.setStatus(uid, 'offline');
+        });
         performUpdate();
       })
       .on('broadcast', { event: 'presence_ping' }, ({ payload }) => {
@@ -475,6 +478,15 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     const handleBeforeUnload = () => {
       try {
         channel.untrack();
+        if (typeof (channel as any).httpSend === 'function') {
+          (channel as any).httpSend('presence_leave', { userId });
+        } else {
+          channel.send({
+            type: 'broadcast',
+            event: 'presence_leave',
+            payload: { userId },
+          }).catch(() => {});
+        }
       } catch {}
     };
 

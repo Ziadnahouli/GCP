@@ -2492,7 +2492,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (row.status !== 'ringing' || row.caller_id === user.id) return;
-          if (callStatusRef.current !== 'idle' || activeConversationIdRef.current) return;
+          if (callStatusRef.current !== 'idle') return;
 
           // Check if current user is a member of this conversation and fetch details in parallel
           try {

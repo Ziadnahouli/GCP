@@ -60,28 +60,22 @@ export function dispatchSignalToUser(
     return;
   }
 
-  // If channel is joining or not yet created, queue signal for delivery on join
+  // Send immediately via httpSend (REST) so signal arrives without waiting for WebSocket handshake
+  const ch = channelToUse || realtimeHub.acquire(`user-signals-${targetUserId}`, { config: { private: true } }, supabase);
+  if (!channelToUse) {
+    outboundChannels.set(targetUserId, ch);
+  }
+
+  if (typeof (ch as any).httpSend === 'function') {
+    (ch as any).httpSend(event, payload).catch(() => {});
+  } else {
+    ch.send({ type: 'broadcast', event, payload }).catch(() => {});
+  }
+
+  // Also queue for delivery over WebSocket once subscribed
   queue.push({ event, payload });
 
-  if (!channelToUse) {
-    const ch = realtimeHub.acquire(`user-signals-${targetUserId}`, { config: { private: true } }, supabase);
-    outboundChannels.set(targetUserId, ch);
-
-    if (ch.state === 'joined') {
-      const pending = outboundQueue.get(targetUserId) || [];
-      while (pending.length > 0) {
-        const msg = pending.shift();
-        if (msg) {
-          ch.send({
-            type: 'broadcast',
-            event: msg.event,
-            payload: msg.payload,
-          }).catch(() => {});
-        }
-      }
-      return;
-    }
-
+  if (ch.state !== 'joined' && ch.state !== 'joining') {
     ch.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         const pending = outboundQueue.get(targetUserId) || [];
@@ -116,19 +110,11 @@ export function dispatchDirectSignal(
       ch.send({ type: 'broadcast', event, payload }).catch(() => {});
       return;
     }
-    ch.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        ch.send({ type: 'broadcast', event, payload })
-          .catch(() => {})
-          .finally(() => {
-            setTimeout(() => {
-              try {
-                supabase.removeChannel(ch);
-              } catch {}
-            }, 1500);
-          });
-      }
-    });
+    if (typeof (ch as any).httpSend === 'function') {
+      (ch as any).httpSend(event, payload).catch(() => {});
+      return;
+    }
+    ch.send({ type: 'broadcast', event, payload }).catch(() => {});
   } catch (err) {
     console.warn('[CallSignaling] Error in sendDirectSignal:', err);
   }

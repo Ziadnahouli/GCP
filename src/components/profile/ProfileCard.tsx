@@ -168,7 +168,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
     );
   }
 
-  const effectiveStatus = livePresence !== 'offline' ? livePresence : data.status;
+  const effectiveStatus = livePresence || 'offline';
   const effectiveAvatar = data.effective_avatar_path || data.avatar_path || data.avatar_url;
   const isPrivate = !data.is_self && !data.effective_bio && !data.effective_banner_path && !data.banner_color;
 

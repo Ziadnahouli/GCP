@@ -77,9 +77,8 @@ function ChannelMemberRow({
   onBlockUser,
 }: ChannelMemberRowProps) {
   const { toast } = useToast();
-  const livePresence = useUserPresence(member.id);
+  const liveStatus = useUserPresence(member.id, member.status);
   const isMe = member.id === currentUserId;
-  const liveStatus = isMe ? livePresence : (livePresence !== 'offline' ? livePresence : (member.status || 'offline'));
   const memberRecord = (server.members || []).find((sm) => sm.user_id === member.id);
   const effectiveName = memberRecord?.nickname || member.display_name;
   const effectiveAvatar = memberRecord?.avatar_path || member.avatar_url || null;
@@ -296,7 +295,7 @@ export function ChannelMembersPanel({
   onBlockUser,
 }: ChannelMembersPanelProps) {
   const { profile } = useAuth();
-  const { getUserStatus, onlineUsers } = usePresence();
+  const { getUserStatus, onlineUsers, hasSynced } = usePresence();
 
   const currentMember = React.useMemo(() => {
     return (server.members || []).find((sm) => sm.user_id === currentUserId) || null;
@@ -310,8 +309,9 @@ export function ChannelMembersPanel({
 
   // Group members into: Owner, Admins, Online, Offline (reacts to realtime presence)
   const groupedMembers = React.useMemo(() => {
-    // Reference onlineUsers so grouping re-evaluates reactively when presence map changes
+    // Reference onlineUsers and hasSynced so grouping re-evaluates reactively when presence map changes
     void onlineUsers;
+    void hasSynced;
     const ownerList: ChannelMemberItem[] = [];
     const adminList: ChannelMemberItem[] = [];
     const onlineList: ChannelMemberItem[] = [];
@@ -319,20 +319,21 @@ export function ChannelMembersPanel({
 
     members.forEach((m) => {
       const isMe = m.id === currentUserId;
-      const livePresence = getUserStatus(m.id);
-      const liveStatus = isMe ? (profile?.status || 'online') : (livePresence !== 'offline' ? livePresence : (m.status || 'offline'));
+      const liveStatus = isMe ? (profile?.status || 'online') : getUserStatus(m.id, m.status);
       const isOwner = m.id === server.owner_id || m.role === 'owner';
       const isAdmin = m.role === 'admin';
       const isOnline = liveStatus !== 'offline';
 
+      const enriched = { ...m, status: liveStatus };
+
       if (isOwner) {
-        ownerList.push(m);
+        ownerList.push(enriched);
       } else if (isAdmin) {
-        adminList.push(m);
+        adminList.push(enriched);
       } else if (isOnline) {
-        onlineList.push(m);
+        onlineList.push(enriched);
       } else {
-        offlineList.push(m);
+        offlineList.push(enriched);
       }
     });
 
@@ -342,7 +343,7 @@ export function ChannelMembersPanel({
       { title: `Online — ${onlineList.length}`, items: onlineList, icon: null },
       { title: `Offline — ${offlineList.length}`, items: offlineList, icon: null },
     ].filter((g) => g.items.length > 0);
-  }, [members, server.owner_id, currentUserId, profile?.status, getUserStatus, onlineUsers]);
+  }, [members, server.owner_id, currentUserId, profile?.status, getUserStatus, onlineUsers, hasSynced]);
 
   return (
     <aside className="w-60 border-l border-border bg-surface-sidebar hidden lg:flex flex-col p-3 shrink-0 overflow-y-auto select-none">

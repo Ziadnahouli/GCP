@@ -17,6 +17,7 @@ class PresenceStore {
   private statusMap: Map<string, UserStatus> = new Map();
   private listeners: Set<PresenceListener> = new Set();
   private userListeners: Map<string, Set<() => void>> = new Map();
+  private hasSynced: boolean = false;
 
   getStatus(userId: string | null | undefined): UserStatus {
     if (!userId) return 'offline';
@@ -26,6 +27,17 @@ class PresenceStore {
   isOnline(userId: string | null | undefined): boolean {
     const s = this.getStatus(userId);
     return s === 'online' || s === 'idle' || s === 'dnd';
+  }
+
+  isSynced(): boolean {
+    return this.hasSynced;
+  }
+
+  setHasSynced(synced: boolean) {
+    if (this.hasSynced !== synced) {
+      this.hasSynced = synced;
+      this.listeners.forEach((cb) => cb());
+    }
   }
 
   getSnapshot = (): Map<string, UserStatus> => {
@@ -84,20 +96,23 @@ export const globalPresenceStore = new PresenceStore();
 
 interface PresenceContextType {
   onlineUsers: Map<string, UserStatus>;
-  getUserStatus: (userId: string | null | undefined) => UserStatus;
+  getUserStatus: (userId: string | null | undefined, fallbackStatus?: UserStatus) => UserStatus;
   isUserOnline: (userId: string | null | undefined) => boolean;
+  hasSynced: boolean;
 }
 
 const PresenceContext = React.createContext<PresenceContextType>({
   onlineUsers: new Map(),
   getUserStatus: () => 'offline',
   isUserOnline: () => false,
+  hasSynced: false,
 });
 
 export function PresenceProvider({ children }: { children: React.ReactNode }) {
   const { user, profile, isConfigured } = useAuth();
   const supabase = React.useMemo(() => getBrowserClient(), []);
   const [onlineUsers, setOnlineUsers] = React.useState<Map<string, UserStatus>>(new Map());
+  const [hasSynced, setHasSynced] = React.useState<boolean>(false);
 
   const channelRef = React.useRef<RealtimeChannel | null>(null);
   const profileStatusRef = React.useRef<UserStatus>('online');
@@ -179,6 +194,8 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
       });
 
       globalPresenceStore.setEntireMap(currentMap);
+      globalPresenceStore.setHasSynced(true);
+      setHasSynced(true);
       setOnlineUsers(currentMap);
     };
 
@@ -189,7 +206,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     };
 
     channel
-      .on('presence', { event: 'sync' }, updatePresenceState)
+      .on('presence', { event: 'sync' }, performUpdate)
       .on('presence', { event: 'join' }, ({ key, newPresences }: any) => {
         if (Array.isArray(newPresences) && newPresences.length > 0) {
           const latest: any = newPresences[newPresences.length - 1];
@@ -200,7 +217,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
             setBoundedMap(pingsStatusRef.current, targetId, st, MAX_PRESENCE_ENTRIES);
           }
         }
-        updatePresenceState();
+        performUpdate();
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }: any) => {
         if (key) {
@@ -216,7 +233,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
             }
           });
         }
-        updatePresenceState();
+        performUpdate();
       })
       .on('broadcast', { event: 'presence_ping' }, ({ payload }) => {
         if (!payload?.userId || payload.userId === userId) return;
@@ -228,7 +245,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           setBoundedMap(pingsRef.current, payload.userId, Date.now(), MAX_PRESENCE_ENTRIES);
           setBoundedMap(pingsStatusRef.current, payload.userId, st, MAX_PRESENCE_ENTRIES);
         }
-        updatePresenceState();
+        performUpdate();
       })
       .on('broadcast', { event: 'presence_status_change' }, ({ payload }) => {
         if (!payload?.userId || payload.userId === userId) return;
@@ -240,16 +257,16 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           setBoundedMap(pingsRef.current, payload.userId, Date.now(), MAX_PRESENCE_ENTRIES);
           setBoundedMap(pingsStatusRef.current, payload.userId, st, MAX_PRESENCE_ENTRIES);
         }
-        updatePresenceState();
+        performUpdate();
       })
       .on('broadcast', { event: 'presence_leave' }, ({ payload }) => {
         if (!payload?.userId || payload.userId === userId) return;
         pingsRef.current.delete(payload.userId);
         pingsStatusRef.current.delete(payload.userId);
-        updatePresenceState();
+        performUpdate();
       })
       .on('broadcast', { event: 'request_presence_sync' }, () => {
-        if (channel.state === 'joined') {
+        if (channel) {
           channel.send({
             type: 'broadcast',
             event: 'presence_ping',
@@ -274,7 +291,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
               pingsRef.current.set(updatedProfile.id, Date.now());
               pingsStatusRef.current.set(updatedProfile.id, newStatus);
             }
-            updatePresenceState();
+            performUpdate();
           }
         }
       )
@@ -307,7 +324,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
     // C6: Lightweight 30s presence heartbeat (only when tab is visible)
     const heartbeatTimer = setInterval(() => {
-      if (document.visibilityState === 'visible' && channel.state === 'joined') {
+      if (document.visibilityState === 'visible' && channel) {
         channel.send({
           type: 'broadcast',
           event: 'presence_ping',
@@ -317,7 +334,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     }, 30000);
 
     const handleWindowFocus = () => {
-      if (channel.state === 'joined') {
+      if (channel) {
         if (profileStatusRef.current !== 'offline') {
           channel.track({
             user_id: userId,
@@ -400,14 +417,18 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
   }, [profile?.status, user?.id]);
 
   const getUserStatus = React.useCallback(
-    (userId: string | null | undefined): UserStatus => {
+    (userId: string | null | undefined, fallbackStatus?: UserStatus): UserStatus => {
       if (!userId) return 'offline';
       if (user && userId === user.id) {
         return profile?.status || 'online';
       }
-      return globalPresenceStore.getStatus(userId);
+      const live = globalPresenceStore.getStatus(userId);
+      if (!hasSynced && fallbackStatus) {
+        return live !== 'offline' ? live : fallbackStatus;
+      }
+      return live;
     },
-    [user?.id, profile?.status]
+    [user?.id, profile?.status, hasSynced]
   );
 
   const isUserOnline = React.useCallback(
@@ -422,7 +443,8 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     onlineUsers,
     getUserStatus,
     isUserOnline,
-  }), [onlineUsers, getUserStatus, isUserOnline]);
+    hasSynced,
+  }), [onlineUsers, getUserStatus, isUserOnline, hasSynced]);
 
   return (
     <PresenceContext.Provider value={value}>
@@ -431,7 +453,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useUserPresence(userId: string | null | undefined): UserStatus {
+export function useUserPresence(userId: string | null | undefined, fallbackStatus?: UserStatus): UserStatus {
   const { user, profile } = useAuth();
   const isMe = Boolean(user && userId === user.id);
 
@@ -445,8 +467,12 @@ export function useUserPresence(userId: string | null | undefined): UserStatus {
 
   const getSnapshot = React.useCallback(() => {
     if (isMe) return profile?.status || 'online';
-    return globalPresenceStore.getStatus(userId);
-  }, [userId, isMe, profile?.status]);
+    const live = globalPresenceStore.getStatus(userId);
+    if (!globalPresenceStore.isSynced() && fallbackStatus) {
+      return live !== 'offline' ? live : fallbackStatus;
+    }
+    return live;
+  }, [userId, isMe, profile?.status, fallbackStatus]);
 
   return React.useSyncExternalStore(subscribe, getSnapshot, () => 'offline');
 }

@@ -550,6 +550,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setProfile(updatedProfile as UserProfile);
         }
 
+        // Broadcast to nexus-global-presence so all peers see status/presence change instantly
+        if (updates.status) {
+          realtimeHub
+            .send('nexus-global-presence', 'presence_status_change', {
+              userId: user.id,
+              status: updates.status,
+            })
+            .catch(() => {});
+        }
+
         // Broadcast to social-realtime so all peers see status/presence change instantly
         realtimeHub
           .send('social-realtime', 'social_update', { userId: user.id, updates })

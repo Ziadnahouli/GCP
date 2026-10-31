@@ -229,8 +229,7 @@ export function useMessages(conversationId: string | null) {
             id, conversation_id, sender_id, content, reply_to_id,
             is_pinned, is_edited, created_at, updated_at,
             sender:sender_id (
-              id, username, display_name, avatar_url, banner_url, banner_color,
-              bio, custom_status, status, game_activity, created_at, updated_at
+              id, username, display_name, avatar_url
             )
           `)
           .eq('conversation_id', conversationId)
@@ -400,8 +399,7 @@ export function useMessages(conversationId: string | null) {
           id, conversation_id, sender_id, content, reply_to_id,
           is_pinned, is_edited, created_at, updated_at,
           sender:sender_id (
-            id, username, display_name, avatar_url, banner_url, banner_color,
-            bio, custom_status, status, game_activity, created_at, updated_at
+            id, username, display_name, avatar_url
           )
         `)
         .eq('conversation_id', conversationId)

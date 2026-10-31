@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Server, hasServerPermission } from '@/lib/types/server';
 import { Avatar } from '@/components/ui/avatar';
+import { ProfileCardTrigger } from '@/components/profile/ProfileCardTrigger';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -139,45 +140,47 @@ export function ChannelMembersPanel({
                     )}
                     title={isMe ? 'You' : `Click to message ${m.display_name}`}
                   >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <Avatar
-                        src={m.avatar_url || null}
-                        name={m.display_name}
-                        status={m.status}
-                        showStatus
-                        size="24"
-                      />
+                    <ProfileCardTrigger userId={m.id} serverId={server.id} className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <Avatar
+                          src={m.avatar_url || null}
+                          name={m.display_name}
+                          status={m.status}
+                          showStatus
+                          size="24"
+                        />
 
-                      <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                        <span className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                          {m.display_name}
-                        </span>
-
-                        {memberRole && memberRole.is_custom && (
-                          <span
-                            className="text-xs px-1.5 py-0 rounded font-medium truncate max-w-[80px]"
-                            style={{
-                              color: memberRole.color || undefined,
-                              backgroundColor: memberRole.color ? `${memberRole.color}20` : undefined,
-                              border: memberRole.color ? `1px solid ${memberRole.color}40` : undefined,
-                            }}
-                            title={memberRole.name}
-                          >
-                            {memberRole.name}
+                        <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                            {m.display_name}
                           </span>
-                        )}
 
-                        {isMe && (
-                          <span className="text-xs text-muted-foreground font-normal">(You)</span>
-                        )}
+                          {memberRole && memberRole.is_custom && (
+                            <span
+                              className="text-xs px-1.5 py-0 rounded font-medium truncate max-w-[80px]"
+                              style={{
+                                color: memberRole.color || undefined,
+                                backgroundColor: memberRole.color ? `${memberRole.color}20` : undefined,
+                                border: memberRole.color ? `1px solid ${memberRole.color}40` : undefined,
+                              }}
+                              title={memberRole.name}
+                            >
+                              {memberRole.name}
+                            </span>
+                          )}
 
-                        {isTimedOut && (
-                          <Badge variant="warning" className="text-xs px-1 py-0">
-                            Timed out
-                          </Badge>
-                        )}
+                          {isMe && (
+                            <span className="text-xs text-muted-foreground font-normal">(You)</span>
+                          )}
+
+                          {isTimedOut && (
+                            <Badge variant="warning" className="text-xs px-1 py-0">
+                              Timed out
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    </ProfileCardTrigger>
 
                     {!isMe && (
                       <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">

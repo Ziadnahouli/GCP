@@ -41,6 +41,11 @@ vi.mock('@/components/ui/toast', () => ({
   }),
 }));
 
+vi.mock('@/lib/profiles/profile-store', () => ({
+  fetchUserIdByUsername: vi.fn().mockResolvedValue(null),
+  fetchProfileCard: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('@/lib/supabase/client', () => ({
   getBrowserClient: () => ({
     channel: () => ({

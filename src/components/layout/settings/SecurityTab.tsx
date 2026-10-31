@@ -16,7 +16,7 @@ import {
 import { useAuth, getLocalDeviceId } from '@/features/auth/auth-provider';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
-import { UserSettings } from '@/lib/types/profile';
+import { UserSettings, VisibilityAudience } from '@/lib/types/profile';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
@@ -36,10 +36,10 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
   const [allowFriendReqs, setAllowFriendReqs] = React.useState<'everyone' | 'friends_of_friends' | 'none'>(
     settings?.allow_friend_requests || 'everyone'
   );
-  const [profileVisibility, setProfileVisibility] = React.useState<'everyone' | 'friends' | 'nobody'>(
+  const [profileVisibility, setProfileVisibility] = React.useState<VisibilityAudience>(
     settings?.profile_visibility || 'everyone'
   );
-  const [presenceVisibility, setPresenceVisibility] = React.useState<'everyone' | 'friends' | 'nobody'>(
+  const [presenceVisibility, setPresenceVisibility] = React.useState<VisibilityAudience>(
     settings?.presence_visibility || 'everyone'
   );
 
@@ -371,16 +371,17 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
             <div className="text-xs font-bold text-foreground">Profile Visibility</div>
             <div className="text-xs text-muted-foreground">Control who can view your full bio, banner, and profile details</div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             {[
               { id: 'everyone', label: 'Everyone', desc: 'Visible to all platform users' },
+              { id: 'mutual_servers', label: 'Friends & Servers', desc: 'Friends and shared server members' },
               { id: 'friends', label: 'Friends Only', desc: 'Only confirmed friends' },
-              { id: 'nobody', label: 'Private (Nobody)', desc: 'Only visible to you' },
+              { id: 'nobody', label: 'Private', desc: 'Only visible to you' },
             ].map((opt) => (
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => handleUpdatePrivacy({ profile_visibility: opt.id as 'everyone' | 'friends' | 'nobody' })}
+                onClick={() => handleUpdatePrivacy({ profile_visibility: opt.id as VisibilityAudience })}
                 className={cn(
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   profileVisibility === opt.id
@@ -401,16 +402,17 @@ export function SecurityTab({ open = true }: SecurityTabProps) {
             <div className="text-xs font-bold text-foreground">Online Status & Activity Visibility</div>
             <div className="text-xs text-muted-foreground">Control who sees your live online status and current game activity</div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             {[
-              { id: 'everyone', label: 'Everyone', desc: 'Mutual servers & friends' },
+              { id: 'everyone', label: 'Everyone', desc: 'Visible to all platform users' },
+              { id: 'mutual_servers', label: 'Friends & Servers', desc: 'Friends and shared server members' },
               { id: 'friends', label: 'Friends Only', desc: 'Only your friends list' },
-              { id: 'nobody', label: 'Nobody', desc: 'Always appear private' },
+              { id: 'nobody', label: 'Nobody', desc: 'Always appear offline' },
             ].map((opt) => (
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => handleUpdatePrivacy({ presence_visibility: opt.id as 'everyone' | 'friends' | 'nobody' })}
+                onClick={() => handleUpdatePrivacy({ presence_visibility: opt.id as VisibilityAudience })}
                 className={cn(
                   'p-2.5 rounded-xl border text-left transition text-xs',
                   presenceVisibility === opt.id

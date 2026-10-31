@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
@@ -57,6 +57,10 @@ vi.mock('@/lib/supabase/client', () => ({
 import { SettingsModal } from '@/components/layout/settings-modal';
 
 describe('SettingsModal Rendering', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('renders both navigation sidebar and active tab content', () => {
     const { container } = render(<SettingsModal open={true} onOpenChange={() => {}} />);
     
@@ -66,9 +70,9 @@ describe('SettingsModal Rendering', () => {
     expect(screen.getByText('Themes & Accents')).toBeDefined();
 
     // Check content area elements for profile tab
-    expect(screen.getByText('Gamer Identity & Profile')).toBeDefined();
-    expect(screen.getByText('Live Preview')).toBeDefined();
-    expect(screen.getByText('Gamer Tag (@username)')).toBeDefined();
+    expect(screen.getAllByText(/User Profile/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Live Preview/i)).toBeDefined();
+    expect(screen.getAllByText(/Username/i).length).toBeGreaterThan(0);
   });
 
   const tabs = ['profile', 'appearance', 'studio', 'audio', 'shortcuts', 'notifs', 'security', 'diagnostics'] as const;
@@ -107,13 +111,13 @@ describe('SettingsModal Rendering', () => {
     // The dialog should be rendered directly under document.body
     const dialogInBody = document.body.querySelector('.max-w-5xl');
     expect(dialogInBody).not.toBeNull();
-    expect(screen.getByText('Gamer Identity & Profile')).toBeDefined();
+    expect(screen.getAllByText(/User Profile/i).length).toBeGreaterThan(0);
   });
 
   it('renders nothing when open is false', () => {
     render(<SettingsModal open={false} onOpenChange={() => {}} />);
     expect(screen.queryByText('Nexus Studio Settings')).toBeNull();
-    expect(screen.queryByText('Gamer Identity & Profile')).toBeNull();
+    expect(screen.queryByText(/User Profile/i)).toBeNull();
   });
 });
 

@@ -102,8 +102,7 @@ export function useChannelMessages(channelId: string | null) {
             .select(`
               id, channel_id, user_id, content, created_at, updated_at,
               profile:user_id (
-                id, username, display_name, avatar_url, banner_url, banner_color,
-                bio, custom_status, status, game_activity, created_at, updated_at
+                id, username, display_name, avatar_url
               )
             `)
             .eq('channel_id', channelId)
@@ -192,8 +191,7 @@ export function useChannelMessages(channelId: string | null) {
         .select(`
           id, channel_id, user_id, content, created_at, updated_at,
           profile:user_id (
-            id, username, display_name, avatar_url, banner_url, banner_color,
-            bio, custom_status, status, game_activity, created_at, updated_at
+            id, username, display_name, avatar_url
           )
         `)
         .eq('channel_id', channelId)
@@ -282,8 +280,7 @@ export function useChannelMessages(channelId: string | null) {
               .select(`
                 id, channel_id, user_id, content, created_at, updated_at,
                 profile:user_id (
-                  id, username, display_name, avatar_url, banner_url, banner_color,
-                  bio, custom_status, status, game_activity, created_at, updated_at
+                  id, username, display_name, avatar_url
                 )
               `)
               .eq('id', incoming.id)

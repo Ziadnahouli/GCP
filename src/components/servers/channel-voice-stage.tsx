@@ -21,6 +21,7 @@ import {
 import { Channel } from '@/lib/types/server';
 import { VoiceParticipant } from '@/features/servers/server-voice-context';
 import { Avatar } from '@/components/ui/avatar';
+import { ProfileCardTrigger } from '@/components/profile/ProfileCardTrigger';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -272,15 +273,17 @@ export function ChannelVoiceStage({
                             <StreamVideo stream={remoteStream} objectFit="cover" className="w-full h-full" />
                           </div>
                         ) : (
-                          <Avatar
-                            src={mem.avatar_url || null}
-                            name={mem.display_name}
-                            size="32"
-                            className={cn(
-                              'transition-all',
-                              mem.is_speaking && 'ring-2 ring-status-online'
-                            )}
-                          />
+                          <ProfileCardTrigger userId={mem.user_id} serverId={channel.server_id}>
+                            <Avatar
+                              src={mem.avatar_url || null}
+                              name={mem.display_name}
+                              size="32"
+                              className={cn(
+                                'transition-all cursor-pointer',
+                                mem.is_speaking && 'ring-2 ring-status-online'
+                              )}
+                            />
+                          </ProfileCardTrigger>
                         )}
                         {mem.is_muted ? (
                           <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-danger text-primary-foreground">

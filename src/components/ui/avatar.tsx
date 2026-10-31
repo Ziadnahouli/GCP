@@ -1,9 +1,10 @@
 import * as React from 'react';
 import { cn, formatInitials } from '@/lib/utils';
 import { UserStatus } from '@/lib/types/profile';
+import { resolveProfileImageUrl } from '@/lib/images/profile-images';
 import { MicOff } from 'lucide-react';
 
-export type AvatarSize = 20 | 24 | 32 | 40 | 64 | '20' | '24' | '32' | '40' | '64' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+export type AvatarSize = 20 | 24 | 32 | 40 | 64 | 80 | '20' | '24' | '32' | '40' | '64' | '80' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
 export interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
   src?: string | null;
@@ -13,6 +14,8 @@ export interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
   showStatus?: boolean;
   isSpeaking?: boolean;
   isMuted?: boolean;
+  avatarColor?: string | null;
+  decorationUrl?: string | null;
 }
 
 const sizeMap: Record<string, { container: string; text: string; px: number; statusSize: string }> = {
@@ -21,6 +24,7 @@ const sizeMap: Record<string, { container: string; text: string; px: number; sta
   '32': { container: 'w-8 h-8', text: 'text-xs', px: 32, statusSize: 'w-3 h-3' },
   '40': { container: 'w-10 h-10', text: 'text-sm', px: 40, statusSize: 'w-3.5 h-3.5' },
   '64': { container: 'w-16 h-16', text: 'text-xl', px: 64, statusSize: 'w-4.5 h-4.5' },
+  '80': { container: 'w-20 h-20', text: 'text-2xl', px: 80, statusSize: 'w-5 h-5' },
   xs: { container: 'w-5 h-5', text: 'text-xs', px: 20, statusSize: 'w-2 h-2' },
   sm: { container: 'w-8 h-8', text: 'text-xs', px: 32, statusSize: 'w-3 h-3' },
   md: { container: 'w-10 h-10', text: 'text-sm', px: 40, statusSize: 'w-3.5 h-3.5' },
@@ -58,12 +62,29 @@ export const Avatar: React.FC<AvatarProps> = ({
   showStatus = false,
   isSpeaking = false,
   isMuted = false,
+  avatarColor,
+  decorationUrl,
   className,
   ...props
 }) => {
   const [imgError, setImgError] = React.useState(false);
   const sizeConfig = sizeMap[String(size)] || sizeMap['32'];
   const fallbackHue = React.useMemo(() => getHueForName(name), [name]);
+
+  // Resolve safe image url or transform variant
+  const resolvedSrc = React.useMemo(() => {
+    return resolveProfileImageUrl('avatars', src, {
+      width: sizeConfig.px * 2,
+      height: sizeConfig.px * 2,
+      resize: 'cover',
+      format: 'webp',
+    });
+  }, [src, sizeConfig.px]);
+
+  // Reset image error state if src changes
+  React.useEffect(() => {
+    setImgError(false);
+  }, [src]);
 
   return (
     <div
@@ -78,16 +99,20 @@ export const Avatar: React.FC<AvatarProps> = ({
       <div
         className={cn(
           'relative flex h-full w-full items-center justify-center overflow-hidden rounded-full border border-border font-medium',
-          fallbackHue
+          !avatarColor && fallbackHue
         )}
+        style={avatarColor ? { backgroundColor: avatarColor } : undefined}
       >
-        {src && !imgError ? (
+        {resolvedSrc && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={src}
+            src={resolvedSrc}
             alt={name || 'Avatar'}
             width={sizeConfig.px}
             height={sizeConfig.px}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
             className="h-full w-full object-cover"
             onError={() => setImgError(true)}
           />
@@ -97,6 +122,18 @@ export const Avatar: React.FC<AvatarProps> = ({
           </span>
         )}
       </div>
+
+      {/* Avatar Decoration Frame */}
+      {decorationUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={decorationUrl}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          className="absolute inset-0 -m-[15%] h-[130%] w-[130%] max-w-none pointer-events-none z-10 object-contain select-none"
+        />
+      )}
 
       {/* Accessible Presence Badge: Never color-only */}
       {showStatus && status && (

@@ -14,6 +14,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
+import { ProfileCardTrigger } from '@/components/profile/ProfileCardTrigger';
 import { Message, MessageAttachment } from '@/lib/types/messaging';
 import { MessageContent } from '@/components/chat/message-content';
 import { formatFileSize } from '@/lib/storage/upload';
@@ -100,11 +101,15 @@ function ChatMessageRowComponent({
               {timeString}
             </span>
           ) : (
-            <Avatar
-              src={message.sender?.avatar_url}
-              name={message.sender?.display_name || 'User'}
-              size="32"
-            />
+            <ProfileCardTrigger userId={message.sender?.id || message.sender_id}>
+              <Avatar
+                src={message.sender?.avatar_url}
+                name={message.sender?.display_name || 'User'}
+                size="32"
+                avatarColor={message.sender?.avatar_color}
+                className="cursor-pointer hover:opacity-90 transition-opacity"
+              />
+            </ProfileCardTrigger>
           )}
         </div>
 
@@ -113,9 +118,11 @@ function ChatMessageRowComponent({
           {/* Header Line (Only if not grouped) */}
           {!isGrouped && (
             <div className="flex items-baseline gap-2 mb-1 select-none">
-              <span className="text-body font-semibold text-foreground truncate">
-                {message.sender?.display_name || 'User'}
-              </span>
+              <ProfileCardTrigger userId={message.sender?.id || message.sender_id}>
+                <span className="text-body font-semibold text-foreground truncate hover:underline cursor-pointer">
+                  {message.sender?.display_name || 'User'}
+                </span>
+              </ProfileCardTrigger>
               <span className="text-meta text-muted-foreground">
                 @{message.sender?.username || 'user'}
               </span>

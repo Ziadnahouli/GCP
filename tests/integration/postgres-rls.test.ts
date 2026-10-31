@@ -1,11 +1,17 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import * as fs from 'fs';
 import * as path from 'path';
 
 describe('PostgreSQL / Supabase RLS Multi-User Integration Tests', () => {
   let db: PGlite;
+
+  afterEach(async () => {
+    if (db) {
+      await db.close();
+    }
+  });
 
   const ALICE_ID = '11111111-1111-1111-1111-111111111111';
   const BOB_ID = '22222222-2222-2222-2222-222222222222';

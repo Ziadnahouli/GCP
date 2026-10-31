@@ -51,8 +51,7 @@ export function useServersInternal() {
           server_members (
             id, server_id, user_id, role, role_id, joined_at, timeout_until,
             profile:user_id (
-              id, username, display_name, avatar_url, banner_url, banner_color,
-              bio, custom_status, status, game_activity, created_at, updated_at
+              id, username, display_name, avatar_url
             )
           )
         `);
@@ -789,8 +788,7 @@ export function useServersInternal() {
             server_members (
               id, server_id, user_id, role, joined_at,
               profile:user_id (
-                id, username, display_name, avatar_url, banner_url, banner_color,
-                bio, custom_status, status, game_activity, created_at, updated_at
+                id, username, display_name, avatar_url
               )
             )
           `)

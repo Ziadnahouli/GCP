@@ -1,11 +1,17 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import * as fs from 'fs';
 import * as path from 'path';
 
 describe('Database Migrations Sequential Execution Gate (A6)', () => {
   let db: PGlite;
+
+  afterEach(async () => {
+    if (db) {
+      await db.close();
+    }
+  });
 
   beforeEach(async () => {
     db = new PGlite();

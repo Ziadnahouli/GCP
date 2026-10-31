@@ -19,6 +19,7 @@ import {
 import { useSocial } from '@/hooks/use-social';
 import { useConversations } from '@/hooks/use-conversations';
 import { Avatar } from '@/components/ui/avatar';
+import { ProfileCardTrigger } from '@/components/profile/ProfileCardTrigger';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -50,13 +51,16 @@ function FriendAvatar({
 }) {
   const status = useUserPresence(friend.id);
   return (
-    <Avatar
-      src={friend.avatar_url}
-      name={friend.display_name}
-      status={status}
-      showStatus
-      size="32"
-    />
+    <ProfileCardTrigger userId={friend.id}>
+      <Avatar
+        src={friend.avatar_url}
+        name={friend.display_name}
+        status={status}
+        showStatus
+        size="32"
+        className="cursor-pointer hover:opacity-90 transition-opacity"
+      />
+    </ProfileCardTrigger>
   );
 }
 

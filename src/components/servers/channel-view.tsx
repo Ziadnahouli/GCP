@@ -29,6 +29,7 @@ import { useCallActions } from '@/features/calls/call-context';
 import { useServerVoice } from '@/hooks/use-server-voice';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { Avatar } from '@/components/ui/avatar';
+import { ProfileCardTrigger } from '@/components/profile/ProfileCardTrigger';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SoundboardModal } from '@/components/soundboard/soundboard-modal';
@@ -531,27 +532,22 @@ export function ChannelView({ server, channel }: ChannelViewProps) {
                       key={msg.id}
                       className="flex items-start gap-3 group rounded-control hover:bg-surface-hover p-2 -mx-2 transition-colors mb-2"
                     >
-                      <div
-                        className="cursor-pointer"
-                        onClick={() => handleStartDirectChat(msg.user_id, msg.profile?.display_name || 'Member')}
-                        title="Direct message"
-                      >
+                      <ProfileCardTrigger userId={msg.user_id} serverId={server.id}>
                         <Avatar
                           src={msg.profile?.avatar_url}
                           name={msg.profile?.display_name || 'Member'}
                           size="32"
-                          className="mt-0.5 shrink-0"
+                          className="mt-0.5 shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
                         />
-                      </div>
+                      </ProfileCardTrigger>
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            onClick={() => handleStartDirectChat(msg.user_id, msg.profile?.display_name || 'Member')}
-                            className="font-semibold text-body text-foreground hover:text-primary cursor-pointer transition-colors"
-                          >
-                            {msg.profile?.display_name || 'Member'}
-                          </span>
+                          <ProfileCardTrigger userId={msg.user_id} serverId={server.id}>
+                            <span className="font-semibold text-body text-foreground hover:text-primary cursor-pointer transition-colors">
+                              {msg.profile?.display_name || 'Member'}
+                            </span>
+                          </ProfileCardTrigger>
 
                           {isOwner && (
                             <Badge variant="warning" className="text-caption px-1.5 py-0 gap-1">

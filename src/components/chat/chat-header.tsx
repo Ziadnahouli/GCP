@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
+import { ProfileCardTrigger } from '@/components/profile/ProfileCardTrigger';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { UserStatus } from '@/lib/types/profile';
@@ -85,21 +86,32 @@ export function ChatHeader({
               <Users className="w-4 h-4" />
             </div>
           ) : (
-            <Avatar
-              src={otherMember?.avatar_url}
-              name={title}
-              status={liveStatus}
-              showStatus
-              size="32"
-            />
+            <ProfileCardTrigger userId={otherMember?.id}>
+              <Avatar
+                src={otherMember?.avatar_url}
+                name={title}
+                status={liveStatus}
+                showStatus
+                size="32"
+                className="cursor-pointer hover:opacity-90 transition-opacity"
+              />
+            </ProfileCardTrigger>
           )}
         </div>
 
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold tracking-tight text-foreground truncate">
-              {title}
-            </h1>
+            {!isGroup ? (
+              <ProfileCardTrigger userId={otherMember?.id}>
+                <h1 className="text-sm font-semibold tracking-tight text-foreground truncate hover:text-primary cursor-pointer transition-colors">
+                  {title}
+                </h1>
+              </ProfileCardTrigger>
+            ) : (
+              <h1 className="text-sm font-semibold tracking-tight text-foreground truncate">
+                {title}
+              </h1>
+            )}
             {username && (
               <span className="hidden sm:inline text-xs text-muted-foreground truncate">
                 @{username}
@@ -176,11 +188,10 @@ export function ChatHeader({
         <button
           type="button"
           onClick={onTogglePinnedOnly}
-          className={`w-8 h-8 rounded-control flex items-center justify-center transition-colors ${
-            showPinnedOnly
+          className={`w-8 h-8 rounded-control flex items-center justify-center transition-colors ${showPinnedOnly
               ? 'bg-primary-subtle text-primary'
               : 'text-muted-foreground hover:text-foreground hover:bg-surface-hover'
-          }`}
+            }`}
           title={showPinnedOnly ? 'Show all messages' : 'Show pinned messages'}
           aria-label="Toggle pinned messages"
         >

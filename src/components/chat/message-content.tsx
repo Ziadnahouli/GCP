@@ -11,6 +11,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { realtimeHub } from '@/lib/realtime/realtime-hub';
 import { Server } from '@/lib/types/server';
 import { LinkPreviewCard } from '@/components/chat/link-preview';
+import { MentionTrigger } from '@/components/profile/MentionTrigger';
 
 interface MessageContentProps {
   content?: string | null;
@@ -308,19 +309,17 @@ export function MessageContent({ content, isMe = false, isCallActive }: MessageC
                 if (sub.match(/^@[a-zA-Z0-9_.-]+$/)) {
                   const tagLower = sub.toLowerCase();
                   const isSpecial = tagLower === '@everyone' || tagLower === '@all' || tagLower === '@here';
-                  return (
-                    <span
-                      key={subIdx}
-                      className={cn(
-                        'inline-flex items-center px-1.5 py-0.5 rounded-md text-xs font-semibold mx-0.5 select-none transition-colors',
-                        isSpecial
-                          ? 'bg-warning/20 text-warning border border-warning/30 font-bold hover:bg-warning/30'
-                          : 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 cursor-pointer'
-                      )}
-                    >
-                      {sub}
-                    </span>
-                  );
+                  if (isSpecial) {
+                    return (
+                      <span
+                        key={subIdx}
+                        className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs font-semibold mx-0.5 select-none bg-warning/20 text-warning border border-warning/30 font-bold hover:bg-warning/30"
+                      >
+                        {sub}
+                      </span>
+                    );
+                  }
+                  return <MentionTrigger key={subIdx} username={sub} />;
                 }
                 return <span key={subIdx}>{sub}</span>;
               })}
